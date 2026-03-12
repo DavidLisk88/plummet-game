@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "dedupe:words": "node dedupe-words.js",
+    "export:distinct-words": "node dedupe-words.js --output distinct-words.js"
+  },
+  "dependencies": {
+    "english-word-list": "^1.0.5",
+    "popular-english-words": "^1.0.2"
+  }
+}

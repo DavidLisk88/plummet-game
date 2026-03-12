@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Plummet</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!--
+        PLUMMET - A falling-letter word puzzle game
+        ============================================
+        HOW TO PLAY:
+        - Letter blocks fall one at a time into the grid.
+        - Move blocks left/right and drop them to form words.
+        - Words of 3+ letters (horizontal, vertical, diagonal) are cleared for points.
+        - Longer words and chain reactions score more!
+        - Game ends when a new block can't spawn.
+
+        CONTROLS:
+        Desktop: Left/Right arrows to move, Space to fast-drop
+        Mobile:  On-screen arrow buttons
+
+        TO RUN: Open this file in any modern browser.
+    -->
+
+    <div id="game-container">
+        <!-- Global music mute button (visible on all screens) -->
+        <button id="global-mute-btn" class="global-mute-btn" title="Toggle Music">🔊</button>
+        <!-- PROFILES SCREEN (shown on launch) -->
+        <div id="profiles-screen" class="screen active">
+            <h1 class="title">PLUMMET</h1>
+            <p class="subtitle">Select or create a profile</p>
+            <div id="profiles-list"></div>
+            <button id="new-profile-btn" class="secondary-btn">+ New Profile</button>
+        </div>
+
+        <!-- New Profile Modal -->
+        <div id="profile-modal" class="overlay">
+            <div class="overlay-content">
+                <h2 id="profile-modal-title">New Profile</h2>
+                <input type="text" id="profile-name-input" class="text-input" placeholder="Enter username..." maxlength="20">
+                <div class="modal-buttons">
+                    <button id="profile-save-btn" class="primary-btn">Create</button>
+                    <button id="profile-cancel-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MENU SCREEN -->
+        <div id="menu-screen" class="screen">
+            <h1 class="title">PLUMMET</h1>
+            <p id="menu-profile-name" class="subtitle"></p>
+            <div id="grid-size-selector">
+                <label>Grid Size:</label>
+                <div class="size-buttons">
+                    <button class="size-btn" data-size="3">3×3</button>
+                    <button class="size-btn" data-size="4">4×4</button>
+                    <button class="size-btn selected" data-size="5">5×5</button>
+                    <button class="size-btn" data-size="6">6×6</button>
+                    <button class="size-btn" data-size="7">7×7</button>
+                    <button class="size-btn" data-size="8">8×8</button>
+                </div>
+            </div>
+            <div id="game-mode-selector" class="hidden">
+                <label>Game Mode:</label>
+                <div class="game-mode-buttons">
+                    <button class="game-mode-btn selected" data-mode="sandbox">Sandbox</button>
+                    <button class="game-mode-btn" data-mode="timed">Timed</button>
+                </div>
+            </div>
+            <div id="difficulty-selector" class="hidden">
+                <label>Difficulty:</label>
+                <div class="difficulty-buttons">
+                    <button class="difficulty-btn selected" data-difficulty="casual">Casual</button>
+                    <button class="difficulty-btn" data-difficulty="challenging">Challenging</button>
+                </div>
+            </div>
+            <button id="start-btn" class="primary-btn">START</button>
+            <button id="resume-game-btn" class="primary-btn hidden">▶ Resume Game</button>
+            <button id="music-menu-btn" class="secondary-btn">🎵 Music</button>
+            <button id="switch-profile-btn" class="secondary-btn">👤 Switch Profile</button>
+            <div id="menu-stats">
+                <p class="high-score-text">High Score: <span id="menu-high-score">0</span></p>
+                <p class="stat-text">Games Played: <span id="menu-games-played">0</span></p>
+                <p class="stat-text">Total Words: <span id="menu-total-words">0</span></p>
+            </div>
+        </div>
+
+        <!-- MUSIC SCREEN -->
+        <div id="music-screen" class="screen">
+            <div id="music-header">
+                <button id="music-back-btn" class="icon-btn back-btn">←</button>
+                <h2>Music</h2>
+                <div style="width:40px"></div>
+            </div>
+
+            <!-- Now Playing Bar -->
+            <div id="now-playing-bar">
+                <div id="np-info">
+                    <span id="np-title">No track playing</span>
+                    <span id="np-artist"></span>
+                </div>
+                <div id="np-controls">
+                    <button id="np-prev" class="np-btn" aria-label="Previous Track"></button>
+                    <button id="np-play" class="np-btn np-play-btn" aria-label="Play"></button>
+                    <button id="np-next" class="np-btn" aria-label="Next Track"></button>
+                </div>
+                <div id="np-progress-wrap">
+                    <div id="np-progress-bar"><div id="np-progress-fill"></div></div>
+                    <div id="np-time"><span id="np-current-time">0:00</span> / <span id="np-duration">0:00</span></div>
+                </div>
+            </div>
+
+            <!-- Playlist Tabs -->
+            <div id="playlist-tabs">
+                <button class="playlist-tab active" data-playlist="__default">All Songs</button>
+                <!-- Custom playlist tabs inserted here dynamically -->
+                <button id="new-playlist-tab" class="playlist-tab add-tab">+ New</button>
+            </div>
+
+            <!-- Track List -->
+            <div id="track-list"></div>
+
+            <!-- Playlist actions (shown for custom playlists) -->
+            <div id="playlist-actions" class="hidden">
+                <button id="rename-playlist-btn" class="small-btn">Rename</button>
+                <button id="delete-playlist-btn" class="small-btn danger-btn">Delete Playlist</button>
+            </div>
+        </div>
+
+        <!-- Create / Edit Playlist Modal -->
+        <div id="playlist-modal" class="overlay">
+            <div class="overlay-content modal-wide">
+                <h2 id="playlist-modal-title">New Playlist</h2>
+                <input type="text" id="playlist-name-input" class="text-input" placeholder="Playlist name..." maxlength="30">
+                <div id="playlist-track-picker"></div>
+                <div class="modal-buttons">
+                    <button id="playlist-save-btn" class="primary-btn">Save</button>
+                    <button id="playlist-cancel-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PLAYING SCREEN -->
+        <div id="play-screen" class="screen">
+            <div id="score-bar">
+                <div class="score-item">
+                    <span class="score-label">Score</span>
+                    <span id="current-score" class="score-value">0</span>
+                </div>
+                <div id="timer-score-item" class="score-item hidden">
+                    <span class="score-label">Time</span>
+                    <span id="game-timer" class="score-value">0:00</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">High</span>
+                    <span id="play-high-score" class="score-value">0</span>
+                </div>
+            </div>
+            <button id="pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏸</button>
+            <button id="hints-btn" class="icon-btn play-fab-btn play-hint-btn" title="Toggle Hints" aria-label="Toggle Hints">💡</button>
+            <button id="bonus-btn" class="bonus-btn hidden" title="Use Bonus Letter">Bonus!</button>
+            <div id="now-playing-mini">
+                <span id="np-mini-title">♪ ---</span>
+                <div id="np-mini-controls">
+                    <button id="np-mini-prev" class="icon-btn np-mini-btn" title="Previous Track" aria-label="Previous Track"></button>
+                    <button id="np-mini-toggle" class="icon-btn np-mini-btn np-mini-toggle-btn" title="Play or Pause Music" aria-label="Play"></button>
+                    <button id="np-mini-next" class="icon-btn np-mini-btn" title="Next Track" aria-label="Next Track"></button>
+                </div>
+            </div>
+            <div id="canvas-wrapper">
+                <canvas id="game-canvas"></canvas>
+            </div>
+            <div id="next-letter-display">
+                Next: <span id="next-letter">?</span>
+            </div>
+            <button id="play-words-found-btn" class="secondary-btn in-game-words-btn">📝 Words So Far</button>
+            <div id="mobile-controls">
+                <button id="btn-left" class="control-btn" aria-label="Move Left">◀</button>
+                <button id="btn-drop" class="control-btn drop-btn" aria-label="Fast Drop">▼</button>
+                <button id="btn-right" class="control-btn" aria-label="Move Right">▶</button>
+            </div>
+        </div>
+
+        <!-- PAUSE OVERLAY -->
+        <div id="pause-overlay" class="overlay">
+            <div class="overlay-content">
+                <h2>PAUSED</h2>
+                <button id="resume-btn" class="primary-btn">Resume</button>
+                <button id="pause-words-found-btn" class="secondary-btn">📝 Words So Far</button>
+                <button id="quit-btn" class="secondary-btn">Quit to Menu</button>
+            </div>
+        </div>
+
+        <div id="time-select-modal" class="overlay">
+            <div class="overlay-content modal-wide time-select-content">
+                <h2>Choose Your Time</h2>
+                <p class="subtitle" id="time-select-text">Pick how long this timed game should run.</p>
+                <div id="time-select-grid">
+                    <button class="time-select-btn" data-minutes="1">1 min</button>
+                    <button class="time-select-btn" data-minutes="3">3 min</button>
+                    <button class="time-select-btn" data-minutes="5">5 min</button>
+                    <button class="time-select-btn" data-minutes="8">8 min</button>
+                    <button class="time-select-btn" data-minutes="10">10 min</button>
+                    <button class="time-select-btn" data-minutes="15">15 min</button>
+                    <button class="time-select-btn" data-minutes="20">20 min</button>
+                </div>
+                <div class="modal-buttons">
+                    <button id="time-select-cancel-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="letter-choice-modal" class="overlay">
+            <div class="overlay-content modal-wide letter-choice-content">
+                <button id="letter-choice-close-btn" class="letter-choice-close-btn" title="Close Bonus Window">✕</button>
+                <h2 id="letter-choice-title">Choose Your Letter</h2>
+                <p id="letter-choice-text" class="subtitle">Pick the next falling letter for this drop.</p>
+                <div id="letter-choice-preview" class="letter-choice-preview hidden"></div>
+                <div id="letter-choice-grid"></div>
+                <div class="modal-buttons">
+                    <button id="letter-choice-accept-btn" class="primary-btn hidden">Accept</button>
+                    <button id="letter-choice-later-btn" class="secondary-btn">Use Later</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- GAME OVER SCREEN -->
+        <div id="gameover-screen" class="screen">
+            <h1 class="title">GAME OVER</h1>
+            <p id="final-score-text">Score: 0</p>
+            <p id="new-high-score-text" class="hidden">🏆 New High Score!</p>
+            <button id="restart-btn" class="primary-btn">Play Again</button>
+            <button id="words-found-btn" class="secondary-btn">📝 Words Found</button>
+            <button id="menu-btn" class="secondary-btn">Main Menu</button>
+        </div>
+
+        <!-- WORDS FOUND SCREEN -->
+        <div id="words-found-screen" class="screen">
+            <div id="words-found-header">
+                <button id="words-found-back-btn" class="icon-btn back-btn">←</button>
+                <h2>Words Found</h2>
+                <div style="width:40px"></div>
+            </div>
+            <p id="words-found-count"></p>
+            <div id="words-found-list"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

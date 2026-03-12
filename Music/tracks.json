@@ -1,0 +1,14 @@
+[
+  {
+    "id": "track01",
+    "title": "Cascade",
+    "artist": "Freddy River",
+    "file": "Music/Cascade.wav"
+  },
+  {
+    "id": "track02",
+    "title": "Line it up",
+    "artist": "Freddy River",
+    "file": "Music/Line it up.wav"
+  }
+]
