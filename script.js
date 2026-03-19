@@ -1133,6 +1133,7 @@ class Game {
             hintsBtn:       document.getElementById("hints-btn"),
             resumeBtn:      document.getElementById("resume-btn"),
             pauseWordsFoundBtn: document.getElementById("pause-words-found-btn"),
+            pauseMusicBtn:  document.getElementById("pause-music-btn"),
             quitBtn:        document.getElementById("quit-btn"),
             globalMuteBtn:  document.getElementById("global-mute-btn"),
             nextLetter:     document.getElementById("next-letter"),
@@ -1293,6 +1294,12 @@ class Game {
             this.els.pauseOverlay.classList.remove("active");
             this._openWordsFound("pause");
         });
+        this.els.pauseMusicBtn.addEventListener("click", () => {
+            this.els.pauseOverlay.classList.remove("active");
+            this._musicBackTarget = "pause";
+            this._showScreen("music");
+            this._renderMusicScreen();
+        });
         this.els.quitBtn.addEventListener("click", () => {
             this._saveGameState();
             this.state = State.MENU;
@@ -1320,7 +1327,15 @@ class Game {
             this._showScreen("music");
             this._renderMusicScreen();
         });
-        this.els.musicBackBtn.addEventListener("click", () => this._showScreen("menu"));
+        this.els.musicBackBtn.addEventListener("click", () => {
+            if (this._musicBackTarget === "pause") {
+                this._musicBackTarget = null;
+                this._showScreen("play");
+                this.els.pauseOverlay.classList.add("active");
+            } else {
+                this._showScreen("menu");
+            }
+        });
 
         // Global mute button
         this.els.globalMuteBtn.addEventListener("click", () => {
@@ -1702,7 +1717,7 @@ class Game {
     }
 
     _isDifficultyActiveGrid() {
-        return this.gridSize >= 6;
+        return true;
     }
 
     _updateDifficultySelector() {
@@ -1743,7 +1758,7 @@ class Game {
     }
 
     _getMinWordLength() {
-        if (this._isDifficultyActiveGrid() && this.difficulty === "challenging") return 4;
+        if (this.difficulty === "challenging") return 4;
         return 3;
     }
 
