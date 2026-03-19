@@ -10,5 +10,17 @@
     "title": "Line it up",
     "artist": "Freddy River",
     "file": "Music/Line it up.wav"
+  },
+  {
+    "id": "track03",
+    "title": "Everything Ends At Some Point",
+    "artist": "Freddy River",
+    "file": "Music/everything ends at some point.wav"
+  },
+  {
+    "id": "track04",
+    "title": "Soul Energy",
+    "artist": "Freddy River",
+    "file": "Music/Soul Energy.wav"
   }
 ]

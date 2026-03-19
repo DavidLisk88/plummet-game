@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffd700"/>
+      <stop offset="100%" stop-color="#ffb300"/>
+    </linearGradient>
+    <linearGradient id="darkGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b8860b"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0a0a14"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="400" rx="40" fill="url(#bgGrad)"/>
+
+  <!-- Subtle grid lines -->
+  <g opacity="0.08" stroke="#ffd700" stroke-width="0.5">
+    <line x1="80" y1="100" x2="80" y2="340"/>
+    <line x1="160" y1="100" x2="160" y2="340"/>
+    <line x1="240" y1="100" x2="240" y2="340"/>
+    <line x1="320" y1="100" x2="320" y2="340"/>
+    <line x1="60" y1="180" x2="340" y2="180"/>
+    <line x1="60" y1="260" x2="340" y2="260"/>
+    <line x1="60" y1="340" x2="340" y2="340"/>
+  </g>
+
+  <!-- Falling letter tiles (scattered above) -->
+  <!-- Tile: W - falling, tilted -->
+  <g transform="translate(72, 28) rotate(-8, 32, 32)" opacity="0.5">
+    <rect width="52" height="52" rx="8" fill="url(#gold)" opacity="0.6"/>
+    <text x="26" y="38" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="28" font-weight="900" fill="#1a1a2e">W</text>
+  </g>
+
+  <!-- Tile: O - falling -->
+  <g transform="translate(168, 52) rotate(5, 28, 28)" opacity="0.35">
+    <rect width="48" height="48" rx="7" fill="url(#gold)" opacity="0.5"/>
+    <text x="24" y="35" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="26" font-weight="900" fill="#1a1a2e">O</text>
+  </g>
+
+  <!-- Tile: R - falling, small -->
+  <g transform="translate(284, 16) rotate(12, 24, 24)" opacity="0.3">
+    <rect width="44" height="44" rx="6" fill="url(#gold)" opacity="0.4"/>
+    <text x="22" y="32" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="24" font-weight="900" fill="#1a1a2e">R</text>
+  </g>
+
+  <!-- Tile: D - mid-fall -->
+  <g transform="translate(48, 96) rotate(-3, 28, 28)" opacity="0.45">
+    <rect width="48" height="48" rx="7" fill="url(#gold)" opacity="0.55"/>
+    <text x="24" y="35" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="26" font-weight="900" fill="#1a1a2e">D</text>
+  </g>
+
+  <!-- Motion lines for falling effect -->
+  <g opacity="0.15" stroke="#ffd700" stroke-width="1.5" stroke-linecap="round">
+    <line x1="96" y1="12" x2="96" y2="26"/>
+    <line x1="88" y1="8" x2="88" y2="18"/>
+    <line x1="192" y1="36" x2="192" y2="50"/>
+    <line x1="184" y1="32" x2="184" y2="42"/>
+    <line x1="304" y1="4" x2="304" y2="14"/>
+    <line x1="72" y1="82" x2="72" y2="94"/>
+  </g>
+
+  <!-- Main "PLUMMET" text -->
+  <g filter="url(#softGlow)">
+    <text x="200" y="240" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="58" font-weight="900" fill="url(#gold)" letter-spacing="6">PLUMMET</text>
+  </g>
+
+  <!-- Accent line under PLUMMET -->
+  <rect x="80" y="250" width="240" height="3" rx="1.5" fill="url(#gold)" opacity="0.6"/>
+
+  <!-- Landed tiles at bottom (stacked) -->
+  <g filter="url(#glow)">
+    <!-- Bottom row -->
+    <g transform="translate(100, 305)">
+      <rect width="56" height="56" rx="8" fill="url(#gold)"/>
+      <text x="28" y="40" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="30" font-weight="900" fill="#1a1a2e">P</text>
+    </g>
+    <g transform="translate(162, 305)">
+      <rect width="56" height="56" rx="8" fill="url(#gold)"/>
+      <text x="28" y="40" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="30" font-weight="900" fill="#1a1a2e">L</text>
+    </g>
+    <g transform="translate(224, 305)">
+      <rect width="56" height="56" rx="8" fill="url(#gold)"/>
+      <text x="28" y="40" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="30" font-weight="900" fill="#1a1a2e">A</text>
+    </g>
+    <g transform="translate(286, 305)">
+      <rect width="56" height="56" rx="8" fill="url(#gold)" opacity="0.7"/>
+      <text x="28" y="40" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="30" font-weight="900" fill="#1a1a2e" opacity="0.7">Y</text>
+    </g>
+  </g>
+
+  <!-- Subtle particle sparkles -->
+  <circle cx="140" cy="298" r="2" fill="#ffd700" opacity="0.6"/>
+  <circle cx="260" cy="292" r="1.5" fill="#ffd700" opacity="0.4"/>
+  <circle cx="180" cy="296" r="1" fill="#fff" opacity="0.5"/>
+  <circle cx="310" cy="300" r="1.5" fill="#ffd700" opacity="0.3"/>
+  <circle cx="120" cy="290" r="1" fill="#fff" opacity="0.4"/>
+</svg>

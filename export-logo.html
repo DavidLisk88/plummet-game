@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head><title>Export Logo</title></head>
+<body style="background:#333;display:flex;flex-direction:column;align-items:center;padding:40px;font-family:sans-serif;color:#fff">
+<h2>Click the button to download the logo as PNG</h2>
+<canvas id="c" width="800" height="800" style="border:1px solid #555;max-width:400px"></canvas>
+<br>
+<button id="dl" style="padding:12px 32px;font-size:18px;cursor:pointer;background:#ffd700;border:none;border-radius:8px;font-weight:bold">Download PNG</button>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const img = new Image();
+// Load the SVG as a data URL so fonts render via the browser
+fetch('logo.svg').then(r => r.text()).then(svg => {
+    const blob = new Blob([svg], {type: 'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+        ctx.drawImage(img, 0, 0, 800, 800);
+        URL.revokeObjectURL(url);
+    };
+    img.src = url;
+});
+document.getElementById('dl').onclick = () => {
+    const link = document.createElement('a');
+    link.download = 'plummet-logo.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+};
+</script>
+</body>
+</html>
