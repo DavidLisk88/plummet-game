@@ -1787,6 +1787,7 @@ class Game {
             wordsFoundList:   document.getElementById("words-found-list"),
             gameModeSelector: document.getElementById("game-mode-selector"),
             difficultySelector: document.getElementById("difficulty-selector"),
+            wordPopup: document.getElementById("word-popup"),
         };
 
         this.state = State.MENU;
@@ -1804,6 +1805,7 @@ class Game {
         this.fallInterval = 0.5; // seconds per row
         this.fallTimer = 0;
         this.lastTime = 0;
+        this._autoSaveTimer = 0;
 
         // Clearing / chain state
         this.clearing = false;
@@ -1811,6 +1813,8 @@ class Game {
         this.clearTimer = 0;
         this.totalWordsInChain = 0;
         this.totalLettersInChain = 0;
+        this._chainWords = [];
+        this._wordPopupActive = false;
         this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
         this.pendingClearMode = "";
         this.pendingGravityMoves = [];
@@ -2423,7 +2427,7 @@ class Game {
 
     _saveGameState() {
         const key = this._saveKey();
-        if (!key || !this.grid || this.state === State.GAMEOVER) return;
+        if (!key || !this.grid || this.state === State.GAMEOVER || this.state === State.MENU) return;
         const state = {
             version: 2,
             gridSize: this.gridSize,
@@ -2440,7 +2444,7 @@ class Game {
             bonusBag: this.bonusBag,
             lastAwardedBonusType: this.lastAwardedBonusType,
             nextBonusScore: this.nextBonusScore,
-            block: this.block ? { letter: this.block.letter, col: this.block.col, kind: this.block.kind } : null,
+            block: this.block ? { letter: this.block.letter, col: this.block.col, row: this.block.row, kind: this.block.kind } : null,
         };
         localStorage.setItem(key, JSON.stringify(state));
     }
@@ -2593,8 +2597,9 @@ class Game {
             // Restore falling block or spawn a new one
             if (saved.block) {
                 this.block = new FallingBlock(saved.block.letter, saved.block.col, this.gridSize, saved.block.kind || "letter");
-                this.block.row = -1;
-                this.block.visualRow = -1;
+                const savedRow = typeof saved.block.row === "number" ? saved.block.row : -1;
+                this.block.row = savedRow;
+                this.block.visualRow = savedRow;
             } else {
                 this._spawnBlock();
             }
@@ -2621,6 +2626,9 @@ class Game {
         this.clearPhase = "";
         this.totalWordsInChain = 0;
         this.totalLettersInChain = 0;
+        this._chainWords = [];
+        this._wordPopupActive = false;
+        this.els.wordPopup.innerHTML = "";
         this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
         this.pendingClearMode = "";
         this.renderer.flashCells.clear();
@@ -2646,6 +2654,7 @@ class Game {
         this._updateHighScoreDisplay();
         this._showScreen("play");
         this.state = State.PLAYING;
+        this.fallInterval = this.difficulty === "casual" ? 1.5 : 0.9;
 
         // Start or resume music from the player's start-game action.
         this._autoplayMusicFromUserAction();
@@ -2667,7 +2676,7 @@ class Game {
     }
 
     _moveBlock(dc) {
-        if (!this.block) return;
+        if (!this.block || this._wordPopupActive) return;
         if (this.block.dropAnimating) return;
         const newCol = this.block.col + dc;
         if (newCol < 0 || newCol >= this.gridSize) return;
@@ -2677,7 +2686,7 @@ class Game {
     }
 
     _fastDrop(animate = false) {
-        if (!this.block) return;
+        if (!this.block || this._wordPopupActive) return;
         if (this.block.dropAnimating) return;
         // If the block is hovering over a full column, don't drop
         if (this.block.row < 0 && !this.grid.isEmpty(0, this.block.col)) return;
@@ -2707,6 +2716,7 @@ class Game {
         const landedKind = this.block.kind;
         this.block = null;
         this._updateBonusButton();
+        this._saveGameState();
 
         if (landedKind === "bomb") {
             this.audio.bomb();
@@ -2720,6 +2730,7 @@ class Game {
         // Start word detection chain
         this.totalWordsInChain = 0;
         this.totalLettersInChain = 0;
+        this._chainWords = [];
         this._checkWords(landedRow, landedCol);
     }
 
@@ -2780,6 +2791,14 @@ class Game {
             }
             this.clearing = false;
             this._computeHintCells();
+
+            // Show word popup if any words were found in this chain
+            if (this._chainWords && this._chainWords.length > 0) {
+                const chainWords = this._chainWords;
+                this._chainWords = [];
+                this._showWordPopup(chainWords);
+                return;
+            }
             this._spawnBlock();
             return;
         }
@@ -2797,6 +2816,8 @@ class Game {
             this.totalWordsInChain++;
             this.wordsFound.push({ word, pts });
             this.foundWordsThisGame.add(word);
+            if (!this._chainWords) this._chainWords = [];
+            this._chainWords.push({ word, pts });
         }
         this.totalLettersInChain += result.cells.size;
         this._updateScoreDisplay();
@@ -2880,6 +2901,57 @@ class Game {
             this.state = State.PLAYING;
             this.els.pauseOverlay.classList.remove("active");
         }
+    }
+
+    _showWordPopup(words) {
+        const container = this.els.wordPopup;
+        container.innerHTML = "";
+
+        // Build a row for each word with individually animated letters
+        words.forEach((entry, wordIdx) => {
+            const row = document.createElement("div");
+            row.className = "word-popup-row";
+
+            const letters = entry.word.split("");
+            letters.forEach((ch, i) => {
+                const span = document.createElement("span");
+                span.className = "word-popup-letter";
+                span.textContent = ch;
+                // Random rotation for the entrance scatter effect
+                const randomRot = Math.floor(Math.random() * 120) - 60;
+                span.style.setProperty("--r", randomRot);
+                // Stagger each letter, offset each word row
+                const delay = wordIdx * 0.15 + i * 0.06;
+                span.style.setProperty("--d", delay + "s");
+                row.appendChild(span);
+            });
+
+            // Points label after letters
+            const pts = document.createElement("span");
+            pts.className = "word-popup-pts";
+            pts.textContent = "+" + entry.pts;
+            const ptsDelay = wordIdx * 0.15 + letters.length * 0.06 + 0.1;
+            pts.style.setProperty("--d", ptsDelay + "s");
+            row.appendChild(pts);
+
+            container.appendChild(row);
+        });
+
+        // Pause falling — block stays frozen while popup is visible
+        this._wordPopupActive = true;
+
+        // After 2 seconds, animate out then spawn next block
+        setTimeout(() => {
+            const rows = container.querySelectorAll(".word-popup-row");
+            rows.forEach(r => r.classList.add("pop-out"));
+
+            // Remove after exit animation completes and spawn block
+            setTimeout(() => {
+                container.innerHTML = "";
+                this._wordPopupActive = false;
+                this._spawnBlock();
+            }, 400);
+        }, 2000);
     }
 
 
@@ -3292,6 +3364,13 @@ class Game {
         this.lastTime = timestamp;
 
         if (this.state === State.PLAYING) {
+            // Periodic auto-save every 5 seconds
+            this._autoSaveTimer += dt;
+            if (this._autoSaveTimer >= 5) {
+                this._autoSaveTimer = 0;
+                this._saveGameState();
+            }
+
             if (this.timeLimitSeconds > 0) {
                 this.timeRemainingSeconds = Math.max(0, this.timeRemainingSeconds - dt);
                 this._updateTimerDisplay();
@@ -3308,6 +3387,8 @@ class Game {
 
             if (this.clearing) {
                 this._processClearPhase(dt);
+            } else if (this._wordPopupActive) {
+                // Word popup is showing — freeze, don't fall or spawn
             } else if (this.block) {
                 if (this.block.dropAnimating) {
                     const swipeDropSpeed = 18;
@@ -3391,12 +3472,16 @@ document.addEventListener("touchmove", (e) => {
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
         const g = window._game;
-        if (g && g.state === State.PLAYING) g._saveGameState();
+        if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
+            g._saveGameState();
+        }
     }
 });
 window.addEventListener("beforeunload", () => {
     const g = window._game;
-    if (g && g.state === State.PLAYING) g._saveGameState();
+    if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
+        g._saveGameState();
+    }
 });
 
 // ── Bootstrap ──

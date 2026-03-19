@@ -512,6 +512,100 @@ body.touch-input #canvas-wrapper {
     background: #774400;
 }
 
+/* ---------- Word Popup ---------- */
+#word-popup {
+    position: absolute;
+    top: 60px;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+}
+
+.word-popup-row {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    animation: wordPopupIn 0.5s ease-out forwards;
+}
+
+.word-popup-row.pop-out {
+    animation: wordPopupOut 0.4s ease-in forwards;
+}
+
+.word-popup-letter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 38px;
+    font-size: 1.4rem;
+    font-weight: 900;
+    color: #111;
+    background: linear-gradient(135deg, #ffd700, #ffb300);
+    border-radius: 5px;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5);
+    opacity: 0;
+    transform: translateY(-40px) scale(0.3) rotate(calc(var(--r, 0) * 1deg));
+    animation: letterAssemble 0.35s ease-out forwards;
+    animation-delay: var(--d, 0s);
+}
+
+.word-popup-pts {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #ffd700;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+    opacity: 0;
+    animation: ptsFadeIn 0.3s ease-out forwards;
+    animation-delay: var(--d, 0.4s);
+}
+
+@keyframes letterAssemble {
+    0% {
+        opacity: 0;
+        transform: translateY(-40px) scale(0.3) rotate(calc(var(--r, 0) * 1deg));
+    }
+    60% {
+        opacity: 1;
+        transform: translateY(4px) scale(1.1) rotate(0deg);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1) rotate(0deg);
+    }
+}
+
+@keyframes wordPopupIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+@keyframes wordPopupOut {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.7);
+    }
+}
+
+@keyframes ptsFadeIn {
+    0% { opacity: 0; transform: scale(0.5); }
+    70% { opacity: 1; transform: scale(1.2); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
 /* Hide mobile controls on desktop */
 @media (min-width: 769px) and (hover: hover) {
     #mobile-controls {
