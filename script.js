@@ -5,8 +5,7 @@
 
 // ────────────────────────────────────────
 // DICTIONARY
-// Populated at startup from popular-english-words (node_modules).
-// Words are stored uppercase to match the game's letter tiles.
+// Loaded at startup from words.json (bundled, uppercase, 3+ letters).
 // ────────────────────────────────────────
 let DICTIONARY = new Set();
 // Sets used for hint detection: sequences one letter away from a complete word
@@ -24,57 +23,17 @@ function _buildHintSets() {
     }
 }
 
-const WORD_FILE_SOURCES = [
-    "./node_modules/popular-english-words/words.js",
-    "https://unpkg.com/popular-english-words@1.0.2/words.js",
-];
-
-// ── Fetch word list directly from words.js (as plain text, not ESM import) ──
-
-async function _fetchWordList() {
-    for (const src of WORD_FILE_SOURCES) {
-        try {
-            const resp = await fetch(src);
-            if (!resp.ok) continue;
-            const text = await resp.text();
-            const start = text.indexOf('[');
-            const end   = text.lastIndexOf(']');
-            if (start === -1 || end === -1) continue;
-            const inner = text.substring(start + 1, end);
-            // Extract every quoted string (handles both " and ' delimiters)
-            const words = [];
-            const re = /"([^"]*)"|'([^']*)'/g;
-            let m;
-            while ((m = re.exec(inner)) !== null) words.push(m[1] ?? m[2]);
-            if (words.length === 0) continue;
-            console.log(`Dictionary: loaded ${words.length} raw words from ${src}`);
-            return words;
-        } catch (err) {
-            console.warn(`Dictionary source failed (${src}):`, err);
-        }
-    }
-    throw new Error("Unable to load word list from any source");
-}
-
-function _normalizeDictionaryWords(words) {
-    const prepared = [];
-    for (const raw of words) {
-        if (!raw) continue;
-        const upper = raw.toUpperCase().replace(/[^A-Z]/g, "");
-        if (upper.length < 3) continue;
-        prepared.push(upper);
-    }
-    return prepared;
-}
+// ── Load dictionary from the bundled words.json ──
 
 async function loadDictionary() {
     try {
-        const rawWords = await _fetchWordList();
-        const normalized = _normalizeDictionaryWords(rawWords);
-        DICTIONARY = new Set(normalized);
-        console.log(`Dictionary ready: ${DICTIONARY.size} valid words (3+ letters)`);
+        const resp = await fetch("./words.json");
+        if (!resp.ok) throw new Error(`words.json fetch failed: ${resp.status}`);
+        const words = await resp.json();        // Already uppercase, 3+ letters, deduplicated
+        DICTIONARY = new Set(words);
+        console.log(`Dictionary ready: ${DICTIONARY.size} valid words`);
     } catch (err) {
-        console.error("Failed to load dictionary; no words will be valid.", err);
+        console.error("Failed to load words.json; no words will be valid.", err);
         DICTIONARY = new Set();
     }
     _buildHintSets();
@@ -695,7 +654,7 @@ async function loadTrackList() {
         // fetch failed (file:// or missing) — use fallback
     }
     DEFAULT_TRACKS = [...FALLBACK_TRACKS];
-    console.log(`♪ Using ${DEFAULT_TRACKS.length} fallback track(s). Run 'node scan-music.js' to update.`);
+    console.log(`♪ Using ${DEFAULT_TRACKS.length} fallback track(s).`);
 }
 
 // ────────────────────────────────────────
