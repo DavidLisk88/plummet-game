@@ -306,6 +306,10 @@ class Grid {
             // Check all substrings of length ≥ 3 in both forward AND reverse order.
             // Reverse is needed because letters stack bottom-up (e.g. CAT placed
             // naturally in a column reads T-A-C top-to-bottom, but CAT bottom-to-top).
+            // Keep only the longest valid word per direction so that each direction
+            // contributes independently to scoring.
+            let bestWord = null;
+            let bestCells = null;
             const reversed = [...segment].reverse();
             for (const seq of [segment, reversed]) {
                 for (let start = 0; start < seq.length; start++) {
@@ -313,11 +317,18 @@ class Grid {
                         const sub = seq.slice(start, end);
                         const word = sub.map(s => s.letter).join("");
                         if (DICTIONARY.has(word)) {
-                            foundWords.push(word);
-                            for (const s of sub) cellsToRemove.add(`${s.r},${s.c}`);
+                            if (!bestWord || word.length > bestWord.length) {
+                                bestWord = word;
+                                bestCells = sub;
+                            }
                         }
                     }
                 }
+            }
+
+            if (bestWord) {
+                foundWords.push(bestWord);
+                for (const s of bestCells) cellsToRemove.add(`${s.r},${s.c}`);
             }
         }
 
@@ -1848,6 +1859,7 @@ class Game {
             lastAwardedBonusType: this.lastAwardedBonusType,
             nextBonusScore: this.nextBonusScore,
             block: this.block ? { letter: this.block.letter, col: this.block.col, row: this.block.row, kind: this.block.kind } : null,
+            fallInterval: this.fallInterval,
         };
         localStorage.setItem(key, JSON.stringify(state));
     }
@@ -1970,6 +1982,7 @@ class Game {
         this.nextBonusScore = saved.nextBonusScore || BONUS_UNLOCK_SCORE_INTERVAL;
         this.letterChoiceActive = false;
         this.letterChoiceResumeState = null;
+        this.fallInterval = saved.fallInterval || (this.difficulty === "casual" ? 1.5 : 0.9);
         this.clearing = false;
         this.clearPhase = "";
         this.totalWordsInChain = 0;
@@ -2206,21 +2219,21 @@ class Game {
             return;
         }
 
-        // Only score the longest word; still clear all cells
+        // Score each word (one per direction/sequence)
         const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
         if (newWords.length > 0) {
-            // Pick the longest (ties broken by first found)
-            const best = newWords.reduce((a, b) => b.length > a.length ? b : a);
             const prevScore = this.score;
-            const pts = best.length * 10 * best.length;
-            this.score += pts;
+            for (const word of newWords) {
+                const pts = word.length * 10 * word.length;
+                this.score += pts;
+                this.totalWordsInChain++;
+                this.wordsFound.push({ word, pts });
+                if (!this._chainWords) this._chainWords = [];
+                this._chainWords.push({ word, pts });
+            }
             this._checkBonusUnlock(prevScore, this.score);
-            this.totalWordsInChain++;
-            this.wordsFound.push({ word: best, pts });
-            if (!this._chainWords) this._chainWords = [];
-            this._chainWords.push({ word: best, pts });
-            // Mark all found words as seen so substrings don't re-score later
-            for (const w of newWords) this.foundWordsThisGame.add(w);
+            // Mark all found words as seen so they don't re-score later
+            for (const w of result.words) this.foundWordsThisGame.add(w);
         }
         this.totalLettersInChain += result.cells.size;
         this._updateScoreDisplay();
