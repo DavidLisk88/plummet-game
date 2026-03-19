@@ -22,5 +22,47 @@
     "title": "Soul Energy",
     "artist": "Freddy River",
     "file": "Music/Soul Energy.wav"
+  },
+  {
+    "id": "track05",
+    "title": "It Never Stops, It Never Ends",
+    "artist": "Freddy River",
+    "file": "Music/It Never Stops, It Never Ends.wav"
+  },
+  {
+    "id": "track06",
+    "title": "Don't talk to me",
+    "artist": "Freddy River",
+    "file": "Music/Don't talk to me.wav"
+  },
+  {
+    "id": "track07",
+    "title": "Monk Fruit Candy",
+    "artist": "Freddy River",
+    "file": "Music/Monk Fruit Candy.wav"
+  },
+  {
+    "id": "track08",
+    "title": "Night Fall",
+    "artist": "Freddy River",
+    "file": "Music/Night Fall.wav"
+  },
+  {
+    "id": "track09",
+    "title": "Cinnamon Maple",
+    "artist": "Freddy River",
+    "file": "Music/Cinnamon Maple.wav"
+  },
+  {
+    "id": "track10",
+    "title": "City Life",
+    "artist": "Freddy River",
+    "file": "Music/City Life.wav"
+  },
+  {
+    "id": "track11",
+    "title": "Night Life",
+    "artist": "Freddy River",
+    "file": "Music/Night Life.wav"
   }
 ]

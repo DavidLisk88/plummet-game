@@ -787,14 +787,24 @@ class MusicManager {
         this.onStateChange = null;  // () => void
         this.onTimeUpdate = null;   // (currentTime, duration) => void
 
+        this._lastSavedTime = 0; // throttle position saves
         this.audio.addEventListener("timeupdate", () => {
             if (this.onTimeUpdate) {
                 this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
+            }
+            // Save playback position every 3 seconds
+            const now = Date.now();
+            if (now - this._lastSavedTime > 3000) {
+                this._lastSavedTime = now;
+                this._saveMusicState();
             }
         });
 
         // Build initial queue
         this._buildQueue();
+
+        // Restore previous session's music state
+        this._restoreMusicState();
     }
 
     _buildQueue() {
@@ -836,6 +846,7 @@ class MusicManager {
         this.audio.muted = !!this.muted;
         this.audio.play().catch(() => {});
         this.playing = true;
+        this._saveMusicState();
         this._notify();
     }
 
@@ -854,6 +865,7 @@ class MusicManager {
     pause() {
         this.audio.pause();
         this.playing = false;
+        this._saveMusicState();
         localStorage.setItem("wf_music_paused", "1");
         this._notify();
     }
@@ -892,6 +904,51 @@ class MusicManager {
 
     getCurrentTrack() {
         return this.currentTrackId ? this.plMgr.getTrack(this.currentTrackId) : null;
+    }
+
+    _saveMusicState() {
+        if (!this.currentTrackId) return;
+        localStorage.setItem("wf_music_state", JSON.stringify({
+            trackId: this.currentTrackId,
+            position: this.audio.currentTime || 0,
+            playlist: this.activePlaylist,
+            queueIndex: this.queueIndex,
+        }));
+    }
+
+    _restoreMusicState() {
+        try {
+            const data = JSON.parse(localStorage.getItem("wf_music_state") || "null");
+            if (!data || !data.trackId) return;
+            const track = this.plMgr.getTrack(data.trackId);
+            if (!track) return;
+
+            // Restore playlist context
+            if (data.playlist) {
+                this.activePlaylist = data.playlist;
+                this._buildQueue();
+            }
+
+            // Set up track without auto-playing
+            this.currentTrackId = data.trackId;
+            const idx = this.queue.indexOf(data.trackId);
+            this.queueIndex = idx >= 0 ? idx : (data.queueIndex || 0);
+            this.audio.src = track.file;
+            this.audio.muted = !!this.muted;
+
+            // Seek to saved position once audio is ready
+            if (data.position > 0) {
+                const seekOnce = () => {
+                    this.audio.currentTime = data.position;
+                    this.audio.removeEventListener("canplay", seekOnce);
+                };
+                this.audio.addEventListener("canplay", seekOnce);
+            }
+
+            // Don't auto-play here; _autoplayMusicFromUserAction will handle that
+            this.playing = false;
+            this._notify();
+        } catch {}
     }
 
     _notify() {
