@@ -1014,6 +1014,7 @@ class ProfileManager {
             highScore: 0,
             gamesPlayed: 0,
             totalWords: 0,
+            uniqueWordsFound: [],
             gridSize: 5,
             difficulty: "casual",
             gameMode: GAME_MODES.SANDBOX,
@@ -1043,11 +1044,15 @@ class ProfileManager {
     }
 
     // Update stats for the active profile after a game ends
-    recordGame(score, wordsCount) {
+    recordGame(score, wordsFound) {
         const p = this.getActive();
         if (!p) return;
         p.gamesPlayed++;
-        p.totalWords += wordsCount;
+        p.totalWords += wordsFound.length;
+        if (!Array.isArray(p.uniqueWordsFound)) p.uniqueWordsFound = [];
+        const uniqueSet = new Set(p.uniqueWordsFound);
+        for (const { word } of wordsFound) uniqueSet.add(word);
+        p.uniqueWordsFound = [...uniqueSet];
         if (score > p.highScore) p.highScore = score;
         this._save();
     }
@@ -2393,7 +2398,7 @@ class Game {
         this._clearGameState();
 
         // Record stats to profile
-        const wordsCount = (this.wordsFound || []).length;
+        const wordsCount = (this.wordsFound || []);
         this.profileMgr.recordGame(this.score, wordsCount);
 
         // Update high score from profile
@@ -2508,7 +2513,7 @@ class Game {
         if (!profile) return;
         this.els.menuProfileName.textContent = `👤 ${profile.username}`;
         this.els.menuGamesPlayed.textContent = profile.gamesPlayed;
-        this.els.menuTotalWords.textContent = profile.totalWords;
+        this.els.menuTotalWords.textContent = Array.isArray(profile.uniqueWordsFound) ? profile.uniqueWordsFound.length : profile.totalWords;
     }
 
     // ── Words Found rendering ──
