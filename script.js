@@ -2191,21 +2191,21 @@ class Game {
             return;
         }
 
-        // Score each word
-        for (const word of result.words) {
-            if (this.foundWordsThisGame.has(word)) {
-                continue;
-            }
-
+        // Only score the longest word; still clear all cells
+        const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
+        if (newWords.length > 0) {
+            // Pick the longest (ties broken by first found)
+            const best = newWords.reduce((a, b) => b.length > a.length ? b : a);
             const prevScore = this.score;
-            const pts = word.length * 10 * word.length;
+            const pts = best.length * 10 * best.length;
             this.score += pts;
             this._checkBonusUnlock(prevScore, this.score);
             this.totalWordsInChain++;
-            this.wordsFound.push({ word, pts });
-            this.foundWordsThisGame.add(word);
+            this.wordsFound.push({ word: best, pts });
             if (!this._chainWords) this._chainWords = [];
-            this._chainWords.push({ word, pts });
+            this._chainWords.push({ word: best, pts });
+            // Mark all found words as seen so substrings don't re-score later
+            for (const w of newWords) this.foundWordsThisGame.add(w);
         }
         this.totalLettersInChain += result.cells.size;
         this._updateScoreDisplay();

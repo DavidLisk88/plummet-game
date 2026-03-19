@@ -64,5 +64,11 @@
     "title": "Night Life",
     "artist": "Freddy River",
     "file": "Music/Night Life.wav"
+  },
+  {
+    "id": "track12",
+    "title": "Against the world",
+    "artist": "Freddy River",
+    "file": "Music/Against the world.wav"
   }
 ]
