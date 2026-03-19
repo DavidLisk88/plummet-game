@@ -1168,6 +1168,7 @@ class Game {
             newPlaylistTab: document.getElementById("new-playlist-tab"),
             trackList:      document.getElementById("track-list"),
             playlistActions: document.getElementById("playlist-actions"),
+            editSongsBtn:      document.getElementById("edit-songs-btn"),
             renamePlaylistBtn: document.getElementById("rename-playlist-btn"),
             deletePlaylistBtn: document.getElementById("delete-playlist-btn"),
             playlistModalTitle: document.getElementById("playlist-modal-title"),
@@ -1535,6 +1536,10 @@ class Game {
         });
 
         // Playlist actions
+        this.els.editSongsBtn.addEventListener("click", () => {
+            if (this.activePlaylistTab === "__default") return;
+            this._openPlaylistModal(this.activePlaylistTab);
+        });
         this.els.renamePlaylistBtn.addEventListener("click", () => {
             if (this.activePlaylistTab === "__default") return;
             const newName = prompt("Rename playlist:", this.activePlaylistTab);
