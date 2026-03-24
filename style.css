@@ -778,6 +778,8 @@ body.touch-input #mobile-controls {
     align-items: center;
     justify-content: center;
     padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .overlay.active {
@@ -793,7 +795,7 @@ body.touch-input #mobile-controls {
     background: #222;
     border-radius: 16px;
     border: 2px solid #555;
-    max-width: calc(100vw - 32px);
+    max-width: 100%;
     max-height: 100%;
     overflow-y: auto;
     box-sizing: border-box;
@@ -802,7 +804,7 @@ body.touch-input #mobile-controls {
 .letter-choice-content {
     position: relative;
     width: min(88vw, 420px);
-    max-width: calc(100vw - 32px);
+    max-width: 100%;
     box-sizing: border-box;
 }
 
@@ -846,7 +848,7 @@ body.touch-input #mobile-controls {
 
 .time-select-content {
     width: min(88vw, 420px);
-    max-width: calc(100vw - 32px);
+    max-width: 100%;
     box-sizing: border-box;
 }
 
@@ -1435,7 +1437,7 @@ body.touch-input #mobile-controls {
 /* ---------- Playlist Modal ---------- */
 .modal-wide {
     width: min(90vw, 440px);
-    max-width: calc(100vw - 32px);
+    max-width: 100%;
     max-height: 80vh;
     max-height: min(80vh, calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom)));
 }
@@ -1584,6 +1586,20 @@ body.touch-input #mobile-controls {
 
     .overlay-content {
         padding: 24px 18px;
+    }
+
+    .letter-choice-content,
+    .modal-wide {
+        width: min(92vw, 360px);
+    }
+
+    #letter-choice-grid {
+        gap: 8px;
+    }
+
+    .letter-choice-preview {
+        min-height: 90px;
+        font-size: 2.8rem;
     }
 
     #score-bar {
@@ -1851,6 +1867,16 @@ body.touch-input #mobile-controls {
         gap: 10px;
     }
 
+    .letter-choice-content,
+    .modal-wide {
+        width: min(94vw, 320px);
+    }
+
+    #letter-choice-grid {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+    }
+
     .letter-choice-preview {
         min-height: 86px;
         font-size: 2.6rem;
@@ -2099,44 +2125,36 @@ body.touch-input #mobile-controls {
 
 #tutorial-slide-view {
     flex: 1;
+    overflow: hidden;
+    min-height: 0;
+    position: relative;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+}
+
+#tutorial-slide-strip {
+    display: flex;
+    height: 100%;
+    transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    will-change: transform;
+}
+
+#tutorial-slide-strip.swiping {
+    transition: none;
+}
+
+.tutorial-slide-panel {
+    flex: 0 0 100%;
+    width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 0 16px;
     overflow-y: auto;
-    overflow-x: hidden;
-    min-height: 0;
-    position: relative;
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-    will-change: transform;
-    transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.35s ease;
+    box-sizing: border-box;
 }
 
-#tutorial-slide-view.slide-left {
-    animation: tutSlideLeft 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-}
-
-#tutorial-slide-view.slide-right {
-    animation: tutSlideRight 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-}
-
-#tutorial-slide-view.swiping {
-    transition: none;
-    animation: none;
-}
-
-@keyframes tutSlideLeft {
-    from { transform: translateX(100%); opacity: 0.4; }
-    to { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes tutSlideRight {
-    from { transform: translateX(-100%); opacity: 0.4; }
-    to { transform: translateX(0); opacity: 1; }
-}
-
-#tutorial-canvas {
+.tutorial-slide-panel canvas {
     width: 100%;
     max-width: 360px;
     aspect-ratio: 1;
@@ -2146,7 +2164,7 @@ body.touch-input #mobile-controls {
     flex-shrink: 0;
 }
 
-#tutorial-image {
+.tutorial-slide-panel img {
     width: 100%;
     max-width: 360px;
     border-radius: 12px;
@@ -2158,18 +2176,14 @@ body.touch-input #mobile-controls {
     pointer-events: none;
 }
 
-#tutorial-image.hidden {
-    display: none;
-}
-
-#tutorial-slide-title {
+.tutorial-slide-panel h3 {
     color: #ffd700;
     font-size: 1.2rem;
     margin: 14px 0 6px;
     text-align: center;
 }
 
-#tutorial-slide-desc {
+.tutorial-slide-panel p {
     color: #ccc;
     font-size: 0.92rem;
     text-align: center;

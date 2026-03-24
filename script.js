@@ -1578,10 +1578,8 @@ class Game {
             tutorialSlides: document.getElementById("tutorial-slides"),
             tutorialBackBtn: document.getElementById("tutorial-back-btn"),
             tutorialSlidesCloseBtn: document.getElementById("tutorial-slides-close-btn"),
-            tutorialCanvas: document.getElementById("tutorial-canvas"),
-            tutorialSlideTitle: document.getElementById("tutorial-slide-title"),
-            tutorialSlideDesc: document.getElementById("tutorial-slide-desc"),
-            tutorialImage: document.getElementById("tutorial-image"),
+            tutorialSlideView: document.getElementById("tutorial-slide-view"),
+            tutorialSlideStrip: document.getElementById("tutorial-slide-strip"),
             tutorialDots: document.getElementById("tutorial-dots"),
             tutorialCounter: document.getElementById("tutorial-counter"),
             tutorialPrevBtn: document.getElementById("tutorial-prev-btn"),
@@ -1923,12 +1921,7 @@ class Game {
         const minLen = this._getMinWordLength();
         const result = this.grid.findAllWords(minLen);
         if (result.words.length === 0) return;
-        const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
-        if (newWords.length === 0) return;
-        for (const word of newWords) {
-            this.foundWordsThisGame.add(word);
-        }
-        this._addValidatedWords(result, newWords);
+        this._addValidatedWords(result, result.words);
     }
 
     _computeHintCells() {
@@ -2321,7 +2314,7 @@ class Game {
     }
 
     _getMinWordLength() {
-        if (this.difficulty === "challenging") return 4;
+        if (this.difficulty === "hard") return 4;
         if (this.gridSize <= 4) return 2;
         return 3;
     }
@@ -2787,6 +2780,7 @@ class Game {
 
         this.gridSize = saved.gridSize;
         this.difficulty = saved.difficulty || this.profileMgr.getActive()?.difficulty || "casual";
+        if (this.difficulty === "challenging") this.difficulty = "hard";
         this.gameMode = saved.gameMode || this.profileMgr.getActive()?.gameMode || GAME_MODES.SANDBOX;
         this.grid = new Grid(this.gridSize, this.gridSize);
         this.grid.cells = saved.cells;
@@ -2855,6 +2849,7 @@ class Game {
 
         this.gridSize = saved.gridSize;
         this.difficulty = saved.difficulty || "casual";
+        if (this.difficulty === "challenging") this.difficulty = "hard";
         this.grid = new Grid(this.gridSize, this.gridSize);
         this.grid.cells = saved.cells;
         this.score = saved.score;
@@ -3152,12 +3147,8 @@ class Game {
 
         // ── Tap-to-claim mode ──
         // Highlight validated words green and let the player tap to claim them.
-        const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
-        if (newWords.length > 0) {
-            for (const word of newWords) {
-                this.foundWordsThisGame.add(word);
-            }
-            this._addValidatedWords(result, newWords);
+        if (result.words.length > 0) {
+            this._addValidatedWords(result, result.words);
         }
         // Don't enter clearing state — spawn next block
         this.clearing = false;
@@ -3387,6 +3378,7 @@ class Game {
         if (!profile) return;
         this.gridSize = profile.gridSize || 5;
         this.difficulty = profile.difficulty || "casual";
+        if (this.difficulty === "challenging") this.difficulty = "hard";
         this.gameMode = profile.gameMode || GAME_MODES.SANDBOX;
         this.highScore = profile.highScore || 0;
         this._highlightSizeButton();
@@ -3902,7 +3894,7 @@ class Game {
                     },
                     {
                         title: 'Pause & Resume',
-                        desc: 'Need a break? Tap the ⏸ pause button in the top-left corner of the screen during gameplay to freeze the action. The game pauses completely — no blocks fall and the timer stops. From the pause menu you can also view your found words list or toggle music. Tap Resume to pick up right where you left off. On desktop, press ESCAPE or P to toggle pause.',
+                        desc: 'Need a break? Tap the ⏸ pause button on the right side of the screen during gameplay to freeze the action. The game pauses completely — no blocks fall and the timer stops. From the pause menu you can also view your found words list or toggle music. Tap Resume to pick up right where you left off. On desktop, press ESCAPE or P to toggle pause.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -3910,8 +3902,8 @@ class Game {
                                             [3,1,'R'],[3,2,'I'],[3,3,'D']];
                             for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
                             const cyc = t % 4;
-                            // Pause button position - top-left area
-                            const btnX = ox + cs * 0.5, btnY = oy - cs * 0.6;
+                            // Pause button position - right side, vertically centered
+                            const btnX = ox + cs * gs + cs * 0.5, btnY = oy + cs * gs * 0.5;
                             const btnR = cs * 0.35;
                             if (cyc < 1.5) {
                                 // Show the pause icon pulsing
@@ -4217,7 +4209,7 @@ class Game {
                     },
                     {
                         title: 'Grid Sizes & Difficulty',
-                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. Two difficulty levels: CASUAL accepts all words with 3+ letters, while CHALLENGING requires 4+ letters — short words like "AT" or "IN" won\'t count, forcing you to think bigger!',
+                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. Two difficulty levels: CASUAL accepts all words with 3+ letters, while HARD requires 4+ letters — short words like "AT" or "IN" won\'t count, forcing you to think bigger!',
                         draw(ctx, w, h, t) {
                             const sizes = [3, 5, 8];
                             const si = Math.floor(t * 0.4) % sizes.length;
@@ -4230,7 +4222,7 @@ class Game {
                             const diffY = oy + gs * cs + 25;
                             gT(ctx, w * 0.3, diffY, 'Casual', '#4caf50', 14);
                             gT(ctx, w * 0.3, diffY + 20, '3+ letters', '#888', 11);
-                            gT(ctx, w * 0.7, diffY, 'Challenging', '#f44336', 14);
+                            gT(ctx, w * 0.7, diffY, 'Hard', '#f44336', 14);
                             gT(ctx, w * 0.7, diffY + 20, '4+ letters', '#888', 11);
                         }
                     },
@@ -4708,9 +4700,44 @@ class Game {
             dots.appendChild(dot);
         }
 
+        // Build all slide panels in the strip
+        const strip = this.els.tutorialSlideStrip;
+        strip.innerHTML = '';
+        strip.style.transform = 'translateX(0)';
+        this._tutorialCanvases = [];
+        for (let i = 0; i < this._tutorialTotal; i++) {
+            const slide = this._tutorialSlides[i];
+            const panel = document.createElement('div');
+            panel.className = 'tutorial-slide-panel';
+
+            if (slide.img) {
+                const img = document.createElement('img');
+                img.src = slide.img;
+                img.alt = slide.title;
+                panel.appendChild(img);
+                this._tutorialCanvases.push(null);
+            } else {
+                const canvas = document.createElement('canvas');
+                canvas.width = 360;
+                canvas.height = 360;
+                panel.appendChild(canvas);
+                this._tutorialCanvases.push(canvas);
+            }
+
+            const title = document.createElement('h3');
+            title.textContent = slide.title;
+            panel.appendChild(title);
+
+            const desc = document.createElement('p');
+            desc.textContent = slide.desc;
+            panel.appendChild(desc);
+
+            strip.appendChild(panel);
+        }
+
         this.els.tutorialMenu.style.display = 'none';
         this.els.tutorialSlides.classList.remove('hidden');
-        this._updateTutorialSlide();
+        this._updateTutorialNav();
         this._startTutorialAnim();
         this._bindTutorialSwipe();
     }
@@ -4729,65 +4756,75 @@ class Game {
     }
 
     _goToTutorialSlide(index) {
-        const oldIndex = this._tutorialIndex;
         this._tutorialIndex = Math.max(0, Math.min(index, this._tutorialTotal - 1));
-        const dir = this._tutorialIndex > oldIndex ? 'left' : 'right';
-        this._animateTutorialSlide(dir);
+        const strip = this.els.tutorialSlideStrip;
+        strip.classList.remove('swiping');
+        strip.style.transform = `translateX(-${this._tutorialIndex * 100}%)`;
+        this._updateTutorialNav();
     }
 
-    _animateTutorialSlide(dir) {
-        const view = document.getElementById('tutorial-slide-view');
-        view.classList.remove('slide-left', 'slide-right');
-        // Force reflow to restart animation
-        void view.offsetWidth;
-        view.classList.add(dir === 'left' ? 'slide-left' : 'slide-right');
-        this._updateTutorialSlide();
-    }
-
-    _updateTutorialSlide() {
-        const slide = this._tutorialSlides[this._tutorialIndex];
-        this.els.tutorialSlideTitle.textContent = slide.title;
-        this.els.tutorialSlideDesc.textContent = slide.desc;
+    _updateTutorialNav() {
         this.els.tutorialCounter.textContent = `${this._tutorialIndex + 1} / ${this._tutorialTotal}`;
         const dots = this.els.tutorialDots.querySelectorAll('.tutorial-dot');
         dots.forEach((d, i) => d.classList.toggle('active', i === this._tutorialIndex));
         this.els.tutorialPrevBtn.disabled = this._tutorialIndex === 0;
         this.els.tutorialNextBtn.disabled = this._tutorialIndex === this._tutorialTotal - 1;
-
-        // Toggle canvas vs image
-        if (slide.img) {
-            this.els.tutorialCanvas.style.display = 'none';
-            this.els.tutorialImage.classList.remove('hidden');
-            this.els.tutorialImage.src = slide.img;
-            this._stopTutorialAnim();
-        } else {
-            this.els.tutorialImage.classList.add('hidden');
-            this.els.tutorialCanvas.style.display = '';
-            this._startTutorialAnim();
-        }
     }
 
     _startTutorialAnim() {
         this._stopTutorialAnim();
         this._tutorialAnimStart = performance.now();
-        const canvas = this.els.tutorialCanvas;
-        const ctx = canvas.getContext('2d');
+
+        // Set up all canvases
+        this._tutorialCanvasContexts = [];
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const rect = canvas.getBoundingClientRect();
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        const w = rect.width, h = rect.height;
+        for (let i = 0; i < this._tutorialTotal; i++) {
+            const canvas = this._tutorialCanvases[i];
+            if (!canvas) { this._tutorialCanvasContexts.push(null); continue; }
+            const ctx = canvas.getContext('2d');
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width > 0) {
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                this._tutorialCanvasContexts.push({ ctx, w: rect.width, h: rect.height });
+            } else {
+                this._tutorialCanvasContexts.push(null);
+            }
+        }
 
         const tick = () => {
             if (!this._tutorialAnimId) return;
             const t = (performance.now() - this._tutorialAnimStart) / 1000;
-            ctx.clearRect(0, 0, w, h);
-            const slide = this._tutorialSlides[this._tutorialIndex];
-            if (slide && slide.draw) slide.draw(ctx, w, h, t);
+            // Only draw the current slide's canvas (and neighbors for mid-swipe)
+            for (let i = Math.max(0, this._tutorialIndex - 1); i <= Math.min(this._tutorialTotal - 1, this._tutorialIndex + 1); i++) {
+                const info = this._tutorialCanvasContexts[i];
+                const slide = this._tutorialSlides[i];
+                if (info && slide && slide.draw) {
+                    info.ctx.clearRect(0, 0, info.w, info.h);
+                    slide.draw(info.ctx, info.w, info.h, t);
+                }
+            }
             this._tutorialAnimId = requestAnimationFrame(tick);
         };
-        this._tutorialAnimId = requestAnimationFrame(tick);
+        // Delay first frame slightly so canvas getBoundingClientRect has valid dimensions
+        requestAnimationFrame(() => {
+            // Re-measure any canvases that had 0 dimensions
+            for (let i = 0; i < this._tutorialTotal; i++) {
+                if (this._tutorialCanvasContexts[i]) continue;
+                const canvas = this._tutorialCanvases[i];
+                if (!canvas) continue;
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.getBoundingClientRect();
+                if (rect.width > 0) {
+                    canvas.width = rect.width * dpr;
+                    canvas.height = rect.height * dpr;
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                    this._tutorialCanvasContexts[i] = { ctx, w: rect.width, h: rect.height };
+                }
+            }
+            this._tutorialAnimId = requestAnimationFrame(tick);
+        });
     }
 
     _stopTutorialAnim() {
@@ -4799,15 +4836,14 @@ class Game {
 
     _bindTutorialSwipe() {
         const view = this.els.tutorialSlides;
-        const slideView = document.getElementById('tutorial-slide-view');
-        let startX = 0, startY = 0, dragging = false, moved = false, currentDx = 0;
+        const strip = this.els.tutorialSlideStrip;
+        let startX = 0, startY = 0, dragging = false, moved = false;
 
         this._tutorialPointerDown = (e) => {
-            dragging = true; moved = false; currentDx = 0;
+            dragging = true; moved = false;
             startX = e.touches ? e.touches[0].clientX : e.clientX;
             startY = e.touches ? e.touches[0].clientY : e.clientY;
-            slideView.classList.remove('slide-left', 'slide-right');
-            slideView.classList.add('swiping');
+            strip.classList.add('swiping');
         };
 
         this._tutorialPointerMove = (e) => {
@@ -4817,53 +4853,40 @@ class Game {
             const dx = x - startX, dy = y - startY;
             if (!moved && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
                 dragging = false;
-                slideView.classList.remove('swiping');
-                slideView.style.transform = '';
-                slideView.style.opacity = '';
+                strip.classList.remove('swiping');
+                strip.style.transform = `translateX(-${this._tutorialIndex * 100}%)`;
                 return;
             }
             if (Math.abs(dx) > 10) moved = true;
             if (moved && e.cancelable) e.preventDefault();
             if (moved) {
-                // Dampen the drag if at bounds (first/last slide)
+                const viewW = this.els.tutorialSlideView.offsetWidth || 300;
+                const baseOffset = -this._tutorialIndex * viewW;
                 const atStart = this._tutorialIndex === 0 && dx > 0;
                 const atEnd = this._tutorialIndex === this._tutorialTotal - 1 && dx < 0;
                 const dampened = (atStart || atEnd) ? dx * 0.25 : dx;
-                currentDx = dampened;
-                const viewW = slideView.offsetWidth || 300;
-                const progress = Math.abs(dampened) / viewW;
-                const opacity = 1 - progress * 0.5;
-                slideView.style.transform = `translateX(${dampened}px)`;
-                slideView.style.opacity = Math.max(0.4, opacity);
+                strip.style.transform = `translateX(${baseOffset + dampened}px)`;
             }
         };
 
         this._tutorialPointerUp = (e) => {
             if (!dragging) return;
             dragging = false;
-            slideView.classList.remove('swiping');
+            strip.classList.remove('swiping');
             const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
             const dx = x - startX;
-            const viewW = slideView.offsetWidth || 300;
-            const threshold = viewW * 0.15; // 15% of width to commit
+            const viewW = this.els.tutorialSlideView.offsetWidth || 300;
+            const threshold = viewW * 0.15;
 
             if (Math.abs(dx) > threshold) {
-                const oldIndex = this._tutorialIndex;
                 if (dx < 0 && this._tutorialIndex < this._tutorialTotal - 1) {
                     this._tutorialIndex++;
                 } else if (dx > 0 && this._tutorialIndex > 0) {
                     this._tutorialIndex--;
                 }
-                if (this._tutorialIndex !== oldIndex) {
-                    slideView.style.transform = '';
-                    slideView.style.opacity = '';
-                    this._animateTutorialSlide(dx < 0 ? 'left' : 'right');
-                    return;
-                }
             }
-            // Snap back with transition
-            slideView.style.transform = '';
-            slideView.style.opacity = '';
+            strip.style.transform = `translateX(-${this._tutorialIndex * 100}%)`;
+            this._updateTutorialNav();
         };
 
         view.addEventListener('touchstart', this._tutorialPointerDown, { passive: true });
@@ -5076,9 +5099,30 @@ class Game {
         const newWordSet = new Set(words);
         for (const wc of result.wordCellMap) {
             if (!newWordSet.has(wc.word)) continue;
-            if (this._validatedWordGroups.some(g => g.word === wc.word)) continue;
+            const newCells = new Set(wc.cells);
+
+            // Skip if these exact cells are already validated
+            const alreadyValidated = this._validatedWordGroups.some(g => {
+                if (g.cells.size !== newCells.size) return false;
+                for (const k of g.cells) if (!newCells.has(k)) return false;
+                return true;
+            });
+            if (alreadyValidated) continue;
+
+            // If a longer existing word already covers all these cells, skip the shorter word
+            const coveredByLonger = this._validatedWordGroups.some(g =>
+                g.word.length >= wc.word.length && [...newCells].every(k => g.cells.has(k))
+            );
+            if (coveredByLonger) continue;
+
+            // Remove any existing shorter words whose cells are entirely within this new longer word
+            this._validatedWordGroups = this._validatedWordGroups.filter(g => {
+                if (g.word.length >= wc.word.length) return true;
+                return ![...g.cells].every(k => newCells.has(k));
+            });
+
             const pts = wc.word.length * 10 * wc.word.length;
-            this._validatedWordGroups.push({ word: wc.word, cells: new Set(wc.cells), pts });
+            this._validatedWordGroups.push({ word: wc.word, cells: newCells, pts });
         }
         this._rebuildValidatedCells();
     }

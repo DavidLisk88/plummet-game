@@ -77,7 +77,7 @@
                 <label>Difficulty:</label>
                 <div class="difficulty-buttons">
                     <button class="difficulty-btn selected" data-difficulty="casual">Casual</button>
-                    <button class="difficulty-btn" data-difficulty="challenging">Challenging</button>
+                    <button class="difficulty-btn" data-difficulty="hard">Hard</button>
                 </div>
             </div>
             <button id="start-btn" class="primary-btn">START</button>
@@ -320,10 +320,7 @@
                 <button id="tutorial-slides-close-btn" class="icon-btn">✕</button>
             </div>
             <div id="tutorial-slide-view">
-                <canvas id="tutorial-canvas" width="360" height="360"></canvas>
-                <img id="tutorial-image" class="hidden" alt="Tutorial">
-                <h3 id="tutorial-slide-title"></h3>
-                <p id="tutorial-slide-desc"></p>
+                <div id="tutorial-slide-strip"></div>
             </div>
             <div id="tutorial-nav-arrows">
                 <button id="tutorial-prev-btn" class="tutorial-nav-btn">‹</button>

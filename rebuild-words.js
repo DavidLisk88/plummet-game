@@ -362,7 +362,7 @@ thought through tobacco tobacco tonight totally tourism towards trading traffic 
 transit trigger triumph trouble turning typical undergo unified uniform unknown unlikely
 upgrade venture version veteran veteran village violent virtual visible wanting warrant
 weather website weekend welcome welfare western whisper willing witness working workers
-worried worship wrapper writing younger`.split(/\s+/).filter(w => w.length >= 3);
+worried worship wrapper writing younger acne cod doc cot rep rite`.split(/\s+/).filter(w => w.length >= 3);
 
 const VERBS = `
 ace act add age aid aim air ask ate ban bar bat bay bed bet bid bit boo bow bug bum
@@ -451,7 +451,7 @@ persuade pronounce realize receive recover reform reflect regulate remove requir
 respect restore restore retain reverse`.split(/\s+/).filter(w => w.length >= 3);
 
 const ADJECTIVES = `
-bad big dry dull due far fat few fit fun gay hot ill key mad new odd old raw red sad
+bad big dry done dull due far fat few fit fun gay hot ill key mad new odd old raw red sad
 shy wet fit
 able aged airy arid avid bald bare best blue bold both busy calm cold cool damp dark
 dead deaf dear deep dire drab drug dual dull dumb each easy edgy epic even evil faint
