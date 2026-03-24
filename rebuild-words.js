@@ -1,30 +1,11 @@
 // rebuild-words.js
-// Rebuilds node_modules/popular-english-words/words.js with a comprehensive,
-// properly-inflected English word list. Run once, then run build-words.js.
+// Builds words.json directly from curated word lists with proper inflections.
+// Run once after editing word lists, then push.
 //
 // Usage: node rebuild-words.js
 
 const fs = require('fs');
 const path = require('path');
-
-// ─── Fake suffixes that were auto-generated previously ──────────────
-const FAKE_SUFFIXES = ['lessly', 'iness', 'wise', 'ness', 'like', 'ingly'];
-
-function isFakeSuffix(word, baseWords) {
-    for (const suf of FAKE_SUFFIXES) {
-        if (word.endsWith(suf)) {
-            const stem = word.slice(0, -suf.length);
-            if (stem.length >= 3 && baseWords.has(stem)) return true;
-        }
-    }
-    // "foely", "pewly" etc — -ly on words that don't naturally take -ly
-    if (word.endsWith('ly') && word.length > 4) {
-        const stem = word.slice(0, -2);
-        // Only flag as fake if stem is a very short base noun/verb that doesn't naturally take -ly
-        if (stem.length <= 4 && baseWords.has(stem) && !ADJECTIVES_SET.has(stem)) return true;
-    }
-    return false;
-}
 
 // ─── English morphology helpers ─────────────────────────────────────
 
@@ -508,8 +489,6 @@ sparse stable static steady sticky stolen strict strong stupid subtle superb ten
 timely triple unborn uncommon unfair unique untold upbeat urgent useful vacant verbal
 virgin visual wasted weekly wicked wooden worthy`.split(/\s+/).filter(w => w.length >= 3);
 
-const ADJECTIVES_SET = new Set(ADJECTIVES.map(w => w.toLowerCase()));
-
 // Common 2-letter American English words (only valid on 3×3 and 4×4 grids)
 // Every word here is used in normal English sentences
 const TWO_LETTER_WORDS = `
@@ -522,16 +501,16 @@ go
 ha he hi ho
 id if in is it
 la lo
-ma me mi mo mu my
+ma me mi mo my
 na no nu
 of oh ok on op or ow ox
 pa pi po
 re
 so
 ta to
-uh um un up us ut
+uh um un up us 
 we wo
-ya ye`.split(/\s+/).filter(w => w.length === 2);
+ya ye im`.split(/\s+/).filter(w => w.length === 2);
 
 // Additional common words that don't need inflection (prepositions, conjunctions, etc.)
 const OTHER_WORDS = `
@@ -700,60 +679,29 @@ const BANNED = new Set([
 // ─── Main build process ────────────────────────────────────────────
 
 function main() {
-    const wordsFile = path.join(__dirname, 'node_modules', 'popular-english-words', 'words.js');
     const allWords = new Set();
 
-    // 1. Read existing words and keep legitimate ones
-    let existingKept = 0;
-    let existingDropped = 0;
-    try {
-        const text = fs.readFileSync(wordsFile, 'utf8');
-        const re = /"([^"]*)"|'([^']*)'/g;
-        let m;
-        const existingBase = new Set();
-        const existingAll = [];
-        while ((m = re.exec(text)) !== null) {
-            const raw = (m[1] !== undefined ? m[1] : m[2]).toLowerCase().replace(/[^a-z]/g, '');
-            if (raw.length >= 3) {
-                existingAll.push(raw);
-                if (raw.length <= 6) existingBase.add(raw);
-            }
-        }
-        for (const w of existingAll) {
-            if (isFakeSuffix(w, existingBase)) {
-                existingDropped++;
-            } else {
-                allWords.add(w);
-                existingKept++;
-            }
-        }
-        console.log(`Existing words: ${existingAll.length} total, kept ${existingKept}, dropped ${existingDropped} fake suffixed`);
-    } catch (e) {
-        console.log('No existing words.js found, starting fresh.');
-    }
+    // 1. Add all base words from our curated lists
+    for (const w of NOUNS) allWords.add(w.toUpperCase());
+    for (const w of VERBS) allWords.add(w.toUpperCase());
+    for (const w of ADJECTIVES) allWords.add(w.toUpperCase());
+    for (const w of OTHER_WORDS) allWords.add(w.toUpperCase());
+    for (const w of TWO_LETTER_WORDS) allWords.add(w.toUpperCase());
+    console.log(`Base words: ${allWords.size} (including ${TWO_LETTER_WORDS.length} two-letter words)`);
 
-    // 2. Add all base words from our curated lists
-    const beforeBase = allWords.size;
-    for (const w of NOUNS) allWords.add(w.toLowerCase());
-    for (const w of VERBS) allWords.add(w.toLowerCase());
-    for (const w of ADJECTIVES) allWords.add(w.toLowerCase());
-    for (const w of OTHER_WORDS) allWords.add(w.toLowerCase());
-    for (const w of TWO_LETTER_WORDS) allWords.add(w.toLowerCase());
-    console.log(`Added ${allWords.size - beforeBase} new base words (including ${TWO_LETTER_WORDS.length} two-letter words)`);
-
-    // 3. Generate proper inflections
+    // 2. Generate proper inflections
     const beforeInflect = allWords.size;
 
     // Noun plurals
     for (const noun of NOUNS) {
         const forms = pluralize(noun.toLowerCase());
-        for (const f of forms) allWords.add(f);
+        for (const f of forms) allWords.add(f.toUpperCase());
     }
 
     // Irregular plurals
     for (const [singular, plural] of Object.entries(IRREGULAR_PLURALS)) {
-        allWords.add(singular);
-        allWords.add(plural);
+        allWords.add(singular.toUpperCase());
+        allWords.add(plural.toUpperCase());
     }
 
     // Verb forms
@@ -761,71 +709,62 @@ function main() {
     for (const verb of VERBS) {
         const vl = verb.toLowerCase();
         if (irregularVerbBases.has(vl)) {
-            // Use irregular forms
-            allWords.add(vl);
-            for (const form of IRREGULAR_VERBS[vl]) allWords.add(form.toLowerCase());
+            allWords.add(vl.toUpperCase());
+            for (const form of IRREGULAR_VERBS[vl]) allWords.add(form.toUpperCase());
         } else {
-            // Generate regular forms
             const forms = verbForms(vl);
-            for (const f of forms) allWords.add(f);
+            for (const f of forms) allWords.add(f.toUpperCase());
         }
     }
 
     // Also add irregular verb forms that may not be in VERBS list
     for (const [base, forms] of Object.entries(IRREGULAR_VERBS)) {
-        allWords.add(base);
-        for (const f of forms) allWords.add(f.toLowerCase());
+        allWords.add(base.toUpperCase());
+        for (const f of forms) allWords.add(f.toUpperCase());
     }
 
     // Adjective forms (only for short adjectives that naturally take -er/-est)
     for (const adj of ADJECTIVES) {
         const al = adj.toLowerCase();
-        if (al.length <= 6) { // Only short adjectives get -er/-est
+        if (al.length <= 6) {
             const forms = adjectiveForms(al);
-            for (const f of forms) allWords.add(f);
+            for (const f of forms) allWords.add(f.toUpperCase());
         }
     }
 
     console.log(`Generated ${allWords.size - beforeInflect} inflected forms`);
 
-    // 4. Filter: remove banned words, too-short words, non-alpha
+    // 3. Filter: remove banned words, too-short words, non-alpha
     const filtered = [];
     for (const w of allWords) {
-        const upper = w.toUpperCase();
-        if (upper.length < 2) continue;
-        if (!/^[A-Z]+$/.test(upper)) continue;
-        if (BANNED.has(upper)) continue;
+        if (w.length < 2) continue;
+        if (!/^[A-Z]+$/.test(w)) continue;
+        if (BANNED.has(w)) continue;
         filtered.push(w);
     }
 
-    // 5. Sort and format
+    // 4. Sort and write words.json directly
     filtered.sort();
+    const outFile = path.join(__dirname, 'words.json');
+    fs.writeFileSync(outFile, JSON.stringify(filtered));
 
-    // Write words.js in the expected format
-    const lines = filtered.map(w => `    "${w}"`).join(',\n');
-    const output = `var words = [\n${lines}\n]\n\nexport {words}\n`;
-
-    fs.writeFileSync(wordsFile, output, 'utf8');
-
-    console.log(`\nDone! Wrote ${filtered.length} words to words.js`);
+    console.log(`\nDone! Wrote words.json: ${filtered.length} words (${fs.statSync(outFile).size} bytes)`);
 
     // Verify some common words
     const set = new Set(filtered);
     console.log('\nVerification:');
-    for (const w of ['cat', 'cats', 'dog', 'dogs', 'run', 'runs', 'running', 'ran',
-                      'play', 'plays', 'played', 'playing', 'player',
-                      'walk', 'walks', 'walked', 'walking',
-                      'house', 'houses', 'game', 'games',
-                      'fall', 'falls', 'fell', 'fallen', 'falling',
-                      'big', 'bigger', 'biggest',
-                      'happy', 'happier', 'happiest', 'happily',
-                      'children', 'people', 'women', 'teeth', 'mice']) {
+    for (const w of ['CAT', 'CATS', 'DOG', 'DOGS', 'RUN', 'RUNS', 'RUNNING', 'RAN',
+                      'PLAY', 'PLAYS', 'PLAYED', 'PLAYING', 'PLAYER',
+                      'WALK', 'WALKS', 'WALKED', 'WALKING',
+                      'HOUSE', 'HOUSES', 'GAME', 'GAMES',
+                      'FALL', 'FALLS', 'FELL', 'FALLEN', 'FALLING',
+                      'BIG', 'BIGGER', 'BIGGEST',
+                      'HAPPY', 'HAPPIER', 'HAPPIEST', 'HAPPILY',
+                      'CHILDREN', 'PEOPLE', 'WOMEN', 'TEETH', 'MICE',
+                      'AM', 'AN', 'AS', 'AT', 'BE', 'BY', 'DO', 'GO',
+                      'HE', 'IF', 'IN', 'IS', 'IT', 'ME', 'MY', 'NO',
+                      'OF', 'OK', 'ON', 'OR', 'SO', 'TO', 'UP', 'US', 'WE']) {
         console.log(`  ${w}: ${set.has(w) ? 'YES' : 'NO'}`);
-    }
-
-    console.log('\nFake words that should be gone:');
-    for (const w of ['tossingly', 'hexness', 'pewwise', 'tossless', 'foely', 'quiltwise']) {
-        console.log(`  ${w}: ${set.has(w) ? 'STILL THERE (bad!)' : 'REMOVED (good)'}`);
     }
 }
 

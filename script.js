@@ -79,13 +79,36 @@ function randomLetter() {
     return letter;
 }
 
+const WILDCARD_SYMBOL = "★";
+
 function isWordLetter(value) {
-    return typeof value === "string" && /^[A-Z]$/.test(value);
+    return typeof value === "string" && (/^[A-Z]$/.test(value) || value === WILDCARD_SYMBOL);
+}
+
+// Resolve wildcard characters (★) in a word string.
+// If no wildcards, returns [word]. If wildcards, tries all 26 replacements.
+// Only handles up to 2 wildcards to keep performance reasonable.
+function _resolveWildcards(word) {
+    const idx = word.indexOf(WILDCARD_SYMBOL);
+    if (idx === -1) return [word];
+    const results = [];
+    for (let i = 0; i < 26; i++) {
+        const letter = String.fromCharCode(65 + i);
+        const replaced = word.substring(0, idx) + letter + word.substring(idx + 1);
+        const sub = _resolveWildcards(replaced);
+        for (const s of sub) results.push(s);
+    }
+    return results;
 }
 
 const BONUS_TYPES = Object.freeze({
     LETTER_PICK: "letter-pick",
     BOMB: "bomb",
+    WILDCARD: "wildcard",
+    ROW_CLEAR: "row-clear",
+    FREEZE: "freeze",
+    SHUFFLE: "shuffle",
+    SCORE_2X: "score-2x",
 });
 
 const GAME_MODES = Object.freeze({
@@ -93,15 +116,42 @@ const GAME_MODES = Object.freeze({
     TIMED: "timed",
 });
 
+const CHALLENGE_TYPES = Object.freeze({
+    TARGET_WORD: "target-word",
+    SPEED_ROUND: "speed-round",
+});
+
+const CHALLENGE_META = Object.freeze({
+    [CHALLENGE_TYPES.TARGET_WORD]: {
+        title: "Target Word",
+        description: "Spell specific target words that appear on screen for big bonus points!",
+        icon: "🎯",
+    },
+    [CHALLENGE_TYPES.SPEED_ROUND]: {
+        title: "Speed Round",
+        description: "Blocks fall faster and faster as your score climbs. How long can you survive?",
+        icon: "⚡",
+    },
+});
+
+const CHALLENGE_GRID_SIZES = [6, 7, 8];
+const CHALLENGE_TIME_LIMIT = 5 * 60; // 5 minutes
+
 const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 8, 10, 15, 20];
 
 const BONUS_TYPE_POOL = [
     BONUS_TYPES.LETTER_PICK,
     BONUS_TYPES.BOMB,
+    BONUS_TYPES.WILDCARD,
+    BONUS_TYPES.ROW_CLEAR,
+    BONUS_TYPES.FREEZE,
+    BONUS_TYPES.SHUFFLE,
+    BONUS_TYPES.SCORE_2X,
 ];
 
 const BOMB_SYMBOL = "💣";
 const BONUS_UNLOCK_SCORE_INTERVAL = 1000;
+const FREEZE_DURATION = 10; // seconds
 const STANDARD_CLEAR_FLASH_DURATION = 1.2;
 const BOMB_CLEAR_FLASH_DURATION = 1.8;
 
@@ -121,6 +171,46 @@ const BONUS_METADATA = Object.freeze({
         modalText: "Accept to swap the current falling letter for a bomb. When it lands, every occupied cell in its row and column will explode and clear.",
         acceptLabel: "Accept",
         previewSymbol: BOMB_SYMBOL,
+    },
+    [BONUS_TYPES.WILDCARD]: {
+        buttonLabel: "Bonus: Wild",
+        buttonTitle: "Replace the current letter with a wildcard that matches any letter",
+        modalTitle: "Wildcard Bonus",
+        modalText: "Accept to turn the current falling block into a wildcard (★). It matches any letter when forming words!",
+        acceptLabel: "Accept",
+        previewSymbol: WILDCARD_SYMBOL,
+    },
+    [BONUS_TYPES.ROW_CLEAR]: {
+        buttonLabel: "Bonus: Row",
+        buttonTitle: "Clear the bottom row of the grid",
+        modalTitle: "Row Clear Bonus",
+        modalText: "Accept to instantly clear the entire bottom row of the grid.",
+        acceptLabel: "Clear Row",
+        previewSymbol: "🧹",
+    },
+    [BONUS_TYPES.FREEZE]: {
+        buttonLabel: "Bonus: Freeze",
+        buttonTitle: "Pause block falling for 10 seconds",
+        modalTitle: "Freeze Bonus",
+        modalText: "Accept to freeze all block movement for 10 seconds. Take your time to plan your next move!",
+        acceptLabel: "Freeze!",
+        previewSymbol: "❄️",
+    },
+    [BONUS_TYPES.SHUFFLE]: {
+        buttonLabel: "Bonus: Shuffle",
+        buttonTitle: "Randomize all letters on the grid",
+        modalTitle: "Shuffle Bonus",
+        modalText: "Accept to randomly rearrange all the letters currently on the grid. Maybe you'll get luckier!",
+        acceptLabel: "Shuffle!",
+        previewSymbol: "🔀",
+    },
+    [BONUS_TYPES.SCORE_2X]: {
+        buttonLabel: "Bonus: 2×",
+        buttonTitle: "Double points for the next word you form",
+        modalTitle: "Score Multiplier",
+        modalText: "Accept to earn DOUBLE points on the next word you form!",
+        acceptLabel: "Activate 2×",
+        previewSymbol: "2×",
     },
 });
 
@@ -315,11 +405,15 @@ class Grid {
                 for (let start = 0; start < seq.length; start++) {
                     for (let end = start + minWordLength; end <= seq.length; end++) {
                         const sub = seq.slice(start, end);
-                        const word = sub.map(s => s.letter).join("");
-                        if (DICTIONARY.has(word)) {
-                            if (!bestWord || word.length > bestWord.length) {
-                                bestWord = word;
-                                bestCells = sub;
+                        const raw = sub.map(s => s.letter).join("");
+                        const matches = _resolveWildcards(raw);
+                        for (const word of matches) {
+                            if (DICTIONARY.has(word)) {
+                                if (!bestWord || word.length > bestWord.length) {
+                                    bestWord = word;
+                                    bestCells = sub;
+                                }
+                                break; // first match is enough for this substring
                             }
                         }
                     }
@@ -462,7 +556,7 @@ class Renderer {
     }
 
     _getTokenFont(value, size) {
-        const family = value === BOMB_SYMBOL
+        const family = (value === BOMB_SYMBOL || value === WILDCARD_SYMBOL)
             ? '"Segoe UI Emoji", "Apple Color Emoji", sans-serif'
             : "monospace";
         return `bold ${Math.floor(size)}px ${family}`;
@@ -546,6 +640,7 @@ class Renderer {
                 const letter = grid.get(r, c);
                 if (letter) {
                     let color = this.hintCells.has(key) && !this.flashCells.has(key) ? "#ff8c00" : "#fff";
+                    if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#da70d6"; // orchid purple for wildcards
                     let scale = 1;
                     let alpha = 1;
                     if (isBlastCell) {
@@ -1202,6 +1297,27 @@ class Game {
             tutorialDots: document.getElementById("tutorial-dots"),
             tutorialCounter: document.getElementById("tutorial-counter"),
             tutorialCloseBtn: document.getElementById("tutorial-close-btn"),
+            // Challenges
+            challengesBtn: document.getElementById("challenges-btn"),
+            challengesScreen: document.getElementById("challenges-screen"),
+            challengesBackBtn: document.getElementById("challenges-back-btn"),
+            challengesGrid: document.getElementById("challenges-grid"),
+            challengeSetupScreen: document.getElementById("challenge-setup-screen"),
+            challengeSetupName: document.getElementById("challenge-setup-name"),
+            challengeStartBtn: document.getElementById("challenge-start-btn"),
+            challengeBackToSelectBtn: document.getElementById("challenge-back-to-select-btn"),
+            challengeMainMenuBtn: document.getElementById("challenge-main-menu-btn"),
+            challengeTutorialBtn: document.getElementById("challenge-tutorial-btn"),
+            challengeTutorialOverlay: document.getElementById("challenge-tutorial-overlay"),
+            challengeTutorialTitle: document.getElementById("challenge-tutorial-title"),
+            challengeTutorialText: document.getElementById("challenge-tutorial-text"),
+            challengeTutorialCanvas: document.getElementById("challenge-tutorial-canvas"),
+            challengeTutorialCloseBtn: document.getElementById("challenge-tutorial-close-btn"),
+            targetWordDisplay: document.getElementById("target-word-display"),
+            targetWordText: document.getElementById("target-word-text"),
+            freezeIndicator: document.getElementById("freeze-indicator"),
+            freezeTimer: document.getElementById("freeze-timer"),
+            score2xIndicator: document.getElementById("score-2x-indicator"),
         };
 
         this.state = State.MENU;
@@ -1242,6 +1358,19 @@ class Game {
         this.wordsFoundBackTarget = "gameover";
         this.wordsFoundResumeState = null;
         this.swipeState = null;
+
+        // New bonus state
+        this.freezeActive = false;
+        this.freezeTimeRemaining = 0;
+        this.scoreMultiplier = 1;
+
+        // Challenge state
+        this.activeChallenge = null; // null or CHALLENGE_TYPES value
+        this.challengeGridSize = 7;
+        this.targetWord = null;
+        this.targetWordsCompleted = 0;
+        this.speedRoundBaseInterval = 0.9;
+        this._challengePreviewAnimations = [];
 
         document.body.classList.toggle("touch-input", this.usesTouchSwipeInput);
 
@@ -1336,6 +1465,32 @@ class Game {
         this.els.switchProfileBtn.addEventListener("click", () => {
             this._renderProfilesList();
             this._showScreen("profiles");
+        });
+
+        // Challenges
+        this.els.challengesBtn.addEventListener("click", () => {
+            this._showScreen("challenges");
+        });
+        this.els.challengesBackBtn.addEventListener("click", () => {
+            this._stopChallengePreviewAnimations();
+            this._showScreen("menu");
+        });
+        this.els.challengeStartBtn.addEventListener("click", () => this._startChallengeGame());
+        this.els.challengeBackToSelectBtn.addEventListener("click", () => {
+            this._showScreen("challenges");
+        });
+        this.els.challengeMainMenuBtn.addEventListener("click", () => {
+            this._showScreen("menu");
+        });
+        this.els.challengeTutorialBtn.addEventListener("click", () => this._openChallengeTutorial());
+        this.els.challengeTutorialCloseBtn.addEventListener("click", () => this._closeChallengeTutorial());
+
+        // Challenge grid size buttons
+        document.querySelectorAll(".challenge-size-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                this.challengeGridSize = parseInt(btn.dataset.size, 10);
+                document.querySelectorAll(".challenge-size-btn").forEach(b => b.classList.toggle("selected", b === btn));
+            });
         });
 
         // Words Found
@@ -1804,11 +1959,16 @@ class Game {
         this.els.gameoverScreen.classList.toggle("active", name === "gameover");
         this.els.musicScreen.classList.toggle("active", name === "music");
         this.els.wordsFoundScreen.classList.toggle("active", name === "wordsfound");
+        this.els.challengesScreen.classList.toggle("active", name === "challenges");
+        this.els.challengeSetupScreen.classList.toggle("active", name === "challengesetup");
         if (name === "menu") {
             this._updateHighScoreDisplay();
             this._updateMenuStats();
             const hasSaved = this._hasSavedGame();
             this.els.resumeGameBtn.classList.toggle("hidden", !hasSaved);
+        }
+        if (name === "challenges") {
+            this._renderChallengesGrid();
         }
         if (name === "play") this._updateMiniNowPlaying();
         if (name === "profiles") this._renderProfilesList();
@@ -1971,9 +2131,30 @@ class Game {
 
     _acceptActiveBonus() {
         if (!this.block || !this.letterChoiceActive) return;
-        if (this.availableBonusType === BONUS_TYPES.BOMB) {
+        const type = this.availableBonusType;
+        if (type === BONUS_TYPES.BOMB) {
             this.block.kind = "bomb";
             this.block.letter = BOMB_SYMBOL;
+            this._closeLetterChoiceModal(true);
+        } else if (type === BONUS_TYPES.WILDCARD) {
+            this.block.kind = "wildcard";
+            this.block.letter = WILDCARD_SYMBOL;
+            this._closeLetterChoiceModal(true);
+        } else if (type === BONUS_TYPES.ROW_CLEAR) {
+            this._executeRowClear();
+            this._closeLetterChoiceModal(true);
+        } else if (type === BONUS_TYPES.FREEZE) {
+            this.freezeActive = true;
+            this.freezeTimeRemaining = FREEZE_DURATION;
+            this.els.freezeIndicator.classList.remove("hidden");
+            this.els.freezeTimer.textContent = Math.ceil(this.freezeTimeRemaining);
+            this._closeLetterChoiceModal(true);
+        } else if (type === BONUS_TYPES.SHUFFLE) {
+            this._executeShuffle();
+            this._closeLetterChoiceModal(true);
+        } else if (type === BONUS_TYPES.SCORE_2X) {
+            this.scoreMultiplier = 2;
+            this.els.score2xIndicator.classList.remove("hidden");
             this._closeLetterChoiceModal(true);
         }
     }
@@ -1983,6 +2164,76 @@ class Game {
         this.block.letter = letter;
         this.block.kind = "letter";
         this._closeLetterChoiceModal(true);
+    }
+
+    _executeRowClear() {
+        // Find the bottom-most row that has at least one letter
+        let targetRow = -1;
+        for (let r = this.grid.rows - 1; r >= 0; r--) {
+            for (let c = 0; c < this.grid.cols; c++) {
+                if (this.grid.get(r, c) !== null) {
+                    targetRow = r;
+                    break;
+                }
+            }
+            if (targetRow >= 0) break;
+        }
+        if (targetRow < 0) return; // grid is empty, nothing to clear
+
+        const cellsToClear = new Set();
+        for (let c = 0; c < this.grid.cols; c++) {
+            if (this.grid.get(targetRow, c) !== null) {
+                cellsToClear.add(`${targetRow},${c}`);
+            }
+        }
+
+        this.clearing = true;
+        this.clearPhase = "flash";
+        this.clearTimer = 0;
+        this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
+        this.pendingClearMode = "words";
+        this.renderer.flashCells = new Set(cellsToClear);
+        this.renderer.blastCells.clear();
+        this.renderer.blastCenterKey = null;
+        this.renderer.blastProgress = 0;
+        this.renderer.spawnParticles(cellsToClear);
+        this._pendingClearCells = cellsToClear;
+    }
+
+    _executeShuffle() {
+        // Collect all letters currently on the grid
+        const letters = [];
+        for (let r = 0; r < this.grid.rows; r++) {
+            for (let c = 0; c < this.grid.cols; c++) {
+                const letter = this.grid.get(r, c);
+                if (letter !== null) letters.push(letter);
+            }
+        }
+        if (letters.length === 0) return;
+
+        // Fisher-Yates shuffle
+        for (let i = letters.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [letters[i], letters[j]] = [letters[j], letters[i]];
+        }
+
+        // Place them back using gravity (fill from bottom)
+        // Clear the grid first
+        for (let r = 0; r < this.grid.rows; r++) {
+            for (let c = 0; c < this.grid.cols; c++) {
+                this.grid.cells[r][c] = null;
+            }
+        }
+
+        // Fill columns from left to right, bottom to top
+        let idx = 0;
+        for (let c = 0; c < this.grid.cols && idx < letters.length; c++) {
+            for (let r = this.grid.rows - 1; r >= 0 && idx < letters.length; r--) {
+                this.grid.cells[r][c] = letters[idx++];
+            }
+        }
+
+        this._computeHintCells();
     }
 
     _resumeGame() {
@@ -2050,6 +2301,7 @@ class Game {
 
     // ── Game start / reset ──
     _startGame() {
+        this.activeChallenge = null;
         if (this._getSelectedGameMode() === GAME_MODES.TIMED) {
             this._openTimeSelectModal();
             return;
@@ -2089,6 +2341,19 @@ class Game {
         this.nextBonusScore = BONUS_UNLOCK_SCORE_INTERVAL;
         this.letterChoiceActive = false;
         this.letterChoiceResumeState = null;
+
+        // Reset bonus state
+        this.freezeActive = false;
+        this.freezeTimeRemaining = 0;
+        this.scoreMultiplier = 1;
+        this.els.freezeIndicator.classList.add("hidden");
+        this.els.score2xIndicator.classList.add("hidden");
+
+        // Reset challenge state (activeChallenge is set before calling this for challenges)
+        this.targetWord = null;
+        this.targetWordsCompleted = 0;
+        this.els.targetWordDisplay.classList.add("hidden");
+
         this._updateScoreDisplay();
         this._updateTimerDisplay();
         this._updateHighScoreDisplay();
@@ -2248,12 +2513,24 @@ class Game {
         if (newWords.length > 0) {
             const prevScore = this.score;
             for (const word of newWords) {
-                const pts = word.length * 10 * word.length;
+                let pts = word.length * 10 * word.length;
+                if (this.scoreMultiplier > 1) {
+                    pts *= this.scoreMultiplier;
+                    this.scoreMultiplier = 1;
+                    this.els.score2xIndicator.classList.add("hidden");
+                }
                 this.score += pts;
                 this.totalWordsInChain++;
                 this.wordsFound.push({ word, pts });
                 if (!this._chainWords) this._chainWords = [];
                 this._chainWords.push({ word, pts });
+
+                // Target Word challenge: check if this word matches
+                if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD && this.targetWord && word === this.targetWord) {
+                    this.targetWordsCompleted++;
+                    this.score += 200; // bonus for hitting target
+                    this._pickTargetWord();
+                }
             }
             this._checkBonusUnlock(prevScore, this.score);
             // Mark all found words as seen so they don't re-score later
@@ -2261,6 +2538,7 @@ class Game {
         }
         this.totalLettersInChain += result.cells.size;
         this._updateScoreDisplay();
+        this._updateSpeedRound();
 
         if (this.totalWordsInChain > 1) {
             this.audio.chain();
@@ -2408,6 +2686,12 @@ class Game {
         this.renderer.hintCells = new Set();
         this._activeHintKey = null;
 
+        // Clean up bonus indicators
+        this.freezeActive = false;
+        this.els.freezeIndicator.classList.add("hidden");
+        this.els.score2xIndicator.classList.add("hidden");
+        this.els.targetWordDisplay.classList.add("hidden");
+
         // Clear saved game — this run is over
         this._clearGameState();
 
@@ -2423,8 +2707,20 @@ class Game {
             isNew = this.score > 0;
         }
 
-        this.els.finalScore.textContent = `Score: ${this.score}`;
+        // Build final score text (add challenge info if applicable)
+        let finalText = `Score: ${this.score}`;
+        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
+            finalText += `\nTarget Words: ${this.targetWordsCompleted}`;
+        } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
+            finalText += `\nFinal Speed: ${this.fallInterval.toFixed(2)}s`;
+        }
+
+        this.els.finalScore.textContent = finalText;
         this.els.newHighScore.classList.toggle("hidden", !isNew);
+
+        // Reset challenge state
+        this.activeChallenge = null;
+
         this._showScreen("gameover");
     }
 
@@ -2922,6 +3218,200 @@ class Game {
         this._renderMusicScreen();
     }
 
+    // ── Challenge methods ──
+
+    _renderChallengesGrid() {
+        const grid = this.els.challengesGrid;
+        grid.innerHTML = "";
+        this._stopChallengePreviewAnimations();
+
+        for (const [key, meta] of Object.entries(CHALLENGE_META)) {
+            const card = document.createElement("div");
+            card.className = "challenge-card";
+            card.innerHTML = `
+                <div class="challenge-preview"><canvas></canvas></div>
+                <div class="challenge-card-title">${meta.icon} ${meta.title}</div>
+                <div class="challenge-card-desc">${meta.description}</div>
+            `;
+            card.addEventListener("click", () => {
+                this._stopChallengePreviewAnimations();
+                this.activeChallenge = key;
+                this.els.challengeSetupName.textContent = `${meta.icon} ${meta.title}`;
+                this._showScreen("challengesetup");
+            });
+            grid.appendChild(card);
+
+            // Start animated preview on the card's canvas
+            const canvas = card.querySelector("canvas");
+            this._startChallengePreview(canvas, key);
+        }
+    }
+
+    _startChallengePreview(canvas, challengeType) {
+        const size = 160;
+        canvas.width = size;
+        canvas.height = size;
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        const ctx = canvas.getContext("2d");
+        const gridSize = 5;
+        const cellSize = size / gridSize;
+
+        // Generate a random mini grid
+        const cells = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+        const fillCount = 8 + Math.floor(Math.random() * 6);
+        for (let i = 0; i < fillCount; i++) {
+            const r = Math.floor(Math.random() * gridSize);
+            const c = Math.floor(Math.random() * gridSize);
+            cells[r][c] = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+        }
+
+        let tick = 0;
+        const draw = () => {
+            tick++;
+            ctx.fillStyle = "#1a1a1a";
+            ctx.fillRect(0, 0, size, size);
+
+            // Draw grid
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    const x = c * cellSize;
+                    const y = r * cellSize;
+                    ctx.fillStyle = "#2a2a2a";
+                    ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+                    if (cells[r][c]) {
+                        ctx.fillStyle = "#fff";
+                        ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(cells[r][c], x + cellSize / 2, y + cellSize / 2);
+                    }
+                }
+            }
+
+            // Challenge-specific visual
+            if (challengeType === CHALLENGE_TYPES.TARGET_WORD) {
+                // Pulsing target word overlay
+                const alpha = 0.5 + 0.3 * Math.sin(tick * 0.08);
+                ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+                ctx.font = `bold ${Math.floor(size * 0.12)}px monospace`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("🎯 CAT", size / 2, size * 0.12);
+            } else if (challengeType === CHALLENGE_TYPES.SPEED_ROUND) {
+                // Falling block animation getting faster
+                const blockY = (tick * 2) % size;
+                const blockCol = Math.floor(gridSize / 2);
+                const bx = blockCol * cellSize;
+                ctx.fillStyle = "#3a3520";
+                ctx.fillRect(bx + 1, blockY, cellSize - 2, cellSize - 2);
+                ctx.strokeStyle = "#ffd700";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(bx + 2, blockY + 1, cellSize - 4, cellSize - 4);
+                ctx.fillStyle = "#ffd700";
+                ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("⚡", bx + cellSize / 2, blockY + cellSize / 2);
+            }
+
+            // Grid lines
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 0.5;
+            for (let r = 0; r <= gridSize; r++) {
+                ctx.beginPath();
+                ctx.moveTo(0, r * cellSize);
+                ctx.lineTo(size, r * cellSize);
+                ctx.stroke();
+            }
+            for (let c = 0; c <= gridSize; c++) {
+                ctx.beginPath();
+                ctx.moveTo(c * cellSize, 0);
+                ctx.lineTo(c * cellSize, size);
+                ctx.stroke();
+            }
+        };
+
+        draw();
+        const id = setInterval(draw, 80);
+        this._challengePreviewAnimations.push(id);
+    }
+
+    _stopChallengePreviewAnimations() {
+        for (const id of this._challengePreviewAnimations) clearInterval(id);
+        this._challengePreviewAnimations = [];
+    }
+
+    _startChallengeGame() {
+        this._stopChallengePreviewAnimations();
+        this.gridSize = this.challengeGridSize;
+        this.difficulty = "casual";
+
+        this._beginNewGame(CHALLENGE_TIME_LIMIT);
+
+        // After _beginNewGame sets up state, apply challenge specifics
+        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
+            this.targetWordsCompleted = 0;
+            this._pickTargetWord();
+            this.els.targetWordDisplay.classList.remove("hidden");
+        } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
+            this.speedRoundBaseInterval = this.fallInterval;
+            this.els.targetWordDisplay.classList.add("hidden");
+        }
+    }
+
+    _pickTargetWord() {
+        // Pick a random word from the dictionary that is 3-5 letters long
+        const candidates = [];
+        for (const word of DICTIONARY) {
+            if (word.length >= 3 && word.length <= 5) candidates.push(word);
+        }
+        if (candidates.length === 0) return;
+        this.targetWord = candidates[Math.floor(Math.random() * candidates.length)];
+        this.els.targetWordText.textContent = this.targetWord;
+    }
+
+    _updateSpeedRound() {
+        // Increase speed every 500 points
+        if (this.activeChallenge !== CHALLENGE_TYPES.SPEED_ROUND) return;
+        const speedUps = Math.floor(this.score / 500);
+        this.fallInterval = Math.max(0.2, this.speedRoundBaseInterval - speedUps * 0.08);
+    }
+
+    _openChallengeTutorial() {
+        if (!this.activeChallenge) return;
+        const meta = CHALLENGE_META[this.activeChallenge];
+        if (!meta) return;
+        this.els.challengeTutorialTitle.textContent = `${meta.icon} ${meta.title}`;
+
+        let tutorialText = "";
+        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
+            tutorialText = "A target word will appear at the top of the screen. Form it on the grid to earn 200 bonus points! A new target appears each time you succeed. All normal scoring still applies. Game lasts 5 minutes.";
+        } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
+            tutorialText = "Blocks start falling at normal speed but get faster every 500 points! The fall speed keeps increasing until you can barely keep up. Game lasts 5 minutes — score as high as you can!";
+        }
+        this.els.challengeTutorialText.textContent = tutorialText;
+
+        // Draw a small preview
+        const canvas = this.els.challengeTutorialCanvas;
+        canvas.width = 200;
+        canvas.height = 200;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#1a1a1a";
+        ctx.fillRect(0, 0, 200, 200);
+        ctx.fillStyle = "#ffd700";
+        ctx.font = "bold 60px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(meta.icon, 100, 100);
+
+        this.els.challengeTutorialOverlay.classList.add("active");
+    }
+
+    _closeChallengeTutorial() {
+        this.els.challengeTutorialOverlay.classList.remove("active");
+    }
+
     // ── Main loop ──
     _loop(timestamp) {
         const dt = this.lastTime ? Math.min((timestamp - this.lastTime) / 1000, 0.1) : 0;
@@ -2953,6 +3443,15 @@ class Game {
                 this._processClearPhase(dt);
             } else if (this._wordPopupActive) {
                 // Word popup is showing — freeze, don't fall or spawn
+            } else if (this.freezeActive) {
+                // Freeze bonus: count down timer, don't advance block falling
+                this.freezeTimeRemaining -= dt;
+                this.els.freezeTimer.textContent = Math.ceil(Math.max(0, this.freezeTimeRemaining));
+                if (this.freezeTimeRemaining <= 0) {
+                    this.freezeActive = false;
+                    this.freezeTimeRemaining = 0;
+                    this.els.freezeIndicator.classList.add("hidden");
+                }
             } else if (this.block) {
                 if (this.block.dropAnimating) {
                     const swipeDropSpeed = 18;

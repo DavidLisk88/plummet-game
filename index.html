@@ -51,6 +51,7 @@
         <!-- MENU SCREEN -->
         <div id="menu-screen" class="screen">
             <button id="tutorial-btn-menu" class="tutorial-btn tutorial-btn-small" title="Tutorial">📖</button>
+            <button id="switch-profile-btn" class="switch-profile-icon-btn" title="Switch Profile">👤</button>
             <h1 class="title">PLUMMET</h1>
             <p id="menu-profile-name" class="subtitle"></p>
             <div id="grid-size-selector">
@@ -81,7 +82,7 @@
             <button id="start-btn" class="primary-btn">START</button>
             <button id="resume-game-btn" class="primary-btn hidden">▶ Resume Game</button>
             <button id="music-menu-btn" class="secondary-btn">🎵 Music</button>
-            <button id="switch-profile-btn" class="secondary-btn">👤 Switch Profile</button>
+            <button id="challenges-btn" class="secondary-btn challenges-btn-glow">🏆 Challenges</button>
             <div id="menu-stats">
                 <p class="high-score-text">High Score: <span id="menu-high-score">0</span></p>
                 <p class="stat-text">Games Played: <span id="menu-games-played">0</span></p>
@@ -145,6 +146,37 @@
             </div>
         </div>
 
+        <!-- CHALLENGES SELECTION SCREEN -->
+        <div id="challenges-screen" class="screen">
+            <div id="challenges-header">
+                <button id="challenges-back-btn" class="icon-btn back-btn">←</button>
+                <h2>Challenges</h2>
+                <div style="width:40px"></div>
+            </div>
+            <p class="subtitle challenges-subtitle">Choose a challenge to test your skills!</p>
+            <div id="challenges-grid">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- CHALLENGE SETUP SCREEN -->
+        <div id="challenge-setup-screen" class="screen">
+            <button id="challenge-tutorial-btn" class="tutorial-btn tutorial-btn-small" title="How This Challenge Works">📖</button>
+            <h1 class="title">PLUMMET</h1>
+            <p id="challenge-setup-name" class="subtitle challenge-mode-label"></p>
+            <div id="challenge-grid-size-selector">
+                <label>Grid Size:</label>
+                <div class="size-buttons">
+                    <button class="size-btn challenge-size-btn" data-size="6">6×6</button>
+                    <button class="size-btn challenge-size-btn selected" data-size="7">7×7</button>
+                    <button class="size-btn challenge-size-btn" data-size="8">8×8</button>
+                </div>
+            </div>
+            <button id="challenge-start-btn" class="primary-btn">START CHALLENGE</button>
+            <button id="challenge-back-to-select-btn" class="secondary-btn">← Back to Challenges</button>
+            <button id="challenge-main-menu-btn" class="secondary-btn">Main Menu</button>
+        </div>
+
         <!-- PLAYING SCREEN -->
         <div id="play-screen" class="screen">
             <div id="word-popup" aria-live="polite"></div>
@@ -165,6 +197,10 @@
             <button id="pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏸</button>
             <button id="hints-btn" class="icon-btn play-fab-btn play-hint-btn" title="Toggle Hints" aria-label="Toggle Hints">💡</button>
             <button id="bonus-btn" class="bonus-btn hidden" title="Use Bonus Letter">Bonus!</button>
+            <div id="target-word-display" class="hidden">
+                <span class="target-label">TARGET:</span>
+                <span id="target-word-text"></span>
+            </div>
             <div id="now-playing-mini">
                 <span id="np-mini-title">♪ ---</span>
                 <div id="np-mini-controls">
@@ -179,6 +215,8 @@
             <div id="next-letter-display">
                 Next: <span id="next-letter">?</span>
             </div>
+            <div id="freeze-indicator" class="hidden">❄️ FROZEN <span id="freeze-timer">10</span>s</div>
+            <div id="score-2x-indicator" class="hidden">2× NEXT WORD</div>
             <button id="play-words-found-btn" class="secondary-btn in-game-words-btn">📝 Words So Far</button>
             <div id="mobile-controls">
                 <button id="btn-left" class="control-btn" aria-label="Move Left">◀</button>
@@ -264,6 +302,18 @@
                 <div id="tutorial-track"></div>
             </div>
             <div id="tutorial-dots"></div>
+        </div>
+    </div>
+
+    <!-- Challenge Tutorial Overlay -->
+    <div id="challenge-tutorial-overlay">
+        <div id="challenge-tutorial-content">
+            <h2 id="challenge-tutorial-title">How It Works</h2>
+            <p id="challenge-tutorial-text"></p>
+            <div class="challenge-tutorial-preview">
+                <canvas id="challenge-tutorial-canvas"></canvas>
+            </div>
+            <button id="challenge-tutorial-close-btn" class="primary-btn" style="margin-top:16px;">Got It!</button>
         </div>
     </div>
 

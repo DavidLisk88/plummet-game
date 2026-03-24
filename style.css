@@ -1926,3 +1926,327 @@ body.touch-input #mobile-controls {
         font-size: 0.95rem;
     }
 }
+
+/* ---------- Switch Profile Icon Button (top-left, below tutorial) ---------- */
+
+.switch-profile-icon-btn {
+    position: absolute;
+    top: calc(60px + var(--safe-top));
+    left: calc(14px + var(--safe-left));
+    z-index: 1000;
+    border-radius: 50%;
+    width: 42px;
+    height: 42px;
+    font-size: 1.2rem;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    background: rgba(180, 180, 200, 0.15);
+    border: 2px solid rgba(180, 180, 200, 0.3);
+    color: #ccc;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+    box-shadow: 0 0 8px rgba(180, 180, 200, 0.15);
+    animation: profileGlow 2s ease-in-out infinite;
+}
+
+.switch-profile-icon-btn:hover {
+    background: rgba(180, 180, 200, 0.3);
+    border-color: rgba(200, 200, 220, 0.5);
+    box-shadow: 0 0 14px rgba(180, 180, 200, 0.3);
+}
+
+@keyframes profileGlow {
+    0%, 100% { box-shadow: 0 0 6px rgba(180, 180, 200, 0.15); }
+    50% { box-shadow: 0 0 14px rgba(180, 180, 200, 0.35); }
+}
+
+/* ---------- Challenges Button Glow ---------- */
+
+.challenges-btn-glow {
+    background: linear-gradient(135deg, #b8860b, #daa520, #ffd700);
+    color: #1a1a2e;
+    border: none;
+    font-weight: bold;
+    animation: challengeGlow 2s ease-in-out infinite;
+}
+
+.challenges-btn-glow:hover {
+    background: linear-gradient(135deg, #daa520, #ffd700, #ffe44d);
+}
+
+@keyframes challengeGlow {
+    0%, 100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.3); }
+    50% { box-shadow: 0 0 18px rgba(255, 215, 0, 0.6); }
+}
+
+/* ---------- Challenges Screen ---------- */
+
+#challenges-screen {
+    padding-top: calc(20px + var(--safe-top));
+}
+
+#challenges-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 500px;
+    padding: 0 12px;
+    margin-bottom: 4px;
+}
+
+#challenges-header h2 {
+    font-size: 1.5rem;
+    color: #ffd700;
+}
+
+.challenges-subtitle {
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+}
+
+#challenges-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    width: 100%;
+    max-width: 420px;
+    padding: 0 16px;
+}
+
+.challenge-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(30, 30, 50, 0.8);
+    border: 2px solid rgba(255, 215, 0, 0.25);
+    border-radius: 16px;
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.challenge-card:hover {
+    border-color: rgba(255, 215, 0, 0.6);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(255, 215, 0, 0.2);
+}
+
+.challenge-preview {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #111;
+    position: relative;
+}
+
+.challenge-preview canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.challenge-card-title {
+    margin-top: 8px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    color: #ffd700;
+    text-align: center;
+}
+
+.challenge-card-desc {
+    margin-top: 4px;
+    font-size: 0.72rem;
+    color: #aaa;
+    text-align: center;
+    line-height: 1.3;
+}
+
+/* ---------- Challenge Setup Screen ---------- */
+
+#challenge-setup-screen {
+    padding-top: calc(60px + var(--safe-top));
+}
+
+.challenge-mode-label {
+    color: #ffd700;
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+#challenge-grid-size-selector {
+    margin: 12px 0;
+    text-align: center;
+}
+
+#challenge-grid-size-selector label {
+    display: block;
+    margin-bottom: 6px;
+    color: #aaa;
+    font-size: 0.85rem;
+}
+
+#challenge-grid-size-selector .size-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+/* ---------- Target Word Display ---------- */
+
+#target-word-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: rgba(255, 215, 0, 0.12);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    border-radius: 10px;
+    margin: 4px auto;
+    width: fit-content;
+    animation: targetPulse 2s ease-in-out infinite;
+}
+
+.target-label {
+    font-size: 0.7rem;
+    color: #ffd700;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+#target-word-text {
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: #fff;
+    letter-spacing: 3px;
+}
+
+@keyframes targetPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.15); }
+    50% { box-shadow: 0 0 16px rgba(255, 215, 0, 0.35); }
+}
+
+/* ---------- Freeze Indicator ---------- */
+
+#freeze-indicator {
+    text-align: center;
+    padding: 6px 16px;
+    background: rgba(100, 200, 255, 0.15);
+    border: 1px solid rgba(100, 200, 255, 0.4);
+    border-radius: 8px;
+    color: #7dd3fc;
+    font-weight: bold;
+    font-size: 0.85rem;
+    margin: 4px auto;
+    width: fit-content;
+    animation: freezePulse 1s ease-in-out infinite;
+}
+
+@keyframes freezePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* ---------- Score 2x Indicator ---------- */
+
+#score-2x-indicator {
+    text-align: center;
+    padding: 6px 16px;
+    background: rgba(255, 100, 50, 0.15);
+    border: 1px solid rgba(255, 100, 50, 0.4);
+    border-radius: 8px;
+    color: #ff6b35;
+    font-weight: bold;
+    font-size: 0.85rem;
+    margin: 4px auto;
+    width: fit-content;
+    animation: multiplierPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes multiplierPulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(255, 100, 50, 0.2); }
+    50% { box-shadow: 0 0 14px rgba(255, 100, 50, 0.5); }
+}
+
+/* ---------- Challenge Tutorial Overlay ---------- */
+
+#challenge-tutorial-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+
+#challenge-tutorial-overlay.active {
+    display: flex;
+}
+
+#challenge-tutorial-content {
+    width: min(90vw, 400px);
+    text-align: center;
+    padding: 24px;
+}
+
+#challenge-tutorial-content h2 {
+    color: #ffd700;
+    margin-bottom: 16px;
+}
+
+#challenge-tutorial-content p {
+    color: #ccc;
+    line-height: 1.5;
+    margin-bottom: 12px;
+}
+
+#challenge-tutorial-content .challenge-tutorial-preview {
+    width: 100%;
+    max-width: 280px;
+    aspect-ratio: 1;
+    margin: 16px auto;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #111;
+}
+
+#challenge-tutorial-content .challenge-tutorial-preview canvas {
+    width: 100%;
+    height: 100%;
+}
+
+@media (max-width: 480px) {
+    .switch-profile-icon-btn {
+        width: 38px;
+        height: 38px;
+        font-size: 1.1rem;
+        top: calc(55px + var(--safe-top));
+    }
+
+    #challenges-grid {
+        gap: 12px;
+        padding: 0 12px;
+    }
+
+    .challenge-card-title {
+        font-size: 0.85rem;
+    }
+
+    .challenge-card-desc {
+        font-size: 0.65rem;
+    }
+}
+
+@media (max-width: 400px) {
+    .switch-profile-icon-btn {
+        width: 34px;
+        height: 34px;
+        font-size: 1rem;
+    }
+}
