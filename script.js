@@ -1793,6 +1793,7 @@ class Game {
 
     _getMinWordLength() {
         if (this.difficulty === "challenging") return 4;
+        if (this.gridSize <= 4) return 2;
         return 3;
     }
 

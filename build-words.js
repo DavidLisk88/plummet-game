@@ -10,7 +10,7 @@ let m;
 while ((m = re.exec(inner)) !== null) {
     const raw = m[1] !== undefined ? m[1] : m[2];
     const upper = raw.toUpperCase().replace(/[^A-Z]/g, '');
-    if (upper.length >= 3) seen.add(upper);
+    if (upper.length >= 2) seen.add(upper);
 }
 
 // Remove profanity / slurs / offensive words
