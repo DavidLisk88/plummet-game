@@ -2303,7 +2303,7 @@ class Game {
     }
 
     _updateTimerDisplay() {
-        const isTimed = this._getSelectedGameMode() === GAME_MODES.TIMED && this.timeLimitSeconds > 0;
+        const isTimed = (this._getSelectedGameMode() === GAME_MODES.TIMED || this.activeChallenge) && this.timeLimitSeconds > 0;
         this.els.timerScoreItem.classList.toggle("hidden", !isTimed);
         if (isTimed) {
             this.els.gameTimer.textContent = this._formatCountdownTime(this.timeRemainingSeconds);
@@ -2903,7 +2903,8 @@ class Game {
                 this.els.targetWordText.textContent = this.targetWord;
             }
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
-            this.speedRoundBaseInterval = this.fallInterval;
+            this.fallInterval = Math.min(this.fallInterval, 0.9);
+            this.speedRoundBaseInterval = 0.9;
             this.els.targetWordDisplay.classList.add("hidden");
         }
 
@@ -5396,6 +5397,7 @@ class Game {
             this._pickTargetWord();
             this.els.targetWordDisplay.classList.remove("hidden");
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
+            this.fallInterval = 0.9;
             this.speedRoundBaseInterval = this.fallInterval;
             this.els.targetWordDisplay.classList.add("hidden");
         }
