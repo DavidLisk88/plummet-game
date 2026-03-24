@@ -25,6 +25,7 @@
     -->
 
     <div id="game-container">
+        <canvas id="bg-canvas"></canvas>
         <!-- Global music mute button (visible on all screens) -->
         <button id="global-mute-btn" class="global-mute-btn" title="Toggle Music">🔊</button>
         <!-- PROFILES SCREEN (shown on launch) -->
@@ -81,8 +82,8 @@
             </div>
             <button id="start-btn" class="primary-btn">START</button>
             <button id="resume-game-btn" class="primary-btn hidden">▶ Resume Game</button>
-            <button id="music-menu-btn" class="secondary-btn">🎵 Music</button>
             <button id="challenges-btn" class="secondary-btn challenges-btn-glow">🏆 Challenges</button>
+            <button id="music-menu-btn" class="secondary-btn">🎵 Music</button>
             <div id="menu-stats">
                 <p class="high-score-text">High Score: <span id="menu-high-score">0</span></p>
                 <p class="stat-text">Games Played: <span id="menu-games-played">0</span></p>
@@ -173,6 +174,7 @@
                 </div>
             </div>
             <button id="challenge-start-btn" class="primary-btn">START CHALLENGE</button>
+            <button id="challenge-resume-btn" class="primary-btn hidden">▶ Resume Challenge</button>
             <button id="challenge-back-to-select-btn" class="secondary-btn">← Back to Challenges</button>
             <button id="challenge-main-menu-btn" class="secondary-btn">Main Menu</button>
         </div>
@@ -291,17 +293,35 @@
         </div>
     </div>
 
-    <!-- Tutorial Slideshow Overlay -->
+    <!-- Tutorial Overlay -->
     <div id="tutorial-overlay" class="overlay">
-        <div id="tutorial-content">
-            <div id="tutorial-header">
-                <span id="tutorial-counter">1 / 13</span>
+        <!-- Sub-menu -->
+        <div id="tutorial-menu">
+            <div id="tutorial-menu-header">
+                <div style="width:36px"></div>
+                <h2>Tutorial</h2>
                 <button id="tutorial-close-btn" class="icon-btn">✕</button>
             </div>
-            <div id="tutorial-slider">
-                <div id="tutorial-track"></div>
+            <div id="tutorial-menu-list"></div>
+        </div>
+        <!-- Slide viewer -->
+        <div id="tutorial-slides" class="hidden">
+            <div id="tutorial-slides-header">
+                <button id="tutorial-back-btn" class="icon-btn back-btn">←</button>
+                <span id="tutorial-counter">1 / 1</span>
+                <button id="tutorial-slides-close-btn" class="icon-btn">✕</button>
             </div>
-            <div id="tutorial-dots"></div>
+            <div id="tutorial-slide-view">
+                <canvas id="tutorial-canvas" width="360" height="360"></canvas>
+                <img id="tutorial-image" class="hidden" alt="Tutorial">
+                <h3 id="tutorial-slide-title"></h3>
+                <p id="tutorial-slide-desc"></p>
+            </div>
+            <div id="tutorial-nav-arrows">
+                <button id="tutorial-prev-btn" class="tutorial-nav-btn">‹</button>
+                <div id="tutorial-dots"></div>
+                <button id="tutorial-next-btn" class="tutorial-nav-btn">›</button>
+            </div>
         </div>
     </div>
 

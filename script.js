@@ -43,40 +43,67 @@ async function loadDictionary() {
 // LETTER FREQUENCY WEIGHTS
 // Tuned for playability: vowels very common, common consonants
 // frequent, rare letters (Q, X, Z, J) almost never appear.
+// Uses a cooldown system so no letter repeats too soon,
+// and a deficit tracker to ensure every letter eventually appears.
 // ────────────────────────────────────────
-const LETTER_WEIGHTS = (() => {
-    // weight per letter – higher = more frequent
-    const freq = {
-        A:12, B:3, C:4, D:4, E:14, F:3, G:3, H:3, I:10, J:1,
-        K:2,  L:6, M:4, N:7, O:10, P:4, Q:1, R:8, S:8, T:8,
-        U:6,  V:2, W:3, X:1, Y:3, Z:1
-    };
-    const pool = [];
-    for (const [ch, count] of Object.entries(freq)) {
-        for (let i = 0; i < count; i++) pool.push(ch);
-    }
-    return pool;
-})();
+const LETTER_FREQ = {
+    A:12, B:3, C:4, D:4, E:14, F:3, G:3, H:3, I:10, J:1,
+    K:2,  L:6, M:4, N:7, O:10, P:4, Q:1, R:8, S:8, T:8,
+    U:6,  V:2, W:3, X:1, Y:3, Z:1
+};
+const _FREQ_TOTAL = Object.values(LETTER_FREQ).reduce((a, b) => a + b, 0);
+const _letterHistory = [];       // last N letters picked
+const _HISTORY_MAX = 8;          // track last 8 letters for cooldown
+const _letterCounts = {};        // how many times each letter has been picked
+let _totalPicks = 0;
 
-// Track recent letters to avoid repetition
-const _recentLetters = [];
-const _RECENT_MAX = 4; // don't repeat any of the last 4 letters
+for (const ch of Object.keys(LETTER_FREQ)) _letterCounts[ch] = 0;
 
 function randomLetter() {
-    // Try up to 20 times to pick a letter not in recent history
-    for (let attempt = 0; attempt < 20; attempt++) {
-        const letter = LETTER_WEIGHTS[Math.floor(Math.random() * LETTER_WEIGHTS.length)];
-        if (!_recentLetters.includes(letter)) {
-            _recentLetters.push(letter);
-            if (_recentLetters.length > _RECENT_MAX) _recentLetters.shift();
-            return letter;
+    const letters = Object.keys(LETTER_FREQ);
+
+    // Build effective weights: base frequency, cooldown penalty, deficit boost
+    const weights = [];
+    for (const ch of letters) {
+        let w = LETTER_FREQ[ch];
+
+        // Cooldown: if letter appeared recently, heavily penalise
+        const histIdx = _letterHistory.lastIndexOf(ch);
+        if (histIdx !== -1) {
+            const recency = _letterHistory.length - histIdx; // 1 = most recent
+            if (recency <= 2) w *= 0.02;       // almost zero if in last 2
+            else if (recency <= 4) w *= 0.15;  // very low if in last 4
+            else if (recency <= 6) w *= 0.4;   // reduced if in last 6
+            else w *= 0.7;                     // slight penalty for 7-8
         }
+
+        // Deficit boost: if a letter has appeared less than expected, boost it
+        if (_totalPicks > 10) {
+            const expected = (LETTER_FREQ[ch] / _FREQ_TOTAL) * _totalPicks;
+            const actual = _letterCounts[ch];
+            if (actual < expected * 0.5) w *= 2.5;       // significantly underrepresented
+            else if (actual < expected * 0.75) w *= 1.5;  // somewhat underrepresented
+        }
+
+        weights.push(Math.max(w, 0.001)); // never fully zero
     }
-    // Fallback: pick anything (shouldn't normally happen)
-    const letter = LETTER_WEIGHTS[Math.floor(Math.random() * LETTER_WEIGHTS.length)];
-    _recentLetters.push(letter);
-    if (_recentLetters.length > _RECENT_MAX) _recentLetters.shift();
-    return letter;
+
+    // Weighted random selection
+    const total = weights.reduce((a, b) => a + b, 0);
+    let roll = Math.random() * total;
+    let picked = letters[0];
+    for (let i = 0; i < letters.length; i++) {
+        roll -= weights[i];
+        if (roll <= 0) { picked = letters[i]; break; }
+    }
+
+    // Update tracking
+    _letterHistory.push(picked);
+    if (_letterHistory.length > _HISTORY_MAX) _letterHistory.shift();
+    _letterCounts[picked]++;
+    _totalPicks++;
+
+    return picked;
 }
 
 const WILDCARD_SYMBOL = "★";
@@ -124,7 +151,7 @@ const CHALLENGE_TYPES = Object.freeze({
 const CHALLENGE_META = Object.freeze({
     [CHALLENGE_TYPES.TARGET_WORD]: {
         title: "Target Word",
-        description: "Spell target words for bonus points! Words turn green — tap to claim them when you're ready.",
+        description: "Spell target words for bonus points! Spelling the target word earns 200 bonus points.",
         icon: "🎯",
     },
     [CHALLENGE_TYPES.SPEED_ROUND]: {
@@ -337,6 +364,147 @@ class Particle {
         ctx.restore();
     }
 
+    get dead() { return this.life <= 0; }
+}
+
+// ────────────────────────────────────────
+// FLOATING BACKGROUND LETTERS
+// ────────────────────────────────────────
+class FloatingLetter {
+    constructor(w, h) {
+        this.char = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+        this.x = Math.random() * w;
+        this.y = h + 20;
+        this.size = 14 + Math.random() * 22;
+        this.alpha = 0.04 + Math.random() * 0.08;
+        this.vy = -(8 + Math.random() * 18);
+        this.vx = (Math.random() - 0.5) * 12;
+        this.wobbleSpeed = 1 + Math.random() * 2;
+        this.wobbleAmp = 8 + Math.random() * 15;
+        this.rotation = (Math.random() - 0.5) * 0.6;
+        this.rotSpeed = (Math.random() - 0.5) * 0.4;
+        this.t = Math.random() * Math.PI * 2;
+    }
+    update(dt) {
+        this.t += dt * this.wobbleSpeed;
+        this.x += (this.vx + Math.sin(this.t) * this.wobbleAmp * 0.3) * dt;
+        this.y += this.vy * dt;
+        this.rotation += this.rotSpeed * dt;
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        ctx.font = `bold ${this.size}px 'Segoe UI', sans-serif`;
+        ctx.fillStyle = "#ffd700";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(this.char, 0, 0);
+        ctx.restore();
+    }
+    get dead() { return this.y < -30; }
+}
+
+class BackgroundAnimation {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.letters = [];
+        this.confetti = [];
+        this.running = false;
+        this._animId = null;
+        this._lastTime = 0;
+        this._spawnTimer = 0;
+        this._resize();
+    }
+    _resize() {
+        const r = this.canvas.parentElement.getBoundingClientRect();
+        this.canvas.width = r.width;
+        this.canvas.height = r.height;
+    }
+    start() {
+        if (this.running) return;
+        this.running = true;
+        this._resize();
+        this._lastTime = performance.now();
+        this._tick = this._tick.bind(this);
+        this._animId = requestAnimationFrame(this._tick);
+    }
+    stop() {
+        this.running = false;
+        if (this._animId) cancelAnimationFrame(this._animId);
+        this._animId = null;
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+    addConfetti(particles) {
+        this.confetti.push(...particles);
+    }
+    _tick(now) {
+        if (!this.running) return;
+        const dt = Math.min((now - this._lastTime) / 1000, 0.1);
+        this._lastTime = now;
+        const w = this.canvas.width, h = this.canvas.height;
+
+        this._spawnTimer -= dt;
+        if (this._spawnTimer <= 0) {
+            this.letters.push(new FloatingLetter(w, h));
+            this._spawnTimer = 0.4 + Math.random() * 0.6;
+        }
+
+        this.ctx.clearRect(0, 0, w, h);
+        for (let i = this.letters.length - 1; i >= 0; i--) {
+            this.letters[i].update(dt);
+            this.letters[i].draw(this.ctx);
+            if (this.letters[i].dead) this.letters.splice(i, 1);
+        }
+        // Draw confetti on top of floating letters
+        for (let i = this.confetti.length - 1; i >= 0; i--) {
+            this.confetti[i].update(dt);
+            this.confetti[i].draw(this.ctx);
+            if (this.confetti[i].dead) this.confetti.splice(i, 1);
+        }
+        this._animId = requestAnimationFrame(this._tick);
+    }
+}
+
+// ────────────────────────────────────────
+// CONFETTI PARTICLE (game over celebration)
+// ────────────────────────────────────────
+class ConfettiParticle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.8;
+        const speed = 200 + Math.random() * 350;
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.gravity = 250 + Math.random() * 100;
+        this.life = 1.5 + Math.random() * 1.0;
+        this.maxLife = this.life;
+        this.size = 4 + Math.random() * 6;
+        this.rotation = Math.random() * Math.PI * 2;
+        this.rotSpeed = (Math.random() - 0.5) * 10;
+        const colors = ["#ffd700", "#ff6b6b", "#4ecdc4", "#45b7d1", "#f9ca24", "#ff9ff3", "#54a0ff", "#5f27cd"];
+        this.color = colors[Math.floor(Math.random() * colors.length)];
+    }
+    update(dt) {
+        this.x += this.vx * dt;
+        this.vy += this.gravity * dt;
+        this.y += this.vy * dt;
+        this.life -= dt;
+        this.rotation += this.rotSpeed * dt;
+    }
+    draw(ctx) {
+        const alpha = Math.max(0, this.life / this.maxLife);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-this.size / 2, -this.size / 4, this.size, this.size / 2);
+        ctx.restore();
+    }
     get dead() { return this.life <= 0; }
 }
 
@@ -645,12 +813,10 @@ class Renderer {
                     ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
                 }
 
-                // Hint glow (orange) — one letter away from a word
+                // Hint border (orange) — one letter away from a word
                 if (this.hintCells.has(key) && !this.flashCells.has(key) && !isBlastCell && !this.validatedCells.has(key)) {
-                    ctx.fillStyle = "rgba(255, 140, 0, 0.25)";
-                    ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-                    ctx.strokeStyle = "rgba(255, 140, 0, 0.7)";
-                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = "rgba(255, 140, 0, 0.85)";
+                    ctx.lineWidth = 3;
                     ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
                 }
 
@@ -673,7 +839,7 @@ class Renderer {
                 // Letter
                 const letter = grid.get(r, c);
                 if (letter) {
-                    let color = this.hintCells.has(key) && !this.flashCells.has(key) ? "#ff8c00" : "#fff";
+                    let color = "#fff";
                     if (this.validatedCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for validated
                     else if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#da70d6"; // orchid purple for wildcards
                     let scale = 1;
@@ -1210,6 +1376,31 @@ class ProfileManager {
         this._save();
     }
 
+    getChallengeStats(challengeType) {
+        const p = this.getActive();
+        if (!p) return { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [] };
+        if (!p.challengeStats) p.challengeStats = {};
+        return p.challengeStats[challengeType] || { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [] };
+    }
+
+    recordChallengeGame(challengeType, score, wordsFound) {
+        const p = this.getActive();
+        if (!p) return;
+        if (!p.challengeStats) p.challengeStats = {};
+        if (!p.challengeStats[challengeType]) {
+            p.challengeStats[challengeType] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [] };
+        }
+        const cs = p.challengeStats[challengeType];
+        cs.gamesPlayed++;
+        cs.totalWords += wordsFound.length;
+        if (!Array.isArray(cs.uniqueWordsFound)) cs.uniqueWordsFound = [];
+        const uniqueSet = new Set(cs.uniqueWordsFound);
+        for (const { word } of wordsFound) uniqueSet.add(word);
+        cs.uniqueWordsFound = [...uniqueSet];
+        if (score > cs.highScore) cs.highScore = score;
+        this._save();
+    }
+
     hasProfiles() { return this.profiles.length > 0; }
 }
 
@@ -1328,10 +1519,20 @@ class Game {
             tutorialBtnProfiles: document.getElementById("tutorial-btn-profiles"),
             tutorialBtnMenu: document.getElementById("tutorial-btn-menu"),
             tutorialOverlay: document.getElementById("tutorial-overlay"),
-            tutorialTrack: document.getElementById("tutorial-track"),
+            tutorialMenu: document.getElementById("tutorial-menu"),
+            tutorialMenuList: document.getElementById("tutorial-menu-list"),
+            tutorialCloseBtn: document.getElementById("tutorial-close-btn"),
+            tutorialSlides: document.getElementById("tutorial-slides"),
+            tutorialBackBtn: document.getElementById("tutorial-back-btn"),
+            tutorialSlidesCloseBtn: document.getElementById("tutorial-slides-close-btn"),
+            tutorialCanvas: document.getElementById("tutorial-canvas"),
+            tutorialSlideTitle: document.getElementById("tutorial-slide-title"),
+            tutorialSlideDesc: document.getElementById("tutorial-slide-desc"),
+            tutorialImage: document.getElementById("tutorial-image"),
             tutorialDots: document.getElementById("tutorial-dots"),
             tutorialCounter: document.getElementById("tutorial-counter"),
-            tutorialCloseBtn: document.getElementById("tutorial-close-btn"),
+            tutorialPrevBtn: document.getElementById("tutorial-prev-btn"),
+            tutorialNextBtn: document.getElementById("tutorial-next-btn"),
             // Challenges
             challengesBtn: document.getElementById("challenges-btn"),
             challengesScreen: document.getElementById("challenges-screen"),
@@ -1340,6 +1541,7 @@ class Game {
             challengeSetupScreen: document.getElementById("challenge-setup-screen"),
             challengeSetupName: document.getElementById("challenge-setup-name"),
             challengeStartBtn: document.getElementById("challenge-start-btn"),
+            challengeResumeBtn: document.getElementById("challenge-resume-btn"),
             challengeBackToSelectBtn: document.getElementById("challenge-back-to-select-btn"),
             challengeMainMenuBtn: document.getElementById("challenge-main-menu-btn"),
             challengeTutorialBtn: document.getElementById("challenge-tutorial-btn"),
@@ -1353,6 +1555,7 @@ class Game {
             freezeIndicator: document.getElementById("freeze-indicator"),
             freezeTimer: document.getElementById("freeze-timer"),
             score2xIndicator: document.getElementById("score-2x-indicator"),
+            bgCanvas: document.getElementById("bg-canvas"),
         };
 
         this.state = State.MENU;
@@ -1369,6 +1572,7 @@ class Game {
         this.nextLetter = randomLetter();
         this.fallInterval = 0.5; // seconds per row
         this.fallTimer = 0;
+        this.spawnFreezeTimer = 0; // 2s pause at top before falling
         this.lastTime = 0;
         this._autoSaveTimer = 0;
 
@@ -1401,6 +1605,7 @@ class Game {
 
         // Challenge state
         this.activeChallenge = null; // null or CHALLENGE_TYPES value
+        this._gameOverChallenge = null;
         this.challengeGridSize = 7;
         this.targetWord = null;
         this.targetWordsCompleted = 0;
@@ -1440,6 +1645,15 @@ class Game {
 
         // Music starts when the player presses Start (see _startGame)
 
+        // Background floating letters animation
+        this.bgAnim = new BackgroundAnimation(this.els.bgCanvas);
+        this.bgAnim.start();
+
+        // Confetti state (handled by bgAnim)
+
+        // Wrap title letters for wave animation
+        this._wrapTitleLetters();
+
         // Start RAF loop
         requestAnimationFrame((t) => this._loop(t));
     }
@@ -1474,8 +1688,23 @@ class Game {
 
         this.els.startBtn.addEventListener("click", () => this._startGame());
         this.els.resumeGameBtn.addEventListener("click", () => this._resumeGame());
-        this.els.restartBtn.addEventListener("click", () => this._startGame());
-        this.els.menuBtn.addEventListener("click", () => this._showScreen("menu"));
+        this.els.restartBtn.addEventListener("click", () => {
+            if (this._gameOverChallenge) {
+                this.activeChallenge = this._gameOverChallenge;
+                this._gameOverChallenge = null;
+                this._startChallengeGame();
+            } else {
+                this._startGame();
+            }
+        });
+        this.els.menuBtn.addEventListener("click", () => {
+            if (this._gameOverChallenge) {
+                this._gameOverChallenge = null;
+                this._showScreen("challenges");
+            } else {
+                this._showScreen("menu");
+            }
+        });
         this.els.pauseBtn.addEventListener("click", () => this._togglePause());
         this.els.hintsBtn.addEventListener("click", () => {
             this.hintsEnabled = !this.hintsEnabled;
@@ -1498,7 +1727,11 @@ class Game {
             this._saveGameState();
             this.state = State.MENU;
             this.els.pauseOverlay.classList.remove("active");
-            this._showScreen("menu");
+            if (this.activeChallenge) {
+                this._showScreen("challenges");
+            } else {
+                this._showScreen("menu");
+            }
         });
 
         // Switch Profile
@@ -1516,6 +1749,7 @@ class Game {
             this._showScreen("menu");
         });
         this.els.challengeStartBtn.addEventListener("click", () => this._startChallengeGame());
+        this.els.challengeResumeBtn.addEventListener("click", () => this._resumeChallengeGame());
         this.els.challengeBackToSelectBtn.addEventListener("click", () => {
             this._showScreen("challenges");
         });
@@ -1705,7 +1939,8 @@ class Game {
             }
         }
 
-        // Active hint is gone — pick the first available one
+        // Active hint is gone — pick the longest available one
+        allHints.sort((a, b) => b.cells.size - a.cells.size);
         this._activeHintKey = allHints[0].key;
         this.renderer.hintCells = allHints[0].cells;
     }
@@ -1741,6 +1976,10 @@ class Game {
         this.els.tutorialBtnProfiles.addEventListener("click", () => this._openTutorial());
         this.els.tutorialBtnMenu.addEventListener("click", () => this._openTutorial());
         this.els.tutorialCloseBtn.addEventListener("click", () => this._closeTutorial());
+        this.els.tutorialSlidesCloseBtn.addEventListener("click", () => this._closeTutorial());
+        this.els.tutorialBackBtn.addEventListener("click", () => this._tutorialBackToMenu());
+        this.els.tutorialPrevBtn.addEventListener("click", () => this._goToTutorialSlide(this._tutorialIndex - 1));
+        this.els.tutorialNextBtn.addEventListener("click", () => this._goToTutorialSlide(this._tutorialIndex + 1));
 
         // Playlist modal
         this.els.playlistSaveBtn.addEventListener("click", () => this._savePlaylistModal());
@@ -1860,7 +2099,12 @@ class Game {
             const totalDy = clientY - this.swipeState.startY;
 
             if (!this.swipeState.dropTriggered && totalDy >= dropThreshold && totalDy > Math.abs(totalDx) * 1.15) {
-                this._fastDrop(true);
+                if (this.spawnFreezeTimer > 0) {
+                    // Cancel spawn freeze — block starts falling normally
+                    this.spawnFreezeTimer = 0;
+                } else {
+                    this._fastDrop(true);
+                }
                 this.swipeState.dropTriggered = true;
                 return;
             }
@@ -2004,14 +2248,59 @@ class Game {
         if (name === "menu") {
             this._updateHighScoreDisplay();
             this._updateMenuStats();
-            const hasSaved = this._hasSavedGame();
+            const hasSaved = this._hasSavedGame(null);
             this.els.resumeGameBtn.classList.toggle("hidden", !hasSaved);
         }
         if (name === "challenges") {
             this._renderChallengesGrid();
         }
+        if (name === "challengesetup") {
+            const hasSaved = this.activeChallenge && this._hasSavedGame(this.activeChallenge);
+            this.els.challengeResumeBtn.classList.toggle("hidden", !hasSaved);
+        }
         if (name === "play") this._updateMiniNowPlaying();
         if (name === "profiles") this._renderProfilesList();
+
+        // Control background animation (hide during gameplay)
+        if (this.bgAnim) {
+            if (name === "play") {
+                this.bgAnim.stop();
+            } else {
+                this.bgAnim.start();
+            }
+        }
+
+        // Confetti on game over
+        if (name === "gameover") this._spawnConfetti();
+    }
+
+    _wrapTitleLetters() {
+        document.querySelectorAll(".title").forEach(el => {
+            const text = el.textContent.trim();
+            el.textContent = "";
+            [...text].forEach((ch, i) => {
+                const span = document.createElement("span");
+                span.className = "title-letter";
+                span.textContent = ch === " " ? "\u00A0" : ch;
+                span.style.animationDelay = `${i * 0.15}s`;
+                el.appendChild(span);
+            });
+        });
+    }
+
+    _spawnConfetti() {
+        if (!this.bgAnim) return;
+        const rect = this.els.gameoverScreen.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height * 0.3;
+        const particles = [];
+        for (let i = 0; i < 80; i++) {
+            particles.push(new ConfettiParticle(
+                cx + (Math.random() - 0.5) * rect.width * 0.6,
+                cy + (Math.random() - 0.5) * 40
+            ));
+        }
+        this.bgAnim.addConfetti(particles);
     }
 
     _openWordsFound(fromScreen) {
@@ -2038,8 +2327,13 @@ class Game {
     }
 
     _updateHighScoreDisplay() {
+        if (this.activeChallenge) {
+            const cs = this.profileMgr.getChallengeStats(this.activeChallenge);
+            this.els.playHighScore.textContent = cs.highScore;
+        } else {
+            this.els.playHighScore.textContent = this.highScore;
+        }
         this.els.menuHighScore.textContent = this.highScore;
-        this.els.playHighScore.textContent = this.highScore;
     }
 
     _updateScoreDisplay() {
@@ -2058,9 +2352,11 @@ class Game {
 
     // ── Save / Resume game state ──
 
-    _saveKey() {
+    _saveKey(challengeType) {
         const profile = this.profileMgr.getActive();
-        return profile ? `wf_savedgame_${profile.id}` : null;
+        if (!profile) return null;
+        const ct = challengeType !== undefined ? challengeType : this.activeChallenge;
+        return ct ? `wf_savedgame_${profile.id}_${ct}` : `wf_savedgame_${profile.id}`;
     }
 
     _saveGameState() {
@@ -2084,12 +2380,15 @@ class Game {
             nextBonusScore: this.nextBonusScore,
             block: this.block ? { letter: this.block.letter, col: this.block.col, row: this.block.row, kind: this.block.kind } : null,
             fallInterval: this.fallInterval,
+            activeChallenge: this.activeChallenge || null,
+            targetWord: this.targetWord || null,
+            targetWordsCompleted: this.targetWordsCompleted || 0,
         };
         localStorage.setItem(key, JSON.stringify(state));
     }
 
-    _loadGameState() {
-        const key = this._saveKey();
+    _loadGameState(challengeType) {
+        const key = this._saveKey(challengeType);
         if (!key) return null;
         try {
             const data = JSON.parse(localStorage.getItem(key) || "null");
@@ -2103,8 +2402,8 @@ class Game {
         if (key) localStorage.removeItem(key);
     }
 
-    _hasSavedGame() {
-        return this._loadGameState() !== null;
+    _hasSavedGame(challengeType) {
+        return this._loadGameState(challengeType) !== null;
     }
 
     _autoplayMusicFromUserAction() {
@@ -2277,7 +2576,7 @@ class Game {
     }
 
     _resumeGame() {
-        const saved = this._loadGameState();
+        const saved = this._loadGameState(null);
         if (!saved) { this._startGame(); return; }
 
         this.gridSize = saved.gridSize;
@@ -2330,6 +2629,87 @@ class Game {
         requestAnimationFrame(() => {
             this.renderer.resize(this.gridSize, this.gridSize);
             // Restore falling block or spawn a new one
+            if (saved.block) {
+                this.block = new FallingBlock(saved.block.letter, saved.block.col, this.gridSize, saved.block.kind || "letter");
+                const savedRow = typeof saved.block.row === "number" ? saved.block.row : -1;
+                this.block.row = savedRow;
+                this.block.visualRow = savedRow;
+            } else {
+                this._spawnBlock();
+            }
+            this.els.nextLetter.textContent = this.nextLetter;
+            this._updateBonusButton();
+        });
+    }
+
+    _resumeChallengeGame() {
+        if (!this.activeChallenge) return;
+        const saved = this._loadGameState(this.activeChallenge);
+        if (!saved) { this._startChallengeGame(); return; }
+
+        this.gridSize = saved.gridSize;
+        this.difficulty = saved.difficulty || "casual";
+        this.grid = new Grid(this.gridSize, this.gridSize);
+        this.grid.cells = saved.cells;
+        this.score = saved.score;
+        this.timeLimitSeconds = saved.timeLimitSeconds || 0;
+        this.timeRemainingSeconds = saved.timeRemainingSeconds || 0;
+        this.nextLetter = saved.nextLetter;
+        this.wordsFound = saved.wordsFound || [];
+        this.foundWordsThisGame = new Set(this.wordsFound.map(({ word }) => word));
+        this.availableBonusType = saved.availableBonusType || null;
+        this.bonusBag = Array.isArray(saved.bonusBag) ? saved.bonusBag.filter(type => BONUS_TYPE_POOL.includes(type)) : [];
+        this.lastAwardedBonusType = BONUS_TYPE_POOL.includes(saved.lastAwardedBonusType) ? saved.lastAwardedBonusType : this.availableBonusType;
+        this.nextBonusScore = saved.nextBonusScore || BONUS_UNLOCK_SCORE_INTERVAL;
+        this.letterChoiceActive = false;
+        this.letterChoiceResumeState = null;
+        this.fallInterval = saved.fallInterval || (this.difficulty === "casual" ? 1.5 : 0.9);
+        this.clearing = false;
+        this.clearPhase = "";
+        this.totalWordsInChain = 0;
+        this.totalLettersInChain = 0;
+        this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
+        this.pendingClearMode = "";
+        this.renderer.flashCells.clear();
+        this.renderer.blastCells.clear();
+        this.renderer.blastCenterKey = null;
+        this.renderer.blastProgress = 0;
+        this.renderer.particles = [];
+        this.renderer.gravityAnims = [];
+        this.pendingGravityMoves = [];
+        this._validatedWordGroups = [];
+        this._claimAnimating = false;
+        this.renderer.validatedCells = new Set();
+
+        // Reset bonus state
+        this.freezeActive = false;
+        this.freezeTimeRemaining = 0;
+        this.scoreMultiplier = 1;
+        this.els.freezeIndicator.classList.add("hidden");
+        this.els.score2xIndicator.classList.add("hidden");
+
+        // Restore challenge-specific state
+        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
+            this.targetWord = saved.targetWord || null;
+            this.targetWordsCompleted = saved.targetWordsCompleted || 0;
+            if (this.targetWord) {
+                this.els.targetWordDisplay.classList.remove("hidden");
+                this.els.targetWordText.textContent = this.targetWord;
+            }
+        } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
+            this.speedRoundBaseInterval = this.fallInterval;
+            this.els.targetWordDisplay.classList.add("hidden");
+        }
+
+        this._updateScoreDisplay();
+        this._updateTimerDisplay();
+        this._showScreen("play");
+        this.state = State.PLAYING;
+
+        this._autoplayMusicFromUserAction();
+
+        requestAnimationFrame(() => {
+            this.renderer.resize(this.gridSize, this.gridSize);
             if (saved.block) {
                 this.block = new FallingBlock(saved.block.letter, saved.block.col, this.gridSize, saved.block.kind || "letter");
                 const savedRow = typeof saved.block.row === "number" ? saved.block.row : -1;
@@ -2424,6 +2804,7 @@ class Game {
         this.nextLetter = randomLetter();
         this.els.nextLetter.textContent = this.nextLetter;
         this.fallTimer = 0;
+        this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0.5 : 2.0;
         this._updateBonusButton();
     }
 
@@ -2563,76 +2944,20 @@ class Game {
             return;
         }
 
-        // ── Target Word challenge: tap-to-claim mode ──
-        // Instead of auto-clearing, highlight validated words green
-        // and let the player tap to claim them.
-        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
-            const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
-            if (newWords.length > 0) {
-                for (const word of newWords) {
-                    this.foundWordsThisGame.add(word);
-                }
-                // Build per-word cell groups from the result
-                // We re-detect each word individually to get its specific cells
-                this._addValidatedWords(result, newWords);
-            }
-            // Don't enter clearing state — spawn next block
-            this.clearing = false;
-            this._computeHintCells();
-            this._spawnBlock();
-            return;
-        }
-
-        // Score each word (one per direction/sequence)
+        // ── Tap-to-claim mode ──
+        // Highlight validated words green and let the player tap to claim them.
         const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
         if (newWords.length > 0) {
-            const prevScore = this.score;
             for (const word of newWords) {
-                let pts = word.length * 10 * word.length;
-                if (this.scoreMultiplier > 1) {
-                    pts *= this.scoreMultiplier;
-                    this.scoreMultiplier = 1;
-                    this.els.score2xIndicator.classList.add("hidden");
-                }
-                this.score += pts;
-                this.totalWordsInChain++;
-                this.wordsFound.push({ word, pts });
-                if (!this._chainWords) this._chainWords = [];
-                this._chainWords.push({ word, pts });
-
-                // Target Word challenge: check if this word matches
-                if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD && this.targetWord && word === this.targetWord) {
-                    this.targetWordsCompleted++;
-                    this.score += 200; // bonus for hitting target
-                    this._pickTargetWord();
-                }
+                this.foundWordsThisGame.add(word);
             }
-            this._checkBonusUnlock(prevScore, this.score);
-            // Mark all found words as seen so they don't re-score later
-            for (const w of result.words) this.foundWordsThisGame.add(w);
+            this._addValidatedWords(result, newWords);
         }
-        this.totalLettersInChain += result.cells.size;
-        this._updateScoreDisplay();
-        this._updateSpeedRound();
-
-        if (this.totalWordsInChain > 1) {
-            this.audio.chain();
-        } else {
-            this.audio.clear();
-        }
-
-        // Flash cells, then remove
-        this.clearing = true;
-        this.clearPhase = "flash";
-        this.clearTimer = 0;
-        this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
-        this.pendingClearMode = "words";
-        this.renderer.flashCells = new Set(result.cells);
-        this.renderer.blastCells.clear();
-        this.renderer.blastCenterKey = null;
-        this.renderer.blastProgress = 0;
-        this.renderer.spawnParticles(result.cells);
-        this._pendingClearCells = result.cells;
+        // Don't enter clearing state — spawn next block
+        this.clearing = false;
+        this._computeHintCells();
+        if (!this.block) this._spawnBlock();
+        return;
     }
 
     _processClearPhase(dt) {
@@ -2689,6 +3014,7 @@ class Game {
         if (this.letterChoiceActive) return;
         if (this.state === State.PLAYING) {
             this.state = State.PAUSED;
+            this.els.quitBtn.textContent = this.activeChallenge ? "Quit to Challenges" : "Quit to Menu";
             this.els.pauseOverlay.classList.add("active");
         } else if (this.state === State.PAUSED) {
             this.state = State.PLAYING;
@@ -2775,14 +3101,23 @@ class Game {
 
         // Record stats to profile
         const wordsCount = (this.wordsFound || []);
-        this.profileMgr.recordGame(this.score, wordsCount);
+        if (this.activeChallenge) {
+            this.profileMgr.recordChallengeGame(this.activeChallenge, this.score, wordsCount);
+        } else {
+            this.profileMgr.recordGame(this.score, wordsCount);
+        }
 
-        // Update high score from profile
-        const profile = this.profileMgr.getActive();
+        // Update high score
         let isNew = false;
-        if (profile && this.score >= profile.highScore) {
-            this.highScore = profile.highScore;
-            isNew = this.score > 0;
+        if (this.activeChallenge) {
+            const cs = this.profileMgr.getChallengeStats(this.activeChallenge);
+            isNew = this.score > 0 && this.score >= cs.highScore;
+        } else {
+            const profile = this.profileMgr.getActive();
+            if (profile && this.score >= profile.highScore) {
+                this.highScore = profile.highScore;
+                isNew = this.score > 0;
+            }
         }
 
         // Build final score text (add challenge info if applicable)
@@ -2796,8 +3131,15 @@ class Game {
         this.els.finalScore.textContent = finalText;
         this.els.newHighScore.classList.toggle("hidden", !isNew);
 
+        // Store challenge type for gameover screen buttons before resetting
+        this._gameOverChallenge = this.activeChallenge;
+
         // Reset challenge state
         this.activeChallenge = null;
+
+        // Update gameover buttons based on whether this was a challenge game
+        this.els.menuBtn.textContent = this._gameOverChallenge ? "Back to Challenges" : "Main Menu";
+        this.els.restartBtn.textContent = this._gameOverChallenge ? "Play Again" : "Play Again";
 
         this._showScreen("gameover");
     }
@@ -2991,127 +3333,1218 @@ class Game {
         this._setMusicControlButton(this.els.npMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
     }
 
-    // ── Tutorial slideshow ──
+    // ── Tutorial System (Sub-menu + Animated Canvas Slides) ──
+
+    _initTutorialSlides() {
+        if (this._tutorialCategories) return;
+
+        // ── Drawing helpers (shared by all slide animations) ──
+        const gL = (w, h, gs, yBias = 0) => {
+            const cs = Math.floor(Math.min(w * 0.8, h * 0.6) / gs);
+            return { cs, ox: (w - cs * gs) / 2, oy: (h - cs * gs) / 2 + yBias };
+        };
+        const gBg = (ctx, ox, oy, cs, gs) => {
+            for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
+                ctx.fillStyle = '#1e1e30';
+                ctx.fillRect(ox + c * cs + 1, oy + r * cs + 1, cs - 2, cs - 2);
+                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                ctx.strokeRect(ox + c * cs, oy + r * cs, cs, cs);
+            }
+        };
+        const gC = (ctx, ox, oy, cs, r, c, ltr, bg, glw) => {
+            const x = ox + c * cs, y = oy + r * cs;
+            ctx.fillStyle = bg || '#2a2a3e';
+            ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+            if (glw) {
+                ctx.save(); ctx.shadowColor = glw; ctx.shadowBlur = 10;
+                ctx.strokeStyle = glw; ctx.lineWidth = 2;
+                ctx.strokeRect(x + 3, y + 3, cs - 6, cs - 6); ctx.restore();
+            }
+            if (ltr) {
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold ${Math.floor(cs * 0.45)}px sans-serif`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(ltr, x + cs / 2, y + cs / 2);
+            }
+        };
+        const gF = (ctx, ox, oy, cs, r, c, ltr) => {
+            const x = ox + c * cs, y = oy + r * cs;
+            ctx.fillStyle = '#3a3a5e';
+            ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+            ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 12;
+            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+            ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4); ctx.restore();
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${Math.floor(cs * 0.45)}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(ltr, x + cs / 2, y + cs / 2);
+        };
+        const gG = (ctx, ox, oy, cs, r, c) => {
+            const x = ox + c * cs, y = oy + r * cs;
+            ctx.save(); ctx.strokeStyle = 'rgba(255,215,0,0.2)'; ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
+            ctx.setLineDash([]); ctx.restore();
+        };
+        const gT = (ctx, x, y, txt, clr, sz, a) => {
+            ctx.save();
+            if (a !== undefined) ctx.globalAlpha = a;
+            ctx.fillStyle = clr || '#ffd700';
+            ctx.font = `bold ${sz || 16}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(txt, x, y); ctx.restore();
+        };
+        const gA = (ctx, x, y, dir, sz) => {
+            sz = sz || 18;
+            ctx.save(); ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3;
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
+            const h = sz * 0.4;
+            if (dir === 'left') {
+                ctx.moveTo(x + sz, y); ctx.lineTo(x, y);
+                ctx.lineTo(x + h, y - h); ctx.moveTo(x, y); ctx.lineTo(x + h, y + h);
+            } else if (dir === 'right') {
+                ctx.moveTo(x - sz, y); ctx.lineTo(x, y);
+                ctx.lineTo(x - h, y - h); ctx.moveTo(x, y); ctx.lineTo(x - h, y + h);
+            } else {
+                ctx.moveTo(x, y - sz); ctx.lineTo(x, y);
+                ctx.lineTo(x - h, y - h); ctx.moveTo(x, y); ctx.lineTo(x + h, y - h);
+            }
+            ctx.stroke(); ctx.restore();
+        };
+        const gTap = (ctx, x, y, t) => {
+            const p = 0.5 + 0.5 * Math.sin(t * 6);
+            ctx.save();
+            ctx.beginPath(); ctx.arc(x, y, 10 + p * 12, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(255,215,0,${0.3 + p * 0.5})`; ctx.lineWidth = 2; ctx.stroke();
+            ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffd700'; ctx.fill(); ctx.restore();
+        };
+        const ease = v => v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2;
+        const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+        // ── Slide Definitions ──
+
+        this._tutorialCategories = [
+            // ═══ ADD TO PHONE ═══
+            {
+                id: 'addphone', icon: '📱', label: 'Add Game to Phone',
+                desc: 'Install the game on your iPhone home screen',
+                slides: [
+                    { title: 'Step 1: Open in Safari', desc: 'Open this game\'s URL in Safari on your iPhone. This only works in Safari — Chrome and other browsers don\'t support adding web apps to the home screen.', img: 'TUTORIAL/1.png' },
+                    { title: 'Step 2: Tap the Share Button', desc: 'Tap the Share button at the bottom of Safari (the square with an arrow pointing up). This opens the share menu with all your options.', img: 'TUTORIAL/2.png' },
+                    { title: 'Step 3: Add to Home Screen', desc: 'Scroll down in the share menu and tap "Add to Home Screen". You can customize the name if you want, then tap "Add" in the top-right corner.', img: 'TUTORIAL/3.png' },
+                    { title: 'Step 4: Launch Like an App!', desc: 'The game now appears as an icon on your home screen! Tap it to launch — it opens in full-screen mode just like a real app, with no browser bars or distractions. Enjoy!', img: 'TUTORIAL/4.png' }
+                ]
+            },
+
+            // ═══ HOW TO PLAY ═══
+            {
+                id: 'basics', icon: '🎮', label: 'How to Play',
+                desc: 'Learn the basics — dropping letters, forming words, and scoring points',
+                slides: [
+                    {
+                        title: 'Falling Letters',
+                        desc: 'Letter blocks fall one at a time from the top of the grid. Each block contains a random letter. When a block reaches the bottom — or lands on top of another letter — it locks in place. You can see the NEXT letter coming in the preview above the grid. The game ends when a new block has no room to spawn because the grid is full!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const placed = [[4,0,'W'],[4,1,'O'],[4,2,'R'],[4,3,'D'],[4,4,'S'],
+                                            [3,1,'A'],[3,3,'L'],[3,4,'E']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            const ltrs = 'TSPKRN', cyc = t % 3;
+                            const ltr = ltrs[Math.floor(t / 3) % ltrs.length];
+                            const tgtR = 2, col = 2;
+                            const row = cyc < 2.2 ? lerp(-1, tgtR, ease(Math.min(cyc / 2.2, 1))) : tgtR;
+                            gG(ctx, ox, oy, cs, tgtR, col);
+                            gF(ctx, ox, oy, cs, clamp(row, -0.5, tgtR), col, ltr);
+                            const nx = ltrs[(Math.floor(t / 3) + 1) % ltrs.length];
+                            gT(ctx, w / 2, oy - cs * 0.9, 'Next: ' + nx, '#777', Math.floor(cs * 0.35));
+                        }
+                    },
+                    {
+                        title: 'Moving & Dropping',
+                        desc: 'While a block is falling, SWIPE LEFT or RIGHT to move it to a different column. SWIPE DOWN to instantly hard-drop it straight to the bottom. On desktop, use the LEFT/RIGHT arrow keys to move and SPACE or DOWN arrow to drop. Plan your placement carefully — once a block locks in, you can\'t move it!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const placed = [[4,1,'H'],[4,2,'E'],[4,3,'L'],[4,4,'P'],[3,3,'A']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            const ph = t % 7;
+                            let col, row;
+                            if (ph < 2) {
+                                col = 2 + ease(Math.min(ph, 1)) * 2; row = 0.5;
+                                const ax = ox + 3.5 * cs, ay = oy + 0.5 * cs;
+                                gA(ctx, ax, ay, 'right', cs * 0.35);
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Swipe Right →', '#ffd700', Math.floor(cs * 0.3));
+                            } else if (ph < 4) {
+                                const p = ph - 2;
+                                col = 4 - ease(Math.min(p, 1)) * 4; row = 0.5;
+                                const ax = ox + 1.5 * cs, ay = oy + 0.5 * cs;
+                                gA(ctx, ax, ay, 'left', cs * 0.35);
+                                gT(ctx, w / 2, oy - cs * 0.7, '← Swipe Left', '#ffd700', Math.floor(cs * 0.3));
+                            } else {
+                                const p = ph - 4;
+                                col = 0; row = clamp(ease(Math.min(p * 2, 1)) * 3, 0, 3);
+                                gA(ctx, ox + 0.5 * cs, oy + 1.5 * cs, 'down', cs * 0.35);
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Swipe Down ↓', '#ffd700', Math.floor(cs * 0.3));
+                            }
+                            col = clamp(Math.round(col), 0, gs - 1);
+                            gG(ctx, ox, oy, cs, col === 0 ? 3 : 4, col);
+                            gF(ctx, ox, oy, cs, clamp(row, 0, 4), col, 'M');
+                        }
+                    },
+                    {
+                        title: 'Forming Words',
+                        desc: 'The game automatically scans for valid English words of 3 or more letters in ALL eight directions — horizontal (left-to-right, right-to-left), vertical (top-to-bottom, bottom-to-top), and all four diagonals. When a valid word is found, those letters light up GREEN to let you know a word is ready to claim. The dictionary contains the top 20,000 most common English words!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const grid = [
+                                [' ',' ',' ',' ','D'],
+                                [' ',' ',' ','O',' '],
+                                [' ',' ','G',' ',' '],
+                                [' ','A','O',' ',' '],
+                                ['C','A','T','E','R']
+                            ];
+                            const words = [
+                                { cells:[[4,0],[4,1],[4,2]], label:'→ Horizontal', name:'CAT' },
+                                { cells:[[4,2],[3,2],[2,2]], label:'↕ Vertical', name:'TOG' },
+                                { cells:[[4,2],[3,1],[2,0]], label:'↗ Diagonal', name:'TAX' }
+                            ];
+                            const wi = Math.floor(t * 0.5) % 3;
+                            const active = words[wi];
+                            for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
+                                if (grid[r][c] === ' ') continue;
+                                const hit = active.cells.some(([wr,wc]) => wr === r && wc === c);
+                                gC(ctx, ox, oy, cs, r, c, grid[r][c],
+                                   hit ? '#2e5c2e' : '#2a2a3e',
+                                   hit ? '#4caf50' : null);
+                            }
+                            gT(ctx, w / 2, oy - cs * 0.7, active.label, '#4caf50', Math.floor(cs * 0.35));
+                        }
+                    },
+                    {
+                        title: 'Tap to Claim',
+                        desc: 'When letters glow green showing a valid word, TAP anywhere on the highlighted word to claim it! The word\'s letters are cleared from the grid, you earn points based on word length (longer words = way more points!), and all the letters above drop down to fill the empty spaces. You can tap to claim at ANY time — even while another block is falling!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const cyc = t % 4;
+                            const placed = [[4,0,'F'],[4,1,'U'],[4,2,'N'],[4,3,'K'],[4,4,'Y'],
+                                            [3,0,'R'],[3,2,'S'],[3,4,'E']];
+                            const wordCells = [[4,0],[4,1],[4,2]];
+                            if (cyc < 2.5) {
+                                for (const [r,c,l] of placed) {
+                                    const hit = wordCells.some(([wr,wc]) => wr === r && wc === c);
+                                    gC(ctx, ox, oy, cs, r, c, l,
+                                       hit ? '#2e5c2e' : '#2a2a3e',
+                                       hit ? '#4caf50' : null);
+                                }
+                                if (cyc > 0.5) {
+                                    const tapX = ox + 1 * cs + cs / 2;
+                                    const tapY = oy + 4 * cs + cs / 2;
+                                    gTap(ctx, tapX, tapY, t);
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'TAP to claim!', '#ffd700', Math.floor(cs * 0.35));
+                                } else {
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Word found!', '#4caf50', Math.floor(cs * 0.35));
+                                }
+                            } else {
+                                const alpha = 1 - (cyc - 2.5) * 2;
+                                for (const [r,c,l] of placed) {
+                                    const hit = wordCells.some(([wr,wc]) => wr === r && wc === c);
+                                    if (hit) {
+                                        ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
+                                        gC(ctx, ox, oy, cs, r, c, l, '#2e5c2e', '#4caf50');
+                                        ctx.restore();
+                                    } else {
+                                        gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                    }
+                                }
+                                const pts = Math.floor(clamp(1 - alpha, 0, 1) * 90);
+                                if (alpha < 0.5) gT(ctx, w / 2, oy + 2 * cs, '+' + pts + ' pts!', '#ffd700',
+                                    Math.floor(cs * 0.5), clamp(1 - (cyc - 3) * 3, 0, 1));
+                            }
+                        }
+                    },
+                    {
+                        title: 'Chains & Scoring',
+                        desc: 'Scoring formula: word length² × 10 (so a 3-letter word = 90 pts, 5-letter word = 250 pts!). After you claim a word, letters above fall down — if they form a NEW valid word, that\'s a CHAIN REACTION worth +50 bonus points per chain! Chains can keep going as long as new words keep forming. Strategic letter placement is the key to triggering massive chain combos.',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const cyc = t % 6;
+                            if (cyc < 2) {
+                                const cells = [[4,0,'S'],[4,1,'E'],[4,2,'T'],[4,3,'X'],[4,4,'L'],
+                                               [3,0,'R'],[3,1,'A'],[3,2,'N'],[3,4,'D'],
+                                               [2,2,'C'],[2,4,'O']];
+                                const word1 = [[4,0],[4,1],[4,2]];
+                                for (const [r,c,l] of cells) {
+                                    const hit = word1.some(([wr,wc]) => wr === r && wc === c);
+                                    gC(ctx, ox, oy, cs, r, c, l, hit ? '#2e5c2e' : '#2a2a3e', hit ? '#4caf50' : null);
+                                }
+                                gT(ctx, w / 2, oy - cs * 0.7, '"SET" found!', '#4caf50', Math.floor(cs * 0.35));
+                            } else if (cyc < 3.5) {
+                                const p = cyc - 2;
+                                const fallCells = [[3,0,'R'],[3,1,'A'],[3,2,'N'],[3,4,'D'],
+                                                   [2,2,'C'],[2,4,'O']];
+                                const landedCells = [[4,0,'R'],[4,1,'A'],[4,2,'N'],[4,4,'D'],
+                                                     [3,2,'C'],[3,4,'O'],[4,3,'X'],[4,4,'L']];
+                                const cells = p < 0.8 ? fallCells.map(([r,c,l]) =>
+                                    [lerp(r, r + 1, ease(Math.min(p / 0.8, 1))), c, l]
+                                ) : landedCells.map(([r,c,l]) => [r,c,l]);
+                                for (const [r,c,l] of cells) gC(ctx, ox, oy, cs, Math.round(r), c, l, '#2a2a3e');
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Letters fall...', '#aaa', Math.floor(cs * 0.35));
+                            } else {
+                                const cells = [[4,0,'R'],[4,1,'A'],[4,2,'N'],[4,3,'X'],[4,4,'D'],
+                                               [3,2,'C'],[3,4,'O']];
+                                const word2 = [[4,0],[4,1],[4,2]];
+                                for (const [r,c,l] of cells) {
+                                    const hit = word2.some(([wr,wc]) => wr === r && wc === c);
+                                    gC(ctx, ox, oy, cs, r, c, l, hit ? '#2e5c2e' : '#2a2a3e', hit ? '#4caf50' : null);
+                                }
+                                const flash = Math.sin(t * 8) > 0;
+                                gT(ctx, w / 2, oy - cs * 0.7, '⚡ CHAIN +50!', flash ? '#ff9800' : '#ffd700',
+                                    Math.floor(cs * 0.4));
+                            }
+                        }
+                    },
+                    {
+                        title: 'Spawn Freeze',
+                        desc: 'After each block lands, there\'s a 2-second pause before the next block appears. This is your planning window — scan the grid for words, decide where you want the next letter, and get ready! If you\'re ready early, SWIPE DOWN to skip the freeze and spawn the next block immediately. In Speed Round challenges, the freeze is only 0.5 seconds!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const placed = [[4,0,'P'],[4,1,'L'],[4,2,'A'],[4,3,'N'],[4,4,'E'],
+                                            [3,2,'T']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            const cyc = t % 5;
+                            if (cyc < 2) {
+                                const row = lerp(-1, 2, ease(Math.min(cyc / 1.5, 1)));
+                                gG(ctx, ox, oy, cs, 2, 2);
+                                gF(ctx, ox, oy, cs, clamp(row, -0.5, 2), 2, 'H');
+                            } else if (cyc < 4) {
+                                gC(ctx, ox, oy, cs, 2, 2, 'H', '#2a2a3e');
+                                const remain = 2 - (cyc - 2);
+                                const barW = cs * 3, barH = 8;
+                                const bx = (w - barW) / 2, by = oy - cs * 1.2;
+                                ctx.fillStyle = '#333';
+                                ctx.fillRect(bx, by, barW, barH);
+                                ctx.fillStyle = '#ffd700';
+                                ctx.fillRect(bx, by, barW * (remain / 2), barH);
+                                gT(ctx, w / 2, by - 14, remain.toFixed(1) + 's', '#ffd700', Math.floor(cs * 0.3));
+                                if (cyc > 3) {
+                                    gA(ctx, w / 2, by + cs * 0.8, 'down', 14);
+                                    gT(ctx, w / 2, by + cs * 1.4, 'Swipe ↓ to skip', '#888', Math.floor(cs * 0.22));
+                                }
+                            } else {
+                                gC(ctx, ox, oy, cs, 2, 2, 'H', '#2a2a3e');
+                                gF(ctx, ox, oy, cs, -0.5, 2, 'R');
+                                gT(ctx, w / 2, oy - cs * 0.9, 'Next block!', '#4caf50', Math.floor(cs * 0.3));
+                            }
+                        }
+                    }
+                ]
+            },
+
+            // ═══ BONUSES & POWER-UPS ═══
+            {
+                id: 'bonuses', icon: '⭐', label: 'Bonuses & Power-Ups',
+                desc: 'Earn powerful abilities every 1,000 points — 7 different types!',
+                slides: [
+                    {
+                        title: 'Earning Bonuses',
+                        desc: 'Every 1,000 points you score, you unlock a random bonus power-up! A glowing bonus button appears in the corner of the screen. Tap it whenever you\'re ready to activate it — you don\'t have to use it right away. There are 7 different bonus types: Letter Pick, Bomb, Wildcard, Row Clear, Freeze, Shuffle, and Score ×2. Each one is drawn randomly from a shuffled bag so you won\'t get the same bonus twice in a row.',
+                        draw(ctx, w, h, t) {
+                            const cyc = t % 4;
+                            const score = cyc < 2 ? Math.floor(lerp(800, 1000, ease(Math.min(cyc / 2, 1)))) : 1000;
+                            gT(ctx, w / 2, h * 0.25, 'Score: ' + score, '#fff', 28);
+                            if (cyc >= 2) {
+                                const p = (cyc - 2) / 2;
+                                const scale = 1 + Math.sin(p * Math.PI) * 0.3;
+                                ctx.save();
+                                ctx.translate(w / 2, h * 0.5);
+                                ctx.scale(scale, scale);
+                                gT(ctx, 0, 0, '🎁 BONUS!', '#ffd700', 32);
+                                ctx.restore();
+                                const icons = ['🔤', '💣', '★', '🧹', '❄️', '🔀', '×2'];
+                                const ic = icons[Math.floor(t * 3) % icons.length];
+                                gT(ctx, w / 2, h * 0.68, ic, '#fff', 36, 0.5 + p * 0.5);
+                            }
+                            const barW = w * 0.5, barH = 10;
+                            const bx = (w - barW) / 2, by = h * 0.35;
+                            ctx.fillStyle = '#333'; ctx.fillRect(bx, by, barW, barH);
+                            ctx.fillStyle = '#ffd700';
+                            ctx.fillRect(bx, by, barW * ((score % 1000) / 1000 || (cyc >= 2 ? 1 : 0)), barH);
+                        }
+                    },
+                    {
+                        title: 'Letter Pick 🔤',
+                        desc: 'The Letter Pick bonus lets you choose EXACTLY which letter you want for your next falling block. A full alphabet grid appears — tap any letter to select it. This is perfect when you\'re one letter away from completing a big word or setting up a chain reaction. Think strategically about which letter will score the most points!',
+                        draw(ctx, w, h, t) {
+                            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                            const cols = 7, bsz = Math.floor(w / (cols + 2));
+                            const rows = Math.ceil(26 / cols);
+                            const gw = cols * bsz, gh = rows * bsz;
+                            const ox = (w - gw) / 2, oy = (h - gh) / 2 - 20;
+                            const selected = Math.floor(t * 2) % 26;
+                            for (let i = 0; i < 26; i++) {
+                                const r = Math.floor(i / cols), c = i % cols;
+                                const x = ox + c * bsz, y = oy + r * bsz;
+                                const sel = i === selected;
+                                ctx.fillStyle = sel ? '#3a5a3a' : '#2a2a3e';
+                                ctx.fillRect(x + 2, y + 2, bsz - 4, bsz - 4);
+                                if (sel) {
+                                    ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 10;
+                                    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                    ctx.strokeRect(x + 3, y + 3, bsz - 6, bsz - 6); ctx.restore();
+                                }
+                                ctx.fillStyle = sel ? '#ffd700' : '#ccc';
+                                ctx.font = `bold ${Math.floor(bsz * 0.5)}px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(alphabet[i], x + bsz / 2, y + bsz / 2);
+                            }
+                            gT(ctx, w / 2, oy - bsz * 0.6, 'Pick your letter:', '#ffd700', 16);
+                            gT(ctx, w / 2, oy + gh + bsz * 0.6,
+                                'Selected: ' + alphabet[selected], '#4caf50', 18);
+                        }
+                    },
+                    {
+                        title: 'Bomb 💣',
+                        desc: 'The Bomb replaces your next block with a 💣 that falls just like a normal letter. When it lands, it EXPLODES — clearing every letter in its entire landing ROW and the entire COLUMN it\'s in, forming a cross-shaped blast! This is incredibly useful when your grid is getting full and you need to make space. Drop it in a crowded intersection for maximum destruction!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const cyc = t % 4;
+                            const bombCol = 2, bombRow = 2;
+                            for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
+                                if (r >= 3 || (r === 2 && c !== bombCol))
+                                    gC(ctx, ox, oy, cs, r, c, 'XYZAB'[c], '#2a2a3e');
+                            }
+                            if (cyc < 1.5) {
+                                const row = lerp(-1, bombRow, ease(Math.min(cyc / 1.2, 1)));
+                                gF(ctx, ox, oy, cs, clamp(row, -0.5, bombRow), bombCol, '💣');
+                            } else if (cyc < 2.5) {
+                                const p = (cyc - 1.5);
+                                const flash = Math.sin(p * 20) > 0;
+                                for (let r = 0; r < gs; r++) {
+                                    if (r === bombRow || true) {
+                                        const x = ox + bombCol * cs, y2 = oy + r * cs;
+                                        ctx.fillStyle = flash ? 'rgba(255,100,0,0.5)' : 'rgba(255,200,0,0.3)';
+                                        ctx.fillRect(x, y2, cs, cs);
+                                    }
+                                }
+                                for (let c = 0; c < gs; c++) {
+                                    const x2 = ox + c * cs, y = oy + bombRow * cs;
+                                    ctx.fillStyle = flash ? 'rgba(255,100,0,0.5)' : 'rgba(255,200,0,0.3)';
+                                    ctx.fillRect(x2, y, cs, cs);
+                                }
+                                gT(ctx, w / 2, oy - cs * 0.7, '💥 BOOM!', '#ff6600', Math.floor(cs * 0.45));
+                            } else {
+                                for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
+                                    if (r === bombRow || c === bombCol) continue;
+                                    if (r >= 3) gC(ctx, ox, oy, cs, r, c, 'XYZAB'[c], '#2a2a3e');
+                                }
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Row + Column cleared!', '#ff9800', Math.floor(cs * 0.3));
+                            }
+                        }
+                    },
+                    {
+                        title: 'Wildcard ★',
+                        desc: 'The Wildcard places a golden ★ star block that counts as ANY letter! When checking for words, the game tries all 26 letters in that position to see if a valid word can be formed. It works in every direction — horizontal, vertical, and diagonal. A single wildcard can even complete MULTIPLE words at once if it\'s positioned at an intersection. It\'s the most versatile bonus in the game!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const placed = [[4,0,'C'],[4,2,'T'],[4,3,'S'],[3,0,'R'],[3,2,'E']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            const cyc = t % 5;
+                            if (cyc < 2) {
+                                const row = lerp(-1, 4, ease(Math.min(cyc / 1.5, 1)));
+                                gF(ctx, ox, oy, cs, clamp(row, -0.5, 4), 1, '★');
+                            } else {
+                                const morphLetters = 'AEIOU';
+                                const mi = Math.floor((cyc - 2) * 2) % morphLetters.length;
+                                const ml = morphLetters[mi];
+                                const x = ox + 1 * cs, y = oy + 4 * cs;
+                                ctx.fillStyle = '#4a3a1e';
+                                ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+                                ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 15;
+                                ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                ctx.strokeRect(x + 3, y + 3, cs - 6, cs - 6); ctx.restore();
+                                ctx.fillStyle = '#ffd700';
+                                ctx.font = `bold ${Math.floor(cs * 0.45)}px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText('★' + ml, x + cs / 2, y + cs / 2);
+                                if (ml === 'A') {
+                                    const word = [[4,0],[4,1],[4,2]];
+                                    for (const [wr,wc] of word) {
+                                        ctx.save(); ctx.shadowColor = '#4caf50'; ctx.shadowBlur = 8;
+                                        ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 2;
+                                        ctx.strokeRect(ox + wc * cs + 3, oy + wr * cs + 3, cs - 6, cs - 6);
+                                        ctx.restore();
+                                    }
+                                    gT(ctx, w / 2, oy - cs * 0.7, '"CAT" found!', '#4caf50', Math.floor(cs * 0.35));
+                                } else {
+                                    gT(ctx, w / 2, oy - cs * 0.7, '★ = ' + ml + '?', '#ffd700', Math.floor(cs * 0.35));
+                                }
+                            }
+                        }
+                    },
+                    {
+                        title: 'Row Clear & Freeze',
+                        desc: 'ROW CLEAR (🧹) instantly sweeps away every letter in the bottom-most occupied row, and all letters above drop down to fill the gap. Great for clearing out junk letters stuck at the bottom! FREEZE (❄️) pauses block falling for 10 full seconds — no new blocks spawn, giving you time to carefully scan the grid, claim any words you see, and plan your next moves without pressure.',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs, -10);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const cyc = t % 8;
+                            if (cyc < 4) {
+                                for (let r = 2; r < gs; r++) for (let c = 0; c < gs; c++)
+                                    gC(ctx, ox, oy, cs, r, c, 'ABCDE'[c], '#2a2a3e');
+                                if (cyc < 1.5) {
+                                    gT(ctx, w / 2, oy - cs * 0.7, '🧹 Row Clear!', '#ff9800', Math.floor(cs * 0.35));
+                                    const sweep = ease(Math.min(cyc / 1.2, 1));
+                                    const sw = sweep * gs * cs;
+                                    ctx.fillStyle = 'rgba(255,165,0,0.4)';
+                                    ctx.fillRect(ox, oy + 4 * cs, sw, cs);
+                                } else if (cyc < 2.5) {
+                                    for (let c = 0; c < gs; c++)
+                                        gC(ctx, ox, oy, cs, 4, c, ' ', '#1e1e30');
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Bottom row gone!', '#ff9800', Math.floor(cs * 0.3));
+                                } else {
+                                    for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
+                                        gC(ctx, ox, oy, cs, r + 1 < gs ? r + 1 : r, c, 'ABCDE'[c], '#2a2a3e');
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Letters drop down', '#aaa', Math.floor(cs * 0.3));
+                                }
+                            } else {
+                                for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
+                                    gC(ctx, ox, oy, cs, r, c, 'FGHIJ'[c], '#2a2a3e');
+                                const remain = 10 - (cyc - 4) * 2.5;
+                                gT(ctx, w / 2, oy - cs * 0.9, '❄️ FREEZE', '#64b5f6', Math.floor(cs * 0.4));
+                                const barW = gs * cs * 0.8, barH = 8;
+                                const bx = (w - barW) / 2, by = oy - cs * 0.3;
+                                ctx.fillStyle = '#333'; ctx.fillRect(bx, by, barW, barH);
+                                ctx.fillStyle = '#64b5f6';
+                                ctx.fillRect(bx, by, barW * Math.max(0, remain / 10), barH);
+                                gT(ctx, w / 2, by - 14, remain.toFixed(1) + 's', '#64b5f6', Math.floor(cs * 0.25));
+                                const snowT = t * 2;
+                                for (let i = 0; i < 6; i++) {
+                                    const sx = ox + (Math.sin(snowT + i * 1.5) * 0.5 + 0.5) * gs * cs;
+                                    const sy = oy + ((snowT * 0.3 + i * 0.2) % 1) * gs * cs;
+                                    gT(ctx, sx, sy, '❄', '#64b5f6', 10, 0.4);
+                                }
+                            }
+                        }
+                    },
+                    {
+                        title: 'Shuffle & Score ×2',
+                        desc: 'SHUFFLE (🔀) randomly rearranges ALL letters currently on the grid into new positions — this can break up dead-end layouts and sometimes accidentally create new words! Great when you feel stuck. SCORE ×2 (💰) activates a point multiplier that DOUBLES the score of your very next claimed word. Save it for a long word or a chain to maximize points — a 5-letter word goes from 250 to 500!',
+                        draw(ctx, w, h, t) {
+                            const gs = 4, { cs, ox, oy } = gL(w, h, gs, -10);
+                            const cyc = t % 8;
+                            if (cyc < 4) {
+                                gBg(ctx, ox, oy, cs, gs);
+                                const ltrs1 = 'ABCDEFGHIJKLMNOP';
+                                const shuffled = 'DKBOPFMACGJELNIH';
+                                const p = ease(clamp((cyc - 0.5) / 1.5, 0, 1));
+                                for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
+                                    const i = r * gs + c;
+                                    const l = cyc < 2 ? ltrs1[i] : shuffled[i];
+                                    const jitter = cyc > 0.5 && cyc < 2 ? Math.sin(t * 20 + i) * 3 : 0;
+                                    ctx.save(); ctx.translate(jitter, jitter * 0.5);
+                                    gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                    ctx.restore();
+                                }
+                                gT(ctx, w / 2, oy - cs * 0.7, '🔀 Shuffle!',
+                                   '#e040fb', Math.floor(cs * 0.4));
+                            } else {
+                                gBg(ctx, ox, oy, cs, gs);
+                                for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++)
+                                    gC(ctx, ox, oy, cs, r, c, 'WORD'[c], '#2a2a3e');
+                                const flash = Math.sin(t * 5) > 0;
+                                const badge = '×2';
+                                gT(ctx, w / 2, oy - cs * 0.8, '💰 Score ×2 Active!',
+                                    flash ? '#ffd700' : '#ff9800', Math.floor(cs * 0.35));
+                                const word = [[3,0],[3,1],[3,2],[3,3]];
+                                for (const [r,c] of word) {
+                                    ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 8;
+                                    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                    ctx.strokeRect(ox + c * cs + 3, oy + r * cs + 3, cs - 6, cs - 6);
+                                    ctx.restore();
+                                }
+                                if (cyc > 5.5) {
+                                    const pts = '×2 = 180 pts!';
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.5, pts, '#ffd700', Math.floor(cs * 0.35));
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+
+            // ═══ GAME MODES ═══
+            {
+                id: 'modes', icon: '⚙️', label: 'Game Modes',
+                desc: 'Choose your playstyle — modes, grid sizes, difficulty & hints',
+                slides: [
+                    {
+                        title: 'Sandbox & Timed',
+                        desc: 'Two main game modes to choose from! SANDBOX is relaxed with no time limit — play as long as you want until the grid fills up. Perfect for practicing and learning. TIMED mode gives you a countdown clock — score as many points as possible before time runs out! The game ends when either the timer hits zero or the grid fills up, whichever comes first.',
+                        draw(ctx, w, h, t) {
+                            const mid = w / 2;
+                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.beginPath(); ctx.moveTo(mid, h * 0.15); ctx.lineTo(mid, h * 0.85);
+                            ctx.stroke();
+                            gT(ctx, mid * 0.5, h * 0.2, 'SANDBOX', '#4caf50', 18);
+                            gT(ctx, mid * 0.5, h * 0.35, '∞', '#4caf50', 48);
+                            gT(ctx, mid * 0.5, h * 0.52, 'No timer', '#888', 13);
+                            gT(ctx, mid * 0.5, h * 0.62, 'Relaxed play', '#888', 13);
+                            const gs1 = 3, cs1 = Math.floor(mid * 0.22);
+                            const ox1 = (mid - gs1 * cs1) / 2, oy1 = h * 0.68;
+                            for (let r = 0; r < gs1; r++) for (let c = 0; c < gs1; c++) {
+                                ctx.fillStyle = '#1e1e30'; ctx.fillRect(ox1 + c * cs1 + 1, oy1 + r * cs1 + 1, cs1 - 2, cs1 - 2);
+                                ctx.strokeStyle = '#333'; ctx.strokeRect(ox1 + c * cs1, oy1 + r * cs1, cs1, cs1);
+                            }
+                            gT(ctx, mid * 1.5, h * 0.2, 'TIMED', '#f44336', 18);
+                            const timeLeft = 300 - (t % 300);
+                            const mm = Math.floor(timeLeft / 60), ss = Math.floor(timeLeft % 60);
+                            gT(ctx, mid * 1.5, h * 0.35, `${mm}:${String(ss).padStart(2,'0')}`, '#f44336', 32);
+                            gT(ctx, mid * 1.5, h * 0.52, 'Beat the clock', '#888', 13);
+                            gT(ctx, mid * 1.5, h * 0.62, 'Race for points', '#888', 13);
+                            const gs2 = 3, cs2 = cs1;
+                            const ox2 = mid + (mid - gs2 * cs2) / 2, oy2 = h * 0.68;
+                            for (let r = 0; r < gs2; r++) for (let c = 0; c < gs2; c++) {
+                                ctx.fillStyle = '#1e1e30'; ctx.fillRect(ox2 + c * cs2 + 1, oy2 + r * cs2 + 1, cs2 - 2, cs2 - 2);
+                                ctx.strokeStyle = '#333'; ctx.strokeRect(ox2 + c * cs2, oy2 + r * cs2, cs2, cs2);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Grid Sizes & Difficulty',
+                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. Two difficulty levels: CASUAL accepts all words with 3+ letters, while CHALLENGING requires 4+ letters — short words like "AT" or "IN" won\'t count, forcing you to think bigger!',
+                        draw(ctx, w, h, t) {
+                            const sizes = [3, 5, 8];
+                            const si = Math.floor(t * 0.4) % sizes.length;
+                            const gs = sizes[si];
+                            const { cs, ox, oy } = gL(w, h, gs, -15);
+                            gBg(ctx, ox, oy, cs, gs);
+                            for (let r = gs - 2; r < gs; r++) for (let c = 0; c < gs; c++)
+                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#2a2a3e');
+                            gT(ctx, w / 2, oy - cs * 0.9, gs + '×' + gs + ' Grid', '#ffd700', 20);
+                            const diffY = oy + gs * cs + 25;
+                            gT(ctx, w * 0.3, diffY, 'Casual', '#4caf50', 14);
+                            gT(ctx, w * 0.3, diffY + 20, '3+ letters', '#888', 11);
+                            gT(ctx, w * 0.7, diffY, 'Challenging', '#f44336', 14);
+                            gT(ctx, w * 0.7, diffY + 20, '4+ letters', '#888', 11);
+                        }
+                    },
+                    {
+                        title: 'Hints System',
+                        desc: 'Keep an eye out for cells glowing ORANGE — these are hints! An orange glow means that cell is just ONE letter away from completing a valid word. If you can drop the right letter into that spot, the word will form instantly. Hints update in real-time as the grid changes, so check after every move. They\'re your best friend for spotting opportunities you might otherwise miss!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const placed = [[4,0,'C'],[4,1,'A'],[4,3,'S'],[4,4,'E'],
+                                            [3,0,'R'],[3,2,'N']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            const cyc = t % 5;
+                            const hintGlow = `rgba(255,165,0,${0.4 + 0.3 * Math.sin(t * 4)})`;
+                            gC(ctx, ox, oy, cs, 4, 2, '', '#2a2a3e', hintGlow);
+                            gT(ctx, w / 2, oy - cs * 0.7, '🔶 Hint: one letter away!', '#ff9800', Math.floor(cs * 0.3));
+                            if (cyc > 2) {
+                                const row = lerp(-1, 4, ease(clamp((cyc - 2) / 1.5, 0, 1)));
+                                gF(ctx, ox, oy, cs, clamp(row, -0.5, 4), 2, 'T');
+                                if (cyc > 3.8) {
+                                    const word = [[4,0],[4,1],[4,2]];
+                                    for (const [wr,wc] of word) {
+                                        ctx.save(); ctx.shadowColor = '#4caf50'; ctx.shadowBlur = 8;
+                                        ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 2;
+                                        ctx.strokeRect(ox + wc * cs + 3, oy + wr * cs + 3, cs - 6, cs - 6);
+                                        ctx.restore();
+                                    }
+                                    gC(ctx, ox, oy, cs, 4, 2, 'T', '#2e5c2e', '#4caf50');
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '"CAT" complete!', '#4caf50', Math.floor(cs * 0.3));
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+
+            // ═══ CHALLENGES ═══
+            {
+                id: 'challenges', icon: '🏆', label: 'Challenges',
+                desc: 'Special 5-minute timed modes with unique twists',
+                slides: [
+                    {
+                        title: 'Target Word',
+                        desc: 'In Target Word challenge, a specific word (3-5 letters) appears at the top of the screen. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! When you do, you earn a 200-point bonus on top of the normal word score, and a new target word is assigned. All challenges are 5 minutes long, use Casual difficulty, and are limited to 6×6, 7×7, or 8×8 grids. Your stats are tracked separately for each challenge!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs, 15);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const target = 'PLAY';
+                            const targetY = oy - cs * 1.4;
+                            ctx.fillStyle = '#1a1a2e';
+                            const tw = cs * 5, th = cs * 0.8;
+                            ctx.fillRect((w - tw) / 2, targetY - th / 2, tw, th);
+                            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1;
+                            ctx.strokeRect((w - tw) / 2, targetY - th / 2, tw, th);
+                            gT(ctx, w / 2, targetY, '🎯 ' + target, '#ffd700', Math.floor(cs * 0.4));
+                            const cyc = t % 6;
+                            const letters = [
+                                { l:'P', r:4, c:0, t:0 },
+                                { l:'L', r:4, c:1, t:1.2 },
+                                { l:'A', r:4, c:2, t:2.4 },
+                                { l:'Y', r:4, c:3, t:3.6 }
+                            ];
+                            const otherCells = [[4,4,'E'],[3,0,'S'],[3,2,'T']];
+                            for (const [r,c,l] of otherCells) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const lt of letters) {
+                                if (cyc < lt.t) continue;
+                                const p = cyc - lt.t;
+                                if (p < 1) {
+                                    const row = lerp(-1, lt.r, ease(Math.min(p / 0.8, 1)));
+                                    gF(ctx, ox, oy, cs, clamp(row, -0.5, lt.r), lt.c, lt.l);
+                                } else {
+                                    const complete = letters.every(x => cyc >= x.t + 1);
+                                    gC(ctx, ox, oy, cs, lt.r, lt.c, lt.l,
+                                        complete ? '#2e5c2e' : '#2a2a3e',
+                                        complete ? '#4caf50' : null);
+                                }
+                            }
+                            if (cyc > 5) {
+                                gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '+200 BONUS!', '#ffd700',
+                                    Math.floor(cs * 0.4), clamp((cyc - 5) * 3, 0, 1));
+                            }
+                        }
+                    },
+                    {
+                        title: 'Speed Round',
+                        desc: 'Speed Round starts at normal pace, but every 500 points the falling speed INCREASES! Blocks drop faster and faster, leaving you less time to think and place them. The spawn freeze is also shorter (0.5 seconds instead of 2). The speed keeps ramping up until it hits maximum velocity. Score as high as you can in 5 minutes before the grid fills up! This challenge tests your reaction time and quick thinking.',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
+                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#2a2a3e');
+                            const speed = 0.5 + (t % 10) * 0.15;
+                            const meterX = ox + gs * cs + 12, meterY = oy;
+                            const meterH = gs * cs, meterW = 12;
+                            ctx.fillStyle = '#333'; ctx.fillRect(meterX, meterY, meterW, meterH);
+                            const fill = Math.min(speed / 2, 1);
+                            const grad = ctx.createLinearGradient(0, meterY + meterH, 0, meterY);
+                            grad.addColorStop(0, '#4caf50'); grad.addColorStop(0.5, '#ff9800'); grad.addColorStop(1, '#f44336');
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(meterX, meterY + meterH * (1 - fill), meterW, meterH * fill);
+                            gT(ctx, meterX + meterW / 2, meterY - 14, '⚡', '#fff', 14);
+                            const fallSpeed = 0.3 + fill * 2;
+                            const fallRow = ((t * fallSpeed) % (gs + 1)) - 1;
+                            gF(ctx, ox, oy, cs, clamp(fallRow, -0.5, 2), 2, 'Z');
+                            gT(ctx, ox + gs * cs / 2, oy - cs * 0.7,
+                                `Speed: ${speed.toFixed(1)}×`, '#ff9800', Math.floor(cs * 0.35));
+                        }
+                    }
+                ]
+            },
+
+            // ═══ MUSIC ═══
+            {
+                id: 'music', icon: '🎵', label: 'Music',
+                desc: 'Background music player with custom playlists',
+                slides: [
+                    {
+                        title: 'Browsing & Playing',
+                        desc: 'Tap the 🎵 Music button on the main menu to open the music screen. You\'ll see a list of all available tracks with their title and artist. Tap the circular ▶ play button next to any track to start playing it — the currently playing track is highlighted with a gold border. Music continues playing in the background while you play the game, so pick your vibe before you start!',
+                        draw(ctx, w, h, t) {
+                            const pad = 20, cw = w - pad * 2;
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(pad, 30, cw, h - 60);
+                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeRect(pad, 30, cw, h - 60);
+                            gT(ctx, w / 2, 55, '🎵 Music', '#ffd700', 18);
+                            const tabs = ['All Songs', 'My Mix', '+ New'];
+                            const tabW = cw / tabs.length;
+                            for (let i = 0; i < tabs.length; i++) {
+                                const tx = pad + i * tabW, ty = 72;
+                                const active = i === 0;
+                                ctx.fillStyle = active ? '#ffd700' : '#333';
+                                ctx.fillRect(tx + 4, ty, tabW - 8, 26);
+                                ctx.fillStyle = active ? '#111' : '#888';
+                                ctx.font = 'bold 11px sans-serif';
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(tabs[i], tx + tabW / 2, ty + 13);
+                            }
+                            const tracks = [
+                                { title: 'Sunset Vibes', artist: 'ChillBeats' },
+                                { title: 'Focus Flow', artist: 'LofiLab' },
+                                { title: 'Night Drive', artist: 'SynthWave' },
+                                { title: 'Pixel Dreams', artist: 'RetroFM' }
+                            ];
+                            const playing = Math.floor(t * 0.4) % tracks.length;
+                            for (let i = 0; i < tracks.length; i++) {
+                                const ty = 108 + i * 44;
+                                const pl = i === playing;
+                                ctx.fillStyle = pl ? 'rgba(255,215,0,0.1)' : 'transparent';
+                                ctx.fillRect(pad + 10, ty, cw - 20, 38);
+                                ctx.strokeStyle = pl ? '#ffd700' : '#444';
+                                ctx.strokeRect(pad + 10, ty, cw - 20, 38);
+                                const btnX = pad + 28, btnY = ty + 19;
+                                ctx.beginPath(); ctx.arc(btnX, btnY, 12, 0, Math.PI * 2);
+                                ctx.fillStyle = pl ? '#ffd700' : '#444'; ctx.fill();
+                                ctx.fillStyle = pl ? '#111' : '#aaa';
+                                ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(pl ? '⏸' : '▶', btnX, btnY);
+                                ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+                                ctx.fillText(tracks[i].title, pad + 48, ty + 14);
+                                ctx.fillStyle = '#888'; ctx.font = '9px sans-serif';
+                                ctx.fillText(tracks[i].artist, pad + 48, ty + 28);
+                                if (pl) {
+                                    gTap(ctx, btnX, btnY, t);
+                                }
+                            }
+                            const barY = h - 60, barW = cw - 40;
+                            ctx.fillStyle = '#333'; ctx.fillRect(pad + 20, barY, barW, 5);
+                            const prog = (t * 0.05) % 1;
+                            ctx.fillStyle = '#ffd700'; ctx.fillRect(pad + 20, barY, barW * prog, 5);
+                        }
+                    },
+                    {
+                        title: 'Reordering Tracks',
+                        desc: 'Want to change the play order? Each track has ▲ UP and ▼ DOWN arrow buttons on the right side. Tap them to move that song higher or lower in the list. The order you set is saved and used for auto-play — when one song finishes, the next one in your list starts automatically. Reorder the default "All Songs" list or any custom playlist you create!',
+                        draw(ctx, w, h, t) {
+                            const pad = 20, cw = w - pad * 2;
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(pad, 40, cw, h - 80);
+                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeRect(pad, 40, cw, h - 80);
+                            gT(ctx, w / 2, 60, 'Reorder Tracks', '#ffd700', 16);
+                            const names = ['Sunset Vibes', 'Focus Flow', 'Night Drive'];
+                            const cyc = t % 4;
+                            const swapA = 0, swapB = 1;
+                            let order = [0, 1, 2];
+                            if (cyc > 2) order = [1, 0, 2];
+                            for (let i = 0; i < 3; i++) {
+                                const idx = order[i];
+                                const ty = 85 + i * 56;
+                                const moving = (cyc > 1 && cyc < 2.5 && idx === 0);
+                                const yOff = moving ? Math.sin((cyc - 1) * Math.PI) * -20 : 0;
+                                ctx.save(); ctx.translate(0, yOff);
+                                ctx.fillStyle = moving ? 'rgba(255,215,0,0.15)' : 'transparent';
+                                ctx.fillRect(pad + 10, ty, cw - 20, 46);
+                                ctx.strokeStyle = moving ? '#ffd700' : '#444';
+                                ctx.strokeRect(pad + 10, ty, cw - 20, 46);
+                                ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif';
+                                ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                                ctx.fillText(names[idx], pad + 22, ty + 23);
+                                const arX = pad + cw - 50;
+                                ctx.fillStyle = '#555'; ctx.font = '16px sans-serif';
+                                ctx.textAlign = 'center';
+                                ctx.fillText('▲', arX, ty + 14);
+                                ctx.fillText('▼', arX + 24, ty + 14);
+                                ctx.fillStyle = '#444'; ctx.font = '10px sans-serif';
+                                ctx.fillText('▲', arX, ty + 34);
+                                ctx.fillText('▼', arX + 24, ty + 34);
+                                ctx.restore();
+                            }
+                            if (cyc > 0.5 && cyc < 2) {
+                                const arX = pad + cw - 50;
+                                const ty = 85;
+                                gTap(ctx, arX, ty + 14, t);
+                                gT(ctx, w / 2, h - 50, '▲ Move up!', '#ffd700', 14);
+                            } else if (cyc > 2.5) {
+                                gT(ctx, w / 2, h - 50, 'Track moved ✓', '#4caf50', 14);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Custom Playlists',
+                        desc: 'Create your own playlists! Tap the "+ New" tab at the top of the music screen to open the playlist creator. Give your playlist a name, then check the boxes next to the songs you want to include. Tap Save and your playlist appears as a new tab! You can switch between playlists by tapping the tabs. Each custom playlist can be renamed, deleted, or have tracks removed with the ✕ button.',
+                        draw(ctx, w, h, t) {
+                            const pad = 20, cw = w - pad * 2;
+                            const cyc = t % 8;
+                            if (cyc < 4) {
+                                ctx.fillStyle = '#1a1a2e';
+                                ctx.fillRect(pad, 30, cw, h - 60);
+                                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                                ctx.strokeRect(pad, 30, cw, h - 60);
+                                gT(ctx, w / 2, 52, 'Create Playlist', '#ffd700', 16);
+                                const inputY = 68;
+                                ctx.fillStyle = '#222'; ctx.fillRect(pad + 16, inputY, cw - 32, 28);
+                                ctx.strokeStyle = '#555'; ctx.strokeRect(pad + 16, inputY, cw - 32, 28);
+                                const nameProgress = clamp(cyc / 1.5, 0, 1);
+                                const typedName = 'Chill Vibes'.substring(0, Math.floor(nameProgress * 11));
+                                ctx.fillStyle = typedName ? '#fff' : '#666';
+                                ctx.font = '12px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                                ctx.fillText(typedName || 'Playlist name...', pad + 24, inputY + 14);
+                                if (nameProgress < 1) {
+                                    ctx.fillStyle = '#ffd700'; ctx.fillRect(pad + 24 + ctx.measureText(typedName).width, inputY + 4, 2, 20);
+                                }
+                                const songs = ['Sunset Vibes', 'Focus Flow', 'Night Drive', 'Pixel Dreams', 'Ocean Waves'];
+                                const checkOrder = [0, 2, 4];
+                                for (let i = 0; i < songs.length; i++) {
+                                    const sy = 106 + i * 32;
+                                    const checkTime = checkOrder.indexOf(i);
+                                    const checked = checkTime !== -1 && cyc > 1.5 + checkTime * 0.6;
+                                    ctx.fillStyle = '#222'; ctx.fillRect(pad + 16, sy, cw - 32, 28);
+                                    ctx.strokeStyle = '#444'; ctx.strokeRect(pad + 16, sy, cw - 32, 28);
+                                    const bx = pad + 24, by = sy + 6;
+                                    ctx.strokeStyle = checked ? '#ffd700' : '#555'; ctx.lineWidth = 1.5;
+                                    ctx.strokeRect(bx, by, 16, 16);
+                                    if (checked) {
+                                        ctx.fillStyle = '#ffd700'; ctx.font = 'bold 13px sans-serif';
+                                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                        ctx.fillText('✓', bx + 8, by + 9);
+                                    }
+                                    ctx.fillStyle = '#ccc'; ctx.font = '11px sans-serif';
+                                    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                                    ctx.fillText(songs[i], bx + 24, sy + 14);
+                                }
+                                if (cyc > 3.2) {
+                                    const saveW = 80, saveH = 30;
+                                    const saveX = (w - saveW) / 2, saveY = h - 75;
+                                    ctx.fillStyle = '#ffd700'; ctx.fillRect(saveX, saveY, saveW, saveH);
+                                    ctx.fillStyle = '#111'; ctx.font = 'bold 13px sans-serif';
+                                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                    ctx.fillText('Save', saveX + saveW / 2, saveY + saveH / 2);
+                                    gTap(ctx, saveX + saveW / 2, saveY + saveH / 2, t);
+                                }
+                            } else {
+                                ctx.fillStyle = '#1a1a2e';
+                                ctx.fillRect(pad, 30, cw, h - 60);
+                                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                                ctx.strokeRect(pad, 30, cw, h - 60);
+                                gT(ctx, w / 2, 52, '🎵 Music', '#ffd700', 16);
+                                const tabs = ['All Songs', 'Chill Vibes', '+ New'];
+                                const tabW = cw / tabs.length;
+                                const activeTab = 1;
+                                for (let i = 0; i < tabs.length; i++) {
+                                    const tx = pad + i * tabW, ty = 68;
+                                    ctx.fillStyle = i === activeTab ? '#ffd700' : '#333';
+                                    ctx.fillRect(tx + 3, ty, tabW - 6, 24);
+                                    ctx.fillStyle = i === activeTab ? '#111' : '#888';
+                                    ctx.font = 'bold 10px sans-serif';
+                                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                    ctx.fillText(tabs[i], tx + tabW / 2, ty + 12);
+                                }
+                                const plTracks = ['Sunset Vibes', 'Night Drive', 'Ocean Waves'];
+                                for (let i = 0; i < plTracks.length; i++) {
+                                    const ty = 104 + i * 44;
+                                    ctx.fillStyle = 'transparent';
+                                    ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+                                    ctx.strokeRect(pad + 10, ty, cw - 20, 38);
+                                    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif';
+                                    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                                    ctx.fillText(plTracks[i], pad + 24, ty + 19);
+                                    ctx.fillStyle = '#f44336'; ctx.font = '12px sans-serif';
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText('✕', pad + cw - 30, ty + 19);
+                                }
+                                const flash = Math.sin(t * 4) > 0;
+                                gT(ctx, w / 2, h - 55, 'Playlist created! ✓',
+                                    flash ? '#ffd700' : '#4caf50', 14);
+                            }
+                        }
+                    },
+                    {
+                        title: 'In-Game Controls',
+                        desc: 'You don\'t have to leave the game to control your music! A mini now-playing bar appears at the bottom of the screen showing the current track name. It has ◁ previous, ▶ play/pause, and ▷ next buttons so you can skip songs or pause without interrupting your game. Music auto-advances to the next track in your playlist when a song finishes.',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs, -30);
+                            gBg(ctx, ox, oy, cs, gs);
+                            for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
+                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#2a2a3e');
+                            const fallRow = ((t * 0.5) % 4) - 1;
+                            gF(ctx, ox, oy, cs, clamp(fallRow, -0.5, 2), 2, 'M');
+                            gT(ctx, w / 2, oy - cs * 0.7, 'Score: 1250', '#fff', Math.floor(cs * 0.3));
+                            const barH = 48, barY = h - barH - 10;
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(10, barY, w - 20, barH);
+                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeRect(10, barY, w - 20, barH);
+                            const songNames = ['♪ Sunset Vibes – ChillBeats', '♪ Focus Flow – LofiLab'];
+                            const si = Math.floor(t * 0.15) % songNames.length;
+                            ctx.fillStyle = '#ccc'; ctx.font = '10px sans-serif';
+                            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                            ctx.fillText(songNames[si], 22, barY + 18);
+                            const btnY = barY + 34;
+                            const btns = ['◁', '▶', '▷'];
+                            const btnSpace = 40;
+                            const btnStartX = w / 2 - btnSpace;
+                            for (let i = 0; i < 3; i++) {
+                                const bx = btnStartX + i * btnSpace;
+                                ctx.beginPath(); ctx.arc(bx, btnY, 12, 0, Math.PI * 2);
+                                ctx.fillStyle = i === 1 ? '#ffd700' : '#444'; ctx.fill();
+                                ctx.fillStyle = i === 1 ? '#111' : '#ccc';
+                                ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(btns[i], bx, btnY);
+                            }
+                            const progW = w - 60, progY = barY + 6;
+                            ctx.fillStyle = '#333'; ctx.fillRect(22, progY + 16, progW, 3);
+                            const prog = (t * 0.04) % 1;
+                            ctx.fillStyle = '#ffd700'; ctx.fillRect(22, progY + 16, progW * prog, 3);
+                            const cyc = t % 5;
+                            if (cyc > 2 && cyc < 3.5) {
+                                const nextX = btnStartX + 2 * btnSpace;
+                                gTap(ctx, nextX, btnY, t);
+                                gT(ctx, w / 2, barY - 14, 'Skip to next ▷', '#ffd700', 12);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Mute & Unmute',
+                        desc: 'The 🔊 speaker button in the top-right corner of the screen is always visible — on every screen and during gameplay. Tap it once to MUTE all music (the icon changes to 🔇). Tap it again to UNMUTE and resume playback right where you left off. Your mute preference is saved, so it stays muted or unmuted across sessions. Perfect for when you need to quickly silence the music without pausing your game!',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(20, 30, w - 40, h - 60);
+                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeRect(20, 30, w - 40, h - 60);
+                            const cyc = t % 6;
+                            const muted = cyc > 3;
+                            const btnX = w - 55, btnY = 55;
+                            const btnSz = 36;
+                            ctx.save();
+                            const pulse = 1 + Math.sin(t * 4) * 0.08;
+                            ctx.translate(btnX, btnY); ctx.scale(pulse, pulse); ctx.translate(-btnX, -btnY);
+                            ctx.fillStyle = muted ? '#444' : 'rgba(255,215,0,0.2)';
+                            ctx.beginPath(); ctx.arc(btnX, btnY, btnSz / 2, 0, Math.PI * 2); ctx.fill();
+                            ctx.strokeStyle = muted ? '#666' : '#ffd700'; ctx.lineWidth = 1.5;
+                            ctx.stroke();
+                            ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(btnSz * 0.5)}px sans-serif`;
+                            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.fillText(muted ? '🔇' : '🔊', btnX, btnY);
+                            ctx.restore();
+                            if (!muted) {
+                                const waves = 3;
+                                for (let i = 0; i < waves; i++) {
+                                    const r = btnSz / 2 + 8 + i * 10;
+                                    const alpha = 0.3 - i * 0.08 + Math.sin(t * 3 + i) * 0.1;
+                                    ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
+                                    ctx.beginPath();
+                                    ctx.arc(btnX, btnY, r, -Math.PI * 0.35, Math.PI * 0.35);
+                                    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2; ctx.stroke();
+                                    ctx.restore();
+                                }
+                            }
+                            const barMid = h / 2 + 10;
+                            if (!muted) {
+                                const barCount = 7;
+                                const barW = 12, barGap = 8;
+                                const totalW = barCount * barW + (barCount - 1) * barGap;
+                                const startX = (w - totalW) / 2;
+                                for (let i = 0; i < barCount; i++) {
+                                    const bh = 20 + Math.sin(t * 3 + i * 0.8) * 18 + Math.cos(t * 5 + i) * 10;
+                                    const x = startX + i * (barW + barGap);
+                                    const grad = ctx.createLinearGradient(0, barMid - bh / 2, 0, barMid + bh / 2);
+                                    grad.addColorStop(0, '#ffd700'); grad.addColorStop(1, '#ff9800');
+                                    ctx.fillStyle = grad;
+                                    ctx.fillRect(x, barMid - bh / 2, barW, bh);
+                                }
+                                gT(ctx, w / 2, barMid + 50, '♪ Now Playing...', '#ffd700', 14);
+                            } else {
+                                const barCount = 7;
+                                const barW = 12, barGap = 8;
+                                const totalW = barCount * barW + (barCount - 1) * barGap;
+                                const startX = (w - totalW) / 2;
+                                for (let i = 0; i < barCount; i++) {
+                                    const x = startX + i * (barW + barGap);
+                                    ctx.fillStyle = '#333';
+                                    ctx.fillRect(x, barMid - 3, barW, 6);
+                                }
+                                gT(ctx, w / 2, barMid + 50, 'Music Muted', '#666', 14);
+                                ctx.save(); ctx.strokeStyle = '#f44336'; ctx.lineWidth = 3;
+                                ctx.beginPath();
+                                ctx.moveTo(w / 2 - 30, barMid - 20);
+                                ctx.lineTo(w / 2 + 30, barMid + 20);
+                                ctx.stroke(); ctx.restore();
+                            }
+                            if (cyc > 2.5 && cyc < 3.5) {
+                                gTap(ctx, btnX, btnY, t);
+                                gT(ctx, w / 2, h - 50, 'Tap to mute', '#ffd700', 13);
+                            } else if (cyc > 5 && cyc < 6) {
+                                gTap(ctx, btnX, btnY, t);
+                                gT(ctx, w / 2, h - 50, 'Tap to unmute', '#4caf50', 13);
+                            }
+                        }
+                    }
+                ]
+            }
+        ];
+    }
 
     _openTutorial() {
-        const TOTAL_SLIDES = 13;
-        this._tutorialIndex = 0;
-        this._tutorialTotal = TOTAL_SLIDES;
+        this._initTutorialSlides();
+        this._stopTutorialAnim();
 
-        // Build slides
-        const track = this.els.tutorialTrack;
-        track.innerHTML = "";
-        for (let i = 1; i <= TOTAL_SLIDES; i++) {
-            const slide = document.createElement("div");
-            slide.className = "tutorial-slide";
-            const img = document.createElement("img");
-            img.src = `TUTORIAL/${i}.png`;
-            img.alt = `Tutorial slide ${i}`;
-            slide.appendChild(img);
-            track.appendChild(slide);
+        // Build category buttons
+        const list = this.els.tutorialMenuList;
+        list.innerHTML = '';
+        for (let i = 0; i < this._tutorialCategories.length; i++) {
+            const cat = this._tutorialCategories[i];
+            const btn = document.createElement('button');
+            btn.className = 'tutorial-category-btn';
+            btn.innerHTML = `<span class="tutorial-cat-icon">${cat.icon}</span>
+                <span class="tutorial-cat-info">
+                    <span class="tutorial-cat-label">${cat.label}</span>
+                    <span class="tutorial-cat-desc">${cat.desc}</span>
+                </span>`;
+            btn.addEventListener('click', () => this._openTutorialCategory(i));
+            list.appendChild(btn);
         }
+
+        this.els.tutorialMenu.style.display = '';
+        this.els.tutorialSlides.classList.add('hidden');
+        this.els.tutorialOverlay.classList.add('active');
+    }
+
+    _openTutorialCategory(catIndex) {
+        this._tutorialCatIndex = catIndex;
+        this._tutorialIndex = 0;
+        const cat = this._tutorialCategories[catIndex];
+        this._tutorialSlides = cat.slides;
+        this._tutorialTotal = cat.slides.length;
 
         // Build dots
         const dots = this.els.tutorialDots;
-        dots.innerHTML = "";
-        for (let i = 0; i < TOTAL_SLIDES; i++) {
-            const dot = document.createElement("button");
-            dot.className = "tutorial-dot" + (i === 0 ? " active" : "");
-            dot.addEventListener("click", () => this._goToTutorialSlide(i));
+        dots.innerHTML = '';
+        for (let i = 0; i < this._tutorialTotal; i++) {
+            const dot = document.createElement('button');
+            dot.className = 'tutorial-dot' + (i === 0 ? ' active' : '');
+            dot.addEventListener('click', () => this._goToTutorialSlide(i));
             dots.appendChild(dot);
         }
 
-        this._updateTutorialPosition();
-        this.els.tutorialOverlay.classList.add("active");
+        this.els.tutorialMenu.style.display = 'none';
+        this.els.tutorialSlides.classList.remove('hidden');
+        this._updateTutorialSlide();
+        this._startTutorialAnim();
         this._bindTutorialSwipe();
     }
 
-    _closeTutorial() {
-        this.els.tutorialOverlay.classList.remove("active");
+    _tutorialBackToMenu() {
+        this._stopTutorialAnim();
         this._unbindTutorialSwipe();
+        this.els.tutorialSlides.classList.add('hidden');
+        this.els.tutorialMenu.style.display = '';
+    }
+
+    _closeTutorial() {
+        this._stopTutorialAnim();
+        this._unbindTutorialSwipe();
+        this.els.tutorialOverlay.classList.remove('active');
     }
 
     _goToTutorialSlide(index) {
         this._tutorialIndex = Math.max(0, Math.min(index, this._tutorialTotal - 1));
-        this._updateTutorialPosition();
+        this._updateTutorialSlide();
     }
 
-    _updateTutorialPosition() {
-        const pct = -(this._tutorialIndex * 100);
-        this.els.tutorialTrack.style.transform = `translateX(${pct}%)`;
+    _updateTutorialSlide() {
+        const slide = this._tutorialSlides[this._tutorialIndex];
+        this.els.tutorialSlideTitle.textContent = slide.title;
+        this.els.tutorialSlideDesc.textContent = slide.desc;
         this.els.tutorialCounter.textContent = `${this._tutorialIndex + 1} / ${this._tutorialTotal}`;
-        const dots = this.els.tutorialDots.querySelectorAll(".tutorial-dot");
-        dots.forEach((d, i) => d.classList.toggle("active", i === this._tutorialIndex));
+        const dots = this.els.tutorialDots.querySelectorAll('.tutorial-dot');
+        dots.forEach((d, i) => d.classList.toggle('active', i === this._tutorialIndex));
+        this.els.tutorialPrevBtn.disabled = this._tutorialIndex === 0;
+        this.els.tutorialNextBtn.disabled = this._tutorialIndex === this._tutorialTotal - 1;
+
+        // Toggle canvas vs image
+        if (slide.img) {
+            this.els.tutorialCanvas.style.display = 'none';
+            this.els.tutorialImage.classList.remove('hidden');
+            this.els.tutorialImage.src = slide.img;
+            this._stopTutorialAnim();
+        } else {
+            this.els.tutorialImage.classList.add('hidden');
+            this.els.tutorialCanvas.style.display = '';
+            this._startTutorialAnim();
+        }
+    }
+
+    _startTutorialAnim() {
+        this._stopTutorialAnim();
+        this._tutorialAnimStart = performance.now();
+        const canvas = this.els.tutorialCanvas;
+        const ctx = canvas.getContext('2d');
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const w = rect.width, h = rect.height;
+
+        const tick = () => {
+            if (!this._tutorialAnimId) return;
+            const t = (performance.now() - this._tutorialAnimStart) / 1000;
+            ctx.clearRect(0, 0, w, h);
+            const slide = this._tutorialSlides[this._tutorialIndex];
+            if (slide && slide.draw) slide.draw(ctx, w, h, t);
+            this._tutorialAnimId = requestAnimationFrame(tick);
+        };
+        this._tutorialAnimId = requestAnimationFrame(tick);
+    }
+
+    _stopTutorialAnim() {
+        if (this._tutorialAnimId) {
+            cancelAnimationFrame(this._tutorialAnimId);
+            this._tutorialAnimId = null;
+        }
     }
 
     _bindTutorialSwipe() {
-        const slider = this.els.tutorialTrack.parentElement; // #tutorial-slider
-        let startX = 0, startY = 0, currentX = 0, dragging = false, moved = false;
+        const view = this.els.tutorialSlides;
+        let startX = 0, startY = 0, dragging = false, moved = false;
 
         this._tutorialPointerDown = (e) => {
-            dragging = true;
-            moved = false;
+            dragging = true; moved = false;
             startX = e.touches ? e.touches[0].clientX : e.clientX;
             startY = e.touches ? e.touches[0].clientY : e.clientY;
-            currentX = startX;
-            this.els.tutorialTrack.classList.add("dragging");
         };
 
         this._tutorialPointerMove = (e) => {
             if (!dragging) return;
             const x = e.touches ? e.touches[0].clientX : e.clientX;
             const y = e.touches ? e.touches[0].clientY : e.clientY;
-            const dx = x - startX;
-            const dy = y - startY;
-            // If more vertical than horizontal, let browser scroll and cancel drag
+            const dx = x - startX, dy = y - startY;
             if (!moved && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
-                dragging = false;
-                this.els.tutorialTrack.classList.remove("dragging");
-                return;
+                dragging = false; return;
             }
-            if (Math.abs(dx) > 5) moved = true;
+            if (Math.abs(dx) > 10) moved = true;
             if (moved && e.cancelable) e.preventDefault();
-            currentX = x;
-            const offset = dx;
-            const basePct = -(this._tutorialIndex * 100);
-            const sliderW = slider.offsetWidth || 1;
-            const dragPct = (offset / sliderW) * 100;
-            this.els.tutorialTrack.style.transform = `translateX(${basePct + dragPct}%)`;
         };
 
-        this._tutorialPointerUp = () => {
+        this._tutorialPointerUp = (e) => {
             if (!dragging) return;
             dragging = false;
-            this.els.tutorialTrack.classList.remove("dragging");
-            const dx = currentX - startX;
-            const threshold = slider.offsetWidth * 0.2;
-            if (dx < -threshold && this._tutorialIndex < this._tutorialTotal - 1) {
-                this._tutorialIndex++;
-            } else if (dx > threshold && this._tutorialIndex > 0) {
-                this._tutorialIndex--;
+            const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            const dx = x - startX;
+            if (Math.abs(dx) > 50) {
+                if (dx < 0 && this._tutorialIndex < this._tutorialTotal - 1) {
+                    this._tutorialIndex++;
+                } else if (dx > 0 && this._tutorialIndex > 0) {
+                    this._tutorialIndex--;
+                }
+                this._updateTutorialSlide();
             }
-            this._updateTutorialPosition();
         };
 
-        slider.addEventListener("touchstart", this._tutorialPointerDown, { passive: true });
-        slider.addEventListener("touchmove", this._tutorialPointerMove, { passive: false });
-        slider.addEventListener("touchend", this._tutorialPointerUp);
-        slider.addEventListener("mousedown", this._tutorialPointerDown);
-        slider.addEventListener("mousemove", this._tutorialPointerMove);
-        slider.addEventListener("mouseup", this._tutorialPointerUp);
-        slider.addEventListener("mouseleave", this._tutorialPointerUp);
+        view.addEventListener('touchstart', this._tutorialPointerDown, { passive: true });
+        view.addEventListener('touchmove', this._tutorialPointerMove, { passive: false });
+        view.addEventListener('touchend', this._tutorialPointerUp);
+        view.addEventListener('mousedown', this._tutorialPointerDown);
+        view.addEventListener('mousemove', this._tutorialPointerMove);
+        view.addEventListener('mouseup', this._tutorialPointerUp);
+        view.addEventListener('mouseleave', this._tutorialPointerUp);
     }
 
     _unbindTutorialSwipe() {
-        const slider = this.els.tutorialTrack.parentElement;
+        const view = this.els.tutorialSlides;
         if (this._tutorialPointerDown) {
-            slider.removeEventListener("touchstart", this._tutorialPointerDown);
-            slider.removeEventListener("touchmove", this._tutorialPointerMove);
-            slider.removeEventListener("touchend", this._tutorialPointerUp);
-            slider.removeEventListener("mousedown", this._tutorialPointerDown);
-            slider.removeEventListener("mousemove", this._tutorialPointerMove);
-            slider.removeEventListener("mouseup", this._tutorialPointerUp);
-            slider.removeEventListener("mouseleave", this._tutorialPointerUp);
+            view.removeEventListener('touchstart', this._tutorialPointerDown);
+            view.removeEventListener('touchmove', this._tutorialPointerMove);
+            view.removeEventListener('touchend', this._tutorialPointerUp);
+            view.removeEventListener('mousedown', this._tutorialPointerDown);
+            view.removeEventListener('mousemove', this._tutorialPointerMove);
+            view.removeEventListener('mouseup', this._tutorialPointerUp);
+            view.removeEventListener('mouseleave', this._tutorialPointerUp);
         }
     }
 
@@ -3319,9 +4752,8 @@ class Game {
     }
 
     _handleCanvasTap(clientX, clientY) {
-        if (this.activeChallenge !== CHALLENGE_TYPES.TARGET_WORD) return;
         if (this._validatedWordGroups.length === 0) return;
-        if (this._claimAnimating || this.clearing) return;
+        if (this.state !== State.PLAYING) return;
 
         // Convert client coordinates to canvas-relative coordinates
         const rect = this.renderer.canvas.getBoundingClientRect();
@@ -3341,6 +4773,22 @@ class Game {
     }
 
     _claimValidatedAt(tappedKey) {
+        // If a clear animation is in progress, force-finish it immediately
+        if (this.clearing && this._pendingClearCells) {
+            this.grid.removeCells(this._pendingClearCells);
+            this.grid.applyGravity();
+            this.renderer.flashCells.clear();
+            this.renderer.flashTimer = 0;
+            this.renderer.blastCells.clear();
+            this.renderer.blastCenterKey = null;
+            this.renderer.blastProgress = 0;
+            this.renderer.gravityAnims = [];
+            this.pendingGravityMoves = [];
+            this.clearing = false;
+            this._claimAnimating = false;
+            this._pendingClearCells = null;
+        }
+
         // Find all validated word groups that include the tapped cell
         const toClaim = [];
         const remaining = [];
@@ -3364,8 +4812,11 @@ class Game {
                 this.els.score2xIndicator.classList.add("hidden");
             }
             this.score += pts;
+            this.totalWordsInChain++;
             this.wordsFound.push({ word: group.word, pts });
             claimedWords.push({ word: group.word, pts });
+            if (!this._chainWords) this._chainWords = [];
+            this._chainWords.push({ word: group.word, pts });
 
             // Check for target word match
             if (this.targetWord && group.word === this.targetWord) {
@@ -3376,6 +4827,7 @@ class Game {
         }
         this._checkBonusUnlock(prevScore, this.score);
         this._updateScoreDisplay();
+        this._updateSpeedRound();
 
         // Collect all cells from claimed groups
         const cellsToClear = new Set();
@@ -3399,7 +4851,11 @@ class Game {
         }
 
         // Flash and clear the claimed cells
-        this.audio.clear();
+        if (this.totalWordsInChain > 1) {
+            this.audio.chain();
+        } else {
+            this.audio.clear();
+        }
         this._claimAnimating = true;
         this.clearing = true;
         this.clearPhase = "flash";
@@ -3412,7 +4868,15 @@ class Game {
         this.renderer.blastProgress = 0;
         this.renderer.spawnParticles(cellsToClear);
         this._pendingClearCells = cellsToClear;
-        // After _processClearPhase finishes gravity + re-check, _claimAnimating is cleared
+
+        // Reset the falling block back to the top so the player has time to think
+        if (this.block) {
+            this.block.row = -BUFFER_ROWS;
+            this.block.visualRow = -BUFFER_ROWS;
+            this.block.dropAnimating = false;
+            this.fallTimer = 0;
+            this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0.5 : 2.0;
+        }
     }
 
     _bindCanvasTap() {
@@ -3427,7 +4891,6 @@ class Game {
         // Use a short-distance threshold to distinguish tap from swipe
         let tapStart = null;
         canvas.addEventListener("touchstart", (e) => {
-            if (this.activeChallenge !== CHALLENGE_TYPES.TARGET_WORD) return;
             if (this._validatedWordGroups.length === 0) return;
             const touch = e.changedTouches[0];
             if (!touch) return;
@@ -3457,12 +4920,18 @@ class Game {
         this._stopChallengePreviewAnimations();
 
         for (const [key, meta] of Object.entries(CHALLENGE_META)) {
+            const stats = this.profileMgr.getChallengeStats(key);
             const card = document.createElement("div");
             card.className = "challenge-card";
             card.innerHTML = `
                 <div class="challenge-preview"><canvas></canvas></div>
                 <div class="challenge-card-title">${meta.icon} ${meta.title}</div>
                 <div class="challenge-card-desc">${meta.description}</div>
+                <div class="challenge-card-stats">
+                    <span>🏆 ${stats.highScore}</span>
+                    <span>🎮 ${stats.gamesPlayed}</span>
+                    <span>📝 ${(stats.uniqueWordsFound || []).length}</span>
+                </div>
             `;
             card.addEventListener("click", () => {
                 this._stopChallengePreviewAnimations();
@@ -3617,7 +5086,7 @@ class Game {
 
         let tutorialText = "";
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
-            tutorialText = "A target word appears at the top of the screen. Words don't auto-clear — instead, validated words turn GREEN on the grid. Tap any green letter to claim that word for points! This lets you build longer words without sub-words being cleared first. Spelling the target word earns 200 bonus points! Game lasts 5 minutes.";
+            tutorialText = "A target word appears at the top of the screen. Spelling the target word earns 200 bonus points! A new target word is picked each time you complete one. Game lasts 5 minutes.";
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
             tutorialText = "Blocks start falling at normal speed but get faster every 500 points! The fall speed keeps increasing until you can barely keep up. Game lasts 5 minutes — score as high as you can!";
         }
@@ -3684,7 +5153,11 @@ class Game {
                     this.els.freezeIndicator.classList.add("hidden");
                 }
             } else if (this.block) {
-                if (this.block.dropAnimating) {
+                if (this.spawnFreezeTimer > 0) {
+                    // Block sits at top for 2s before falling
+                    this.spawnFreezeTimer -= dt;
+                    this.block.visualRow = this.block.row;
+                } else if (this.block.dropAnimating) {
                     const swipeDropSpeed = 18;
                     this.block.visualRow += swipeDropSpeed * dt;
                     if (this.block.visualRow >= this.block.row) {
@@ -3748,6 +5221,7 @@ window.addEventListener("resize", () => {
         if (g && g.state !== State.MENU && g.state !== State.GAMEOVER && g.grid) {
             g.renderer.resize(g.grid.rows, g.grid.cols);
         }
+        if (g && g.bgAnim) g.bgAnim._resize();
     }, 150);
 });
 

@@ -46,16 +46,27 @@ html, body {
     background: #111;
 }
 
+/* ---------- Background Canvas ---------- */
+#bg-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
 /* ---------- Screens ---------- */
 .screen {
     display: none;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     width: 100%;
     height: 100%;
     position: absolute;
     top: 0; left: 0;
+    z-index: 1;
     padding: calc(20px + var(--safe-top)) calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
     gap: 16px;
     overflow-y: auto;
@@ -63,8 +74,29 @@ html, body {
     -webkit-overflow-scrolling: touch;
 }
 
+/* Flexible spacers: center content when it fits, allow normal scrolling when it overflows */
+.screen::before,
+.screen::after {
+    content: '';
+    flex: 1 0 0px;
+}
+
+/* Screens with custom layouts don't need spacers */
+#play-screen::before, #play-screen::after,
+#words-found-screen::before, #words-found-screen::after,
+#music-screen::before, #music-screen::after,
+#challenges-screen::before, #challenges-screen::after {
+    display: none;
+}
+
 .screen.active {
     display: flex;
+    animation: screenFadeIn 0.25s ease-out;
+}
+
+@keyframes screenFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* ---------- Title & Text ---------- */
@@ -74,6 +106,18 @@ html, body {
     color: #ffd700;
     text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
     margin-bottom: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.title-letter {
+    display: inline-block;
+    animation: titleWave 2.5s ease-in-out infinite;
+}
+
+@keyframes titleWave {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
 }
 
 .subtitle {
@@ -143,6 +187,7 @@ html, body {
     flex-direction: column;
     align-items: center;
     gap: 10px;
+    flex-shrink: 0;
 }
 
 #grid-size-selector label {
@@ -275,6 +320,31 @@ html, body {
     font-weight: bold;
     cursor: pointer;
     transition: transform 0.1s, background 0.2s;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.primary-btn::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -75%;
+    width: 50%;
+    height: 200%;
+    background: linear-gradient(
+        to right,
+        transparent 0%,
+        rgba(255, 255, 255, 0.4) 50%,
+        transparent 100%
+    );
+    transform: skewX(-25deg);
+    animation: btnShimmer 3.5s ease-in-out infinite;
+}
+
+@keyframes btnShimmer {
+    0%, 100% { left: -75%; }
+    50% { left: 150%; }
 }
 
 .primary-btn:hover {
@@ -294,6 +364,7 @@ html, body {
     font-size: 1.1rem;
     cursor: pointer;
     transition: transform 0.1s, background 0.2s;
+    flex-shrink: 0;
 }
 
 .secondary-btn:hover {
@@ -849,6 +920,10 @@ body.touch-input #mobile-controls {
 #menu-profile-name {
     color: #ffd700;
     font-size: 1rem;
+}
+
+#menu-screen {
+    gap: 12px;
 }
 
 #menu-stats {
@@ -1777,7 +1852,7 @@ body.touch-input #mobile-controls {
 /* Small version on menu screen — mirrors mute button, top-left */
 .tutorial-btn-small {
     position: absolute;
-    top: calc(12px + var(--safe-top));
+    top: calc(66px + var(--safe-top));
     left: calc(14px + var(--safe-left));
     z-index: 1000;
     border-radius: 50%;
@@ -1791,13 +1866,13 @@ body.touch-input #mobile-controls {
     line-height: 1;
 }
 
-/* ---------- Tutorial Slideshow Overlay ---------- */
+/* ---------- Tutorial Overlay ---------- */
 
 #tutorial-overlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.92);
+    background: rgba(0, 0, 0, 0.95);
     z-index: 9999;
     align-items: center;
     justify-content: center;
@@ -1807,16 +1882,97 @@ body.touch-input #mobile-controls {
     display: flex;
 }
 
-#tutorial-content {
+/* --- Sub-menu --- */
+
+#tutorial-menu {
     width: 100%;
     max-width: 480px;
     height: 100%;
     display: flex;
     flex-direction: column;
-    position: relative;
 }
 
-#tutorial-header {
+#tutorial-menu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 16px 8px;
+    flex-shrink: 0;
+}
+
+#tutorial-menu-header h2 {
+    color: #ffd700;
+    font-size: 1.4rem;
+    margin: 0;
+    letter-spacing: 1px;
+}
+
+#tutorial-menu-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tutorial-category-btn {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 20px;
+    background: linear-gradient(135deg, #1e1e2e, #2a2a3e);
+    border: 1px solid #444;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.tutorial-category-btn:active {
+    transform: scale(0.97);
+    border-color: #ffd700;
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.2);
+}
+
+.tutorial-cat-icon {
+    font-size: 1.8rem;
+    flex-shrink: 0;
+}
+
+.tutorial-cat-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tutorial-cat-label {
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 600;
+    text-align: left;
+}
+
+.tutorial-cat-desc {
+    color: #888;
+    font-size: 0.8rem;
+    text-align: left;
+}
+
+/* --- Slide viewer --- */
+
+#tutorial-slides {
+    width: 100%;
+    max-width: 480px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#tutorial-slides.hidden {
+    display: none;
+}
+
+#tutorial-slides-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1829,7 +1985,8 @@ body.touch-input #mobile-controls {
     font-size: 0.9rem;
 }
 
-#tutorial-close-btn {
+#tutorial-close-btn,
+#tutorial-slides-close-btn {
     background: rgba(60, 60, 60, 0.8);
     border: 1px solid #555;
     color: #fff;
@@ -1844,55 +2001,102 @@ body.touch-input #mobile-controls {
     transition: background 0.15s, border-color 0.15s;
 }
 
-#tutorial-close-btn:hover {
+#tutorial-close-btn:hover,
+#tutorial-slides-close-btn:hover {
     background: rgba(90, 90, 90, 0.9);
     border-color: #ffd700;
 }
 
-#tutorial-slider {
+#tutorial-slide-view {
     flex: 1;
-    overflow: hidden;
-    position: relative;
-    touch-action: pan-y pinch-zoom;
-}
-
-#tutorial-track {
     display: flex;
-    height: 100%;
-    transition: transform 0.3s ease;
-    will-change: transform;
-}
-
-#tutorial-track.dragging {
-    transition: none;
-}
-
-.tutorial-slide {
-    min-width: 100%;
-    height: 100%;
-    display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 8px;
-    box-sizing: border-box;
+    padding: 0 16px;
+    overflow-y: auto;
+    min-height: 0;
 }
 
-.tutorial-slide img {
-    max-width: 100%;
-    max-height: 100%;
+#tutorial-canvas {
+    width: 100%;
+    max-width: 360px;
+    aspect-ratio: 1;
+    border-radius: 12px;
+    background: #111118;
+    border: 1px solid #333;
+    flex-shrink: 0;
+}
+
+#tutorial-image {
+    width: 100%;
+    max-width: 360px;
+    border-radius: 12px;
+    border: 1px solid #333;
     object-fit: contain;
-    border-radius: 8px;
+    flex-shrink: 0;
     user-select: none;
     -webkit-user-drag: none;
     pointer-events: none;
+}
+
+#tutorial-image.hidden {
+    display: none;
+}
+
+#tutorial-slide-title {
+    color: #ffd700;
+    font-size: 1.2rem;
+    margin: 14px 0 6px;
+    text-align: center;
+}
+
+#tutorial-slide-desc {
+    color: #ccc;
+    font-size: 0.92rem;
+    text-align: center;
+    line-height: 1.5;
+    margin: 0;
+    padding: 0 8px 8px;
+}
+
+#tutorial-nav-arrows {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0 20px;
+    flex-shrink: 0;
+}
+
+.tutorial-nav-btn {
+    background: rgba(60, 60, 60, 0.7);
+    border: 1px solid #555;
+    color: #fff;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    font-size: 1.3rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, opacity 0.2s;
+}
+
+.tutorial-nav-btn:hover {
+    background: rgba(90, 90, 90, 0.9);
+    border-color: #ffd700;
+}
+
+.tutorial-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
 }
 
 #tutorial-dots {
     display: flex;
     justify-content: center;
     gap: 8px;
-    padding: 12px 0 20px;
-    flex-shrink: 0;
     flex-wrap: wrap;
 }
 
@@ -1931,7 +2135,7 @@ body.touch-input #mobile-controls {
 
 .switch-profile-icon-btn {
     position: absolute;
-    top: calc(60px + var(--safe-top));
+    top: calc(12px + var(--safe-top));
     left: calc(14px + var(--safe-left));
     z-index: 1000;
     border-radius: 50%;
@@ -2064,6 +2268,15 @@ body.touch-input #mobile-controls {
     color: #aaa;
     text-align: center;
     line-height: 1.3;
+}
+
+.challenge-card-stats {
+    margin-top: 6px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    font-size: 0.7rem;
+    color: #888;
 }
 
 /* ---------- Challenge Setup Screen ---------- */
