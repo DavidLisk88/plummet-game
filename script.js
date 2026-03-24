@@ -1194,6 +1194,14 @@ class Game {
             gameModeSelector: document.getElementById("game-mode-selector"),
             difficultySelector: document.getElementById("difficulty-selector"),
             wordPopup: document.getElementById("word-popup"),
+            // Tutorial
+            tutorialBtnProfiles: document.getElementById("tutorial-btn-profiles"),
+            tutorialBtnMenu: document.getElementById("tutorial-btn-menu"),
+            tutorialOverlay: document.getElementById("tutorial-overlay"),
+            tutorialTrack: document.getElementById("tutorial-track"),
+            tutorialDots: document.getElementById("tutorial-dots"),
+            tutorialCounter: document.getElementById("tutorial-counter"),
+            tutorialCloseBtn: document.getElementById("tutorial-close-btn"),
         };
 
         this.state = State.MENU;
@@ -1533,6 +1541,11 @@ class Game {
 
         // New playlist tab
         this.els.newPlaylistTab.addEventListener("click", () => this._openPlaylistModal(null));
+
+        // Tutorial buttons
+        this.els.tutorialBtnProfiles.addEventListener("click", () => this._openTutorial());
+        this.els.tutorialBtnMenu.addEventListener("click", () => this._openTutorial());
+        this.els.tutorialCloseBtn.addEventListener("click", () => this._closeTutorial());
 
         // Playlist modal
         this.els.playlistSaveBtn.addEventListener("click", () => this._savePlaylistModal());
@@ -2601,6 +2614,130 @@ class Game {
         const track = this.music.getCurrentTrack();
         this.els.npMiniTitle.textContent = track ? `♪ ${track.title} – ${track.artist}` : "♪ ---";
         this._setMusicControlButton(this.els.npMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
+    }
+
+    // ── Tutorial slideshow ──
+
+    _openTutorial() {
+        const TOTAL_SLIDES = 13;
+        this._tutorialIndex = 0;
+        this._tutorialTotal = TOTAL_SLIDES;
+
+        // Build slides
+        const track = this.els.tutorialTrack;
+        track.innerHTML = "";
+        for (let i = 1; i <= TOTAL_SLIDES; i++) {
+            const slide = document.createElement("div");
+            slide.className = "tutorial-slide";
+            const img = document.createElement("img");
+            img.src = `TUTORIAL/${i}.png`;
+            img.alt = `Tutorial slide ${i}`;
+            slide.appendChild(img);
+            track.appendChild(slide);
+        }
+
+        // Build dots
+        const dots = this.els.tutorialDots;
+        dots.innerHTML = "";
+        for (let i = 0; i < TOTAL_SLIDES; i++) {
+            const dot = document.createElement("button");
+            dot.className = "tutorial-dot" + (i === 0 ? " active" : "");
+            dot.addEventListener("click", () => this._goToTutorialSlide(i));
+            dots.appendChild(dot);
+        }
+
+        this._updateTutorialPosition();
+        this.els.tutorialOverlay.classList.add("active");
+        this._bindTutorialSwipe();
+    }
+
+    _closeTutorial() {
+        this.els.tutorialOverlay.classList.remove("active");
+        this._unbindTutorialSwipe();
+    }
+
+    _goToTutorialSlide(index) {
+        this._tutorialIndex = Math.max(0, Math.min(index, this._tutorialTotal - 1));
+        this._updateTutorialPosition();
+    }
+
+    _updateTutorialPosition() {
+        const pct = -(this._tutorialIndex * 100);
+        this.els.tutorialTrack.style.transform = `translateX(${pct}%)`;
+        this.els.tutorialCounter.textContent = `${this._tutorialIndex + 1} / ${this._tutorialTotal}`;
+        const dots = this.els.tutorialDots.querySelectorAll(".tutorial-dot");
+        dots.forEach((d, i) => d.classList.toggle("active", i === this._tutorialIndex));
+    }
+
+    _bindTutorialSwipe() {
+        const slider = this.els.tutorialTrack.parentElement; // #tutorial-slider
+        let startX = 0, startY = 0, currentX = 0, dragging = false, moved = false;
+
+        this._tutorialPointerDown = (e) => {
+            dragging = true;
+            moved = false;
+            startX = e.touches ? e.touches[0].clientX : e.clientX;
+            startY = e.touches ? e.touches[0].clientY : e.clientY;
+            currentX = startX;
+            this.els.tutorialTrack.classList.add("dragging");
+        };
+
+        this._tutorialPointerMove = (e) => {
+            if (!dragging) return;
+            const x = e.touches ? e.touches[0].clientX : e.clientX;
+            const y = e.touches ? e.touches[0].clientY : e.clientY;
+            const dx = x - startX;
+            const dy = y - startY;
+            // If more vertical than horizontal, let browser scroll and cancel drag
+            if (!moved && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+                dragging = false;
+                this.els.tutorialTrack.classList.remove("dragging");
+                return;
+            }
+            if (Math.abs(dx) > 5) moved = true;
+            if (moved && e.cancelable) e.preventDefault();
+            currentX = x;
+            const offset = dx;
+            const basePct = -(this._tutorialIndex * 100);
+            const sliderW = slider.offsetWidth || 1;
+            const dragPct = (offset / sliderW) * 100;
+            this.els.tutorialTrack.style.transform = `translateX(${basePct + dragPct}%)`;
+        };
+
+        this._tutorialPointerUp = () => {
+            if (!dragging) return;
+            dragging = false;
+            this.els.tutorialTrack.classList.remove("dragging");
+            const dx = currentX - startX;
+            const threshold = slider.offsetWidth * 0.2;
+            if (dx < -threshold && this._tutorialIndex < this._tutorialTotal - 1) {
+                this._tutorialIndex++;
+            } else if (dx > threshold && this._tutorialIndex > 0) {
+                this._tutorialIndex--;
+            }
+            this._updateTutorialPosition();
+        };
+
+        slider.addEventListener("touchstart", this._tutorialPointerDown, { passive: true });
+        slider.addEventListener("touchmove", this._tutorialPointerMove, { passive: false });
+        slider.addEventListener("touchend", this._tutorialPointerUp);
+        slider.addEventListener("mousedown", this._tutorialPointerDown);
+        slider.addEventListener("mousemove", this._tutorialPointerMove);
+        slider.addEventListener("mouseup", this._tutorialPointerUp);
+        slider.addEventListener("mouseleave", this._tutorialPointerUp);
+    }
+
+    _unbindTutorialSwipe() {
+        const slider = this.els.tutorialTrack.parentElement;
+        if (this._tutorialPointerDown) {
+            slider.removeEventListener("touchstart", this._tutorialPointerDown);
+            slider.removeEventListener("touchmove", this._tutorialPointerMove);
+            slider.removeEventListener("touchend", this._tutorialPointerUp);
+            slider.removeEventListener("mousedown", this._tutorialPointerDown);
+            slider.removeEventListener("mousemove", this._tutorialPointerMove);
+            slider.removeEventListener("mouseup", this._tutorialPointerUp);
+            slider.removeEventListener("mouseleave", this._tutorialPointerUp);
+        }
     }
 
     _renderMusicScreen() {

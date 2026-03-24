@@ -31,6 +31,7 @@
         <div id="profiles-screen" class="screen active">
             <h1 class="title">PLUMMET</h1>
             <p class="subtitle">Select or create a profile</p>
+            <button id="tutorial-btn-profiles" class="tutorial-btn tutorial-btn-large">📖 TUTORIAL</button>
             <div id="profiles-list"></div>
             <button id="new-profile-btn" class="secondary-btn">+ New Profile</button>
         </div>
@@ -49,6 +50,7 @@
 
         <!-- MENU SCREEN -->
         <div id="menu-screen" class="screen">
+            <button id="tutorial-btn-menu" class="tutorial-btn tutorial-btn-small" title="Tutorial">📖</button>
             <h1 class="title">PLUMMET</h1>
             <p id="menu-profile-name" class="subtitle"></p>
             <div id="grid-size-selector">
@@ -248,6 +250,20 @@
             </div>
             <p id="words-found-count"></p>
             <div id="words-found-list"></div>
+        </div>
+    </div>
+
+    <!-- Tutorial Slideshow Overlay -->
+    <div id="tutorial-overlay" class="overlay">
+        <div id="tutorial-content">
+            <div id="tutorial-header">
+                <span id="tutorial-counter">1 / 13</span>
+                <button id="tutorial-close-btn" class="icon-btn">✕</button>
+            </div>
+            <div id="tutorial-slider">
+                <div id="tutorial-track"></div>
+            </div>
+            <div id="tutorial-dots"></div>
         </div>
     </div>
 
