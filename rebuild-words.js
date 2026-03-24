@@ -531,7 +531,7 @@ heard house large learn light might never often other paper plant point river sh
 since small sound start state still story their there think three under until water
 where which while world young also another because before between cannot country differ
 during follow found great house large later learn might never often place right small
-sound start state still story these three under until water where which while world`.split(/\s+/).filter(w => w.length >= 3);
+sound start state still story these three under until water where which while world french`.split(/\s+/).filter(w => w.length >= 3);
 
 // Common irregular plurals
 const IRREGULAR_PLURALS = {
