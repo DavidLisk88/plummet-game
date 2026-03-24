@@ -182,6 +182,67 @@ const FREEZE_DURATION = 10; // seconds
 const STANDARD_CLEAR_FLASH_DURATION = 1.2;
 const BOMB_CLEAR_FLASH_DURATION = 1.8;
 
+// ────────────────────────────────────────
+// LEVELING / XP SYSTEM
+// ────────────────────────────────────────
+const MAX_LEVEL = 500;
+const GRID_XP_MULTIPLIERS = { 3: 1.8, 4: 1.5, 5: 1.2, 6: 1.0, 7: 0.9, 8: 0.85 };
+
+/** XP required to advance from `level` to `level + 1`. */
+function xpRequiredForLevel(level) {
+    return Math.floor(100 + 20 * Math.pow(Math.max(level - 1, 0), 1.3));
+}
+
+/** Calculate XP earned from a single game. */
+function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
+                            isChallenge, challengeType, previousBest, playerLevel }) {
+    if (score <= 0) return 1;
+
+    // Base XP from score
+    let xp = Math.max(1, Math.floor(score * 0.12));
+
+    // Grid-size multiplier (smaller grid = harder = more XP)
+    xp *= (GRID_XP_MULTIPLIERS[gridSize] || 1.0);
+
+    // Difficulty multiplier
+    if (difficulty === "hard") xp *= 1.5;
+
+    // Mode multiplier
+    if (isChallenge) {
+        xp *= challengeType === CHALLENGE_TYPES.SPEED_ROUND ? 1.4 : 1.3;
+    } else if (gameMode === GAME_MODES.TIMED) {
+        xp *= 1.3;
+    }
+
+    // Words-found bonus (logarithmic)
+    xp += Math.floor(Math.log2(Math.max(1, wordsFound)) * 5);
+
+    // Performance vs personal best
+    if (previousBest > 0) {
+        const ratio = score / previousBest;
+        if (score > previousBest) {
+            const improvement = Math.min((score - previousBest) / previousBest, 1.5);
+            xp = Math.floor(xp * (1 + improvement * 0.5)) + 50;
+        } else if (ratio >= 0.85) {
+            xp = Math.floor(xp * (0.85 + ratio * 0.15));
+        } else if (ratio >= 0.6) {
+            xp = Math.floor(xp * 0.7);
+        } else if (ratio >= 0.35) {
+            xp = Math.floor(xp * 0.5);
+        } else {
+            xp = Math.floor(xp * 0.3);
+        }
+    }
+
+    // Level-scaling: gently increase XP earned as levels climb so the
+    // grind stays challenging but never becomes impossibly slow.
+    // At level 1 this is 1.0×, at level 100 ≈ 1.38×, at level 500 ≈ 1.72×.
+    const lvl = Math.max(1, playerLevel || 1);
+    xp *= 1 + Math.log10(lvl) * 0.27;
+
+    return Math.max(1, Math.floor(xp));
+}
+
 const BONUS_METADATA = Object.freeze({
     [BONUS_TYPES.LETTER_PICK]: {
         buttonLabel: "Bonus: Letter",
@@ -1368,6 +1429,10 @@ class ProfileManager {
             difficulty: "casual",
             gameMode: GAME_MODES.SANDBOX,
             createdAt: Date.now(),
+            level: 1,
+            xp: 0,
+            totalXp: 0,
+            bestScores: {},
         };
         this.profiles.push(profile);
         this.activeId = id;
@@ -1455,6 +1520,109 @@ class ProfileManager {
     }
 
     hasProfiles() { return this.profiles.length > 0; }
+
+    /** Ensure legacy profiles have XP fields. */
+    _ensureXPFields(p) {
+        if (!p) return;
+        if (p.level === undefined) p.level = 1;
+        if (p.xp === undefined) p.xp = 0;
+        if (p.totalXp === undefined) p.totalXp = 0;
+        if (!p.bestScores) p.bestScores = {};
+    }
+
+    /** Build a key for bestScores lookup. */
+    bestScoreKey(gridSize, difficulty, gameMode, isChallenge, challengeType) {
+        if (isChallenge) return `ch-${challengeType}`;
+        return `${gridSize}-${difficulty}-${gameMode}`;
+    }
+
+    /** Get the best score for a specific mode combination. */
+    getBestScore(key) {
+        const p = this.getActive();
+        if (!p) return 0;
+        this._ensureXPFields(p);
+        return p.bestScores[key] || 0;
+    }
+
+    /** Update best score if new score is higher. */
+    updateBestScore(key, score) {
+        const p = this.getActive();
+        if (!p) return;
+        this._ensureXPFields(p);
+        if (score > (p.bestScores[key] || 0)) {
+            p.bestScores[key] = score;
+            this._save();
+        }
+    }
+
+    /** Check if the active profile has ZERO game history (truly brand new). */
+    isFirstGameEver() {
+        const p = this.getActive();
+        if (!p) return false;
+        if (p.gamesPlayed > 0) return false;
+        if (p.challengeStats) {
+            for (const key of Object.keys(p.challengeStats)) {
+                if (p.challengeStats[key].gamesPlayed > 0) return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Award XP to the active profile. Returns info about the result.
+     * @param {number} amount - XP to add
+     * @returns {{ leveled, oldLevel, newLevel, oldXp, newXp, oldXpReq, newXpReq, totalXp }}
+     */
+    awardXP(amount) {
+        const p = this.getActive();
+        if (!p) return { leveled: false, oldLevel: 1, newLevel: 1, oldXp: 0, newXp: 0, oldXpReq: 100, newXpReq: 100, totalXp: 0 };
+        this._ensureXPFields(p);
+
+        const oldLevel = p.level;
+        const oldXp = p.xp;
+        const oldXpReq = xpRequiredForLevel(p.level);
+
+        p.totalXp += amount;
+        p.xp += amount;
+
+        let leveled = false;
+        while (p.level < MAX_LEVEL && p.xp >= xpRequiredForLevel(p.level)) {
+            p.xp -= xpRequiredForLevel(p.level);
+            p.level++;
+            leveled = true;
+        }
+        // Cap at max level
+        if (p.level >= MAX_LEVEL) {
+            p.level = MAX_LEVEL;
+            p.xp = 0;
+        }
+
+        this._save();
+
+        return {
+            leveled,
+            oldLevel,
+            newLevel: p.level,
+            oldXp,
+            newXp: p.xp,
+            oldXpReq,
+            newXpReq: xpRequiredForLevel(p.level),
+            totalXp: p.totalXp,
+        };
+    }
+
+    /** Get level info for the active profile. */
+    getLevelInfo() {
+        const p = this.getActive();
+        if (!p) return { level: 1, xp: 0, xpRequired: 100, totalXp: 0 };
+        this._ensureXPFields(p);
+        return {
+            level: p.level,
+            xp: p.xp,
+            xpRequired: xpRequiredForLevel(p.level),
+            totalXp: p.totalXp,
+        };
+    }
 }
 
 // ────────────────────────────────────────
@@ -1609,6 +1777,25 @@ class Game {
             freezeTimer: document.getElementById("freeze-timer"),
             score2xIndicator: document.getElementById("score-2x-indicator"),
             bgCanvas: document.getElementById("bg-canvas"),
+            // Level / XP
+            levelBar: document.getElementById("level-bar"),
+            levelText: document.getElementById("level-text"),
+            xpBarFill: document.getElementById("xp-bar-fill"),
+            xpText: document.getElementById("xp-text"),
+            menuLevelNum: document.getElementById("menu-level-num"),
+            menuXpBarFill: document.getElementById("menu-xp-bar-fill"),
+            menuXpText: document.getElementById("menu-xp-text"),
+            xpEarnedDisplay: document.getElementById("xp-earned-display"),
+            xpEarnedText: document.getElementById("xp-earned-text"),
+            gameoverLevelText: document.getElementById("gameover-level-text"),
+            gameoverXpBarFill: document.getElementById("gameover-xp-bar-fill"),
+            levelUpOverlay: document.getElementById("level-up-overlay"),
+            levelUpLevel: document.getElementById("level-up-level"),
+            levelUpBarFill: document.getElementById("level-up-bar-fill"),
+            levelUpOkBtn: document.getElementById("level-up-ok-btn"),
+            xpTutorialOverlay: document.getElementById("xp-tutorial-overlay"),
+            xpTutorialCanvas: document.getElementById("xp-tutorial-canvas"),
+            xpTutorialOkBtn: document.getElementById("xp-tutorial-ok-btn"),
         };
 
         this.state = State.MENU;
@@ -1677,6 +1864,7 @@ class Game {
         this._bindProfiles();
         this._bindLetterChoice();
         this._bindCanvasTap();
+        this._bindLevelUpUI();
         this._initMutePref();
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
         this._updateHintsBtn();
@@ -1716,7 +1904,9 @@ class Game {
         // Grid size buttons
         document.querySelectorAll(".size-btn").forEach(btn => {
             btn.addEventListener("click", () => {
-                this.gridSize = parseInt(btn.dataset.size, 10);
+                const size = parseInt(btn.dataset.size, 10);
+                if (btn.disabled) return;
+                this.gridSize = size;
                 this.profileMgr.setGridSize(this.gridSize);
                 this._highlightSizeButton();
                 this._updateDifficultySelector();
@@ -1727,7 +1917,13 @@ class Game {
             btn.addEventListener("click", () => {
                 this.difficulty = btn.dataset.difficulty || "casual";
                 this.profileMgr.setDifficulty(this.difficulty);
+                // If switching to Hard and grid is too small, bump to 6
+                if (this.difficulty === "hard" && this.gridSize < 6) {
+                    this.gridSize = 6;
+                    this.profileMgr.setGridSize(this.gridSize);
+                }
                 this._highlightDifficultyButton();
+                this._highlightSizeButton();
             });
         });
 
@@ -2255,15 +2451,24 @@ class Game {
     }
 
     _highlightSizeButton() {
+        const minSize = this.difficulty === "hard" ? 6 : 3;
         document.querySelectorAll(".size-btn").forEach(btn => {
-            btn.classList.toggle("selected", parseInt(btn.dataset.size, 10) === this.gridSize);
+            const size = parseInt(btn.dataset.size, 10);
+            const disabled = size < minSize;
+            btn.classList.toggle("selected", size === this.gridSize);
+            btn.disabled = disabled;
+            btn.classList.toggle("btn-disabled", disabled);
         });
     }
 
     _highlightDifficultyButton() {
         document.querySelectorAll(".difficulty-btn").forEach(btn => {
-            btn.classList.toggle("selected", btn.dataset.difficulty === this.difficulty);
+            const isSelected = btn.dataset.difficulty === this.difficulty;
+            btn.classList.toggle("selected", isSelected);
+            btn.classList.toggle("hard-selected", isSelected && this.difficulty === "hard");
         });
+        const hint = document.getElementById("hard-mode-hint");
+        if (hint) hint.classList.toggle("hidden", this.difficulty !== "hard");
     }
 
     _highlightGameModeButton() {
@@ -2987,6 +3192,7 @@ class Game {
         this._updateScoreDisplay();
         this._updateTimerDisplay();
         this._updateHighScoreDisplay();
+        this._updateLevelDisplay();
         this._showScreen("play");
         this.state = State.PLAYING;
         this.fallInterval = this.difficulty === "casual" ? 1.5 : 0.9;
@@ -3300,6 +3506,9 @@ class Game {
         // Clear saved game — this run is over
         this._clearGameState();
 
+        // ── XP System: check first-game status BEFORE recording ──
+        const wasFirstGame = this.profileMgr.isFirstGameEver();
+
         // Record stats to profile
         const wordsCount = (this.wordsFound || []);
         if (this.activeChallenge) {
@@ -3320,6 +3529,37 @@ class Game {
                 isNew = this.score > 0;
             }
         }
+
+        // ── XP Calculation ──
+        const gs = this.activeChallenge ? this.challengeGridSize : this.gridSize;
+        const bsKey = this.profileMgr.bestScoreKey(
+            gs, this.difficulty, this.gameMode,
+            !!this.activeChallenge, this.activeChallenge);
+        const previousBest = this.profileMgr.getBestScore(bsKey);
+
+        let xpEarned;
+        if (wasFirstGame) {
+            xpEarned = xpRequiredForLevel(1); // guarantee level 2
+        } else {
+            const lvlInfo = this.profileMgr.getLevelInfo();
+            xpEarned = calculateGameXP({
+                score: this.score,
+                wordsFound: wordsCount.length,
+                gridSize: gs,
+                difficulty: this.difficulty,
+                gameMode: this.gameMode,
+                isChallenge: !!this.activeChallenge,
+                challengeType: this.activeChallenge,
+                previousBest,
+                playerLevel: lvlInfo.level,
+            });
+        }
+
+        // Update best score for this mode combo
+        this.profileMgr.updateBestScore(bsKey, this.score);
+
+        // Award XP
+        const xpResult = this.profileMgr.awardXP(xpEarned);
 
         // Build final score text (add challenge info if applicable)
         let finalText = `Score: ${this.score}`;
@@ -3342,7 +3582,192 @@ class Game {
         this.els.menuBtn.textContent = this._gameOverChallenge ? "Back to Challenges" : "Main Menu";
         this.els.restartBtn.textContent = this._gameOverChallenge ? "Play Again" : "Play Again";
 
+        // ── Show gameover screen with XP animation ──
+        this._showGameOverXP(xpEarned, xpResult, wasFirstGame);
+    }
+
+    // ── Level / XP display methods ──
+
+    _updateLevelDisplay() {
+        const info = this.profileMgr.getLevelInfo();
+        const pct = info.xpRequired > 0 ? Math.min(100, (info.xp / info.xpRequired) * 100) : 0;
+
+        // Play screen bar
+        this.els.levelText.textContent = `Lv. ${info.level}`;
+        this.els.xpBarFill.style.width = pct + "%";
+        this.els.xpText.textContent = `${info.xp} / ${info.xpRequired}`;
+
+        // Menu screen
+        this.els.menuLevelNum.textContent = info.level;
+        this.els.menuXpBarFill.style.width = pct + "%";
+        this.els.menuXpText.textContent = `${info.xp} / ${info.xpRequired} XP`;
+    }
+
+    _showGameOverXP(xpEarned, xpResult, wasFirstGame) {
+        // Set initial gameover XP state (before animation)
+        const startPct = xpResult.oldXpReq > 0
+            ? Math.min(100, (xpResult.oldXp / xpResult.oldXpReq) * 100) : 0;
+
+        this.els.gameoverLevelText.textContent = `Level ${xpResult.oldLevel}`;
+        this.els.gameoverXpBarFill.style.transition = "none";
+        this.els.gameoverXpBarFill.style.width = startPct + "%";
+        this.els.xpEarnedText.textContent = `+${xpEarned} XP`;
+        this.els.xpEarnedText.classList.remove("visible");
+
         this._showScreen("gameover");
+
+        // Animate after a brief delay
+        setTimeout(() => {
+            this.els.xpEarnedText.classList.add("visible");
+        }, 300);
+
+        setTimeout(() => {
+            this.els.gameoverXpBarFill.style.transition = "width 1.2s cubic-bezier(0.22,1,0.36,1)";
+
+            if (xpResult.leveled) {
+                // Animate to 100%, then after the transition show level-up
+                this.els.gameoverXpBarFill.style.width = "100%";
+
+                setTimeout(() => {
+                    // Update to new level state
+                    this.els.gameoverLevelText.textContent = `Level ${xpResult.newLevel}`;
+                    this.els.gameoverXpBarFill.style.transition = "none";
+                    this.els.gameoverXpBarFill.style.width = "0%";
+
+                    setTimeout(() => {
+                        const endPct = xpResult.newXpReq > 0
+                            ? Math.min(100, (xpResult.newXp / xpResult.newXpReq) * 100) : 0;
+                        this.els.gameoverXpBarFill.style.transition = "width 0.6s cubic-bezier(0.22,1,0.36,1)";
+                        this.els.gameoverXpBarFill.style.width = endPct + "%";
+
+                        // Show level-up popup after bar settles
+                        setTimeout(() => {
+                            if (wasFirstGame) {
+                                this._showXPTutorial(xpResult.newLevel);
+                            } else {
+                                this._showLevelUpPopup(xpResult.newLevel, xpResult.newXp, xpResult.newXpReq);
+                            }
+                        }, 700);
+                    }, 50);
+                }, 1250);
+            } else {
+                // No level up — just animate to final position
+                const endPct = xpResult.newXpReq > 0
+                    ? Math.min(100, (xpResult.newXp / xpResult.newXpReq) * 100) : 0;
+                this.els.gameoverXpBarFill.style.width = endPct + "%";
+            }
+        }, 600);
+
+        // Also update the play-screen bar and menu bar
+        this._updateLevelDisplay();
+    }
+
+    _showLevelUpPopup(newLevel, newXp, newXpReq) {
+        this.els.levelUpLevel.textContent = `Level ${newLevel}`;
+        const pct = newXpReq > 0 ? Math.min(100, (newXp / newXpReq) * 100) : 0;
+        this.els.levelUpBarFill.style.transition = "none";
+        this.els.levelUpBarFill.style.width = "0%";
+        this.els.levelUpOverlay.classList.add("active");
+
+        setTimeout(() => {
+            this.els.levelUpBarFill.style.transition = "width 0.8s cubic-bezier(0.22,1,0.36,1)";
+            this.els.levelUpBarFill.style.width = pct + "%";
+        }, 400);
+
+        // Confetti burst
+        if (this.bgAnim && this.bgAnim.spawnConfetti) {
+            this.bgAnim.spawnConfetti();
+        }
+    }
+
+    _showXPTutorial(newLevel) {
+        this.els.levelUpOverlay.classList.remove("active");
+        this.els.xpTutorialOverlay.classList.add("active");
+        this._animateXPTutorialCanvas();
+    }
+
+    _animateXPTutorialCanvas() {
+        const canvas = this.els.xpTutorialCanvas;
+        const ctx = canvas.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = 300 * dpr;
+        canvas.height = 180 * dpr;
+        ctx.scale(dpr, dpr);
+        const w = 300, h = 180;
+        let start = null;
+        let animId = null;
+
+        const draw = (timestamp) => {
+            if (!start) start = timestamp;
+            const t = (timestamp - start) / 1000;
+            ctx.clearRect(0, 0, w, h);
+
+            // Draw a mini XP bar animation
+            ctx.fillStyle = "#0d1117";
+            ctx.fillRect(0, 0, w, h);
+
+            // Level badge
+            const lvl = Math.min(Math.floor(t * 0.8) + 1, 5);
+            ctx.font = "bold 28px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "#7eb8ff";
+            ctx.fillText(`Lv. ${lvl}`, w / 2, 30);
+
+            // XP bar background
+            const barX = 40, barY = 55, barW = 220, barH = 16;
+            ctx.fillStyle = "#1a2a3e";
+            ctx.fillRect(barX, barY, barW, barH);
+            ctx.strokeStyle = "#2a3a50";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, barW, barH);
+
+            // XP bar fill (animated cycling)
+            const cycle = t % 3;
+            const fillPct = cycle < 2 ? Math.min(cycle / 2, 1) : 1;
+            const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+            grad.addColorStop(0, "#3b82f6");
+            grad.addColorStop(1, "#60a5fa");
+            ctx.fillStyle = grad;
+            ctx.fillRect(barX, barY, barW * fillPct, barH);
+
+            // "LEVEL UP!" flash
+            if (cycle >= 2) {
+                const flash = Math.sin(t * 8) > 0;
+                ctx.font = "bold 20px sans-serif";
+                ctx.fillStyle = flash ? "#ffd700" : "#ff9800";
+                ctx.fillText("LEVEL UP!", w / 2, 95);
+            }
+
+            // Info text
+            ctx.font = "12px sans-serif";
+            ctx.fillStyle = "#888";
+            ctx.fillText("Earn XP by playing games", w / 2, 125);
+            ctx.fillText("Harder modes = more XP", w / 2, 142);
+            ctx.fillText("Beat your best = bonus XP!", w / 2, 159);
+
+            animId = requestAnimationFrame(draw);
+        };
+
+        animId = requestAnimationFrame(draw);
+        this._xpTutorialAnimId = animId;
+    }
+
+    _stopXPTutorialAnim() {
+        if (this._xpTutorialAnimId) {
+            cancelAnimationFrame(this._xpTutorialAnimId);
+            this._xpTutorialAnimId = null;
+        }
+    }
+
+    _bindLevelUpUI() {
+        this.els.levelUpOkBtn.addEventListener("click", () => {
+            this.els.levelUpOverlay.classList.remove("active");
+        });
+        this.els.xpTutorialOkBtn.addEventListener("click", () => {
+            this._stopXPTutorialAnim();
+            this.els.xpTutorialOverlay.classList.remove("active");
+        });
     }
 
     // ── Profile methods ──
@@ -3379,6 +3804,11 @@ class Game {
         this.gridSize = profile.gridSize || 5;
         this.difficulty = profile.difficulty || "casual";
         if (this.difficulty === "challenging") this.difficulty = "hard";
+        // Enforce Hard mode grid minimum
+        if (this.difficulty === "hard" && this.gridSize < 6) {
+            this.gridSize = 6;
+            this.profileMgr.setGridSize(this.gridSize);
+        }
         this.gameMode = profile.gameMode || GAME_MODES.SANDBOX;
         this.highScore = profile.highScore || 0;
         this._highlightSizeButton();
@@ -3387,6 +3817,7 @@ class Game {
         this._updateDifficultySelector();
         this._updateHighScoreDisplay();
         this._updateMenuStats();
+        this._updateLevelDisplay();
     }
 
     _renderProfilesList() {
@@ -3403,10 +3834,11 @@ class Game {
             const card = document.createElement("div");
             card.className = "profile-card";
             const initial = p.username.charAt(0).toUpperCase();
+            const lvl = p.level || 1;
             card.innerHTML = `
                 <div class="profile-avatar">${initial}</div>
                 <div class="profile-info">
-                    <div class="profile-name">${p.username}</div>
+                    <div class="profile-name">${p.username} <span class="profile-level">Lv.${lvl}</span></div>
                     <div class="profile-stats">High Score: ${p.highScore} · Games: ${p.gamesPlayed} · Words: ${p.totalWords}</div>
                 </div>
                 <button class="profile-delete-btn" title="Delete profile">🗑</button>
@@ -4209,7 +4641,7 @@ class Game {
                     },
                     {
                         title: 'Grid Sizes & Difficulty',
-                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. Two difficulty levels: CASUAL accepts all words with 3+ letters, while HARD requires 4+ letters — short words like "AT" or "IN" won\'t count, forcing you to think bigger!',
+                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. On 3×3 and 4×4 grids, 2-letter words like "IT" or "GO" are valid! Larger grids require 3+ letters. Two difficulty levels: CASUAL accepts the minimum word length, while HARD requires 4+ letters — short words won\'t count, forcing you to think bigger!',
                         draw(ctx, w, h, t) {
                             const sizes = [3, 5, 8];
                             const si = Math.floor(t * 0.4) % sizes.length;
@@ -4651,6 +5083,117 @@ class Game {
                                 gTap(ctx, btnX, btnY, t);
                                 gT(ctx, w / 2, h - 50, 'Tap to unmute', '#4caf50', 13);
                             }
+                        }
+                    }
+                ]
+            },
+
+            // ═══ LEVELING ═══
+            {
+                id: 'leveling', icon: '⬆️', label: 'Leveling & XP',
+                desc: 'Earn XP to level up — push yourself to climb higher!',
+                slides: [
+                    {
+                        title: 'How XP Works',
+                        desc: 'Every game you play earns you experience points (XP). When your XP bar fills up, you level up! XP is based on your score, grid size, difficulty, and game mode. Smaller grids, Hard mode, Timed games, and Challenges all multiply your XP. Beat your own personal best in any mode for a big bonus!',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            // Animated level badge
+                            const lvl = Math.min(Math.floor(t * 0.6) + 1, 10);
+                            ctx.font = 'bold 26px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillStyle = '#7eb8ff';
+                            ctx.fillText(`Lv. ${lvl}`, w / 2, 28);
+
+                            // XP bar
+                            const barX = 40, barY = 50, barW = w - 80, barH = 14;
+                            ctx.fillStyle = '#1a2a3e';
+                            ctx.fillRect(barX, barY, barW, barH);
+                            ctx.strokeStyle = '#2a3a50';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(barX, barY, barW, barH);
+                            const cycle = t % 4;
+                            const fill = cycle < 3 ? Math.min(cycle / 3, 1) : 1;
+                            const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+                            grad.addColorStop(0, '#3b82f6');
+                            grad.addColorStop(1, '#60a5fa');
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(barX, barY, barW * fill, barH);
+
+                            if (cycle >= 3) {
+                                const fl = Math.sin(t * 8) > 0;
+                                ctx.font = 'bold 18px sans-serif';
+                                ctx.fillStyle = fl ? '#ffd700' : '#ff9800';
+                                ctx.fillText('LEVEL UP!', w / 2, 88);
+                            }
+
+                            // Multiplier icons
+                            const items = [
+                                { icon: '🎯', label: 'Hard Mode', mult: '1.5×', color: '#f44336' },
+                                { icon: '⏱️', label: 'Timed', mult: '1.3×', color: '#ff9800' },
+                                { icon: '🏆', label: 'Challenge', mult: '1.4×', color: '#ffd700' },
+                                { icon: '📏', label: 'Small Grid', mult: '1.8×', color: '#4caf50' },
+                            ];
+                            for (let i = 0; i < items.length; i++) {
+                                const x = 20, y = 108 + i * 24;
+                                ctx.font = '12px sans-serif';
+                                ctx.textAlign = 'left';
+                                ctx.fillStyle = '#fff';
+                                ctx.fillText(items[i].icon + ' ' + items[i].label, x, y);
+                                ctx.textAlign = 'right';
+                                ctx.fillStyle = items[i].color;
+                                ctx.fillText(items[i].mult + ' XP', w - 20, y);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Beating Your Best',
+                        desc: 'Your best score in each mode combo (grid size + difficulty + game type) is tracked. Score higher than your personal best to get bonus XP! The bigger the improvement, the bigger the bonus. If you score much lower, you still get XP, but less. The system compares every game against YOUR history — you\'re always competing with yourself.',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            gT(ctx, w / 2, 24, 'Your Best: 500 pts', '#888', 14);
+
+                            const cyc = t % 6;
+                            const scenarios = [
+                                { score: 720, label: 'Beat PB by 44%!', color: '#4caf50', bonus: '+50 bonus XP!', mult: '1.22×' },
+                                { score: 480, label: '96% of PB', color: '#ff9800', bonus: 'Normal XP', mult: '1.0×' },
+                                { score: 200, label: '40% of PB', color: '#f44336', bonus: 'Reduced XP', mult: '0.5×' },
+                            ];
+                            const si = Math.floor(cyc / 2) % scenarios.length;
+                            const s = scenarios[si];
+
+                            ctx.font = 'bold 28px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillStyle = s.color;
+                            ctx.fillText(`Score: ${s.score}`, w / 2, 65);
+
+                            ctx.font = '14px sans-serif';
+                            ctx.fillStyle = '#aaa';
+                            ctx.fillText(s.label, w / 2, 90);
+
+                            // XP bar animation
+                            const barX = 40, barY = 110, barW = w - 80, barH = 12;
+                            ctx.fillStyle = '#1a2a3e';
+                            ctx.fillRect(barX, barY, barW, barH);
+                            const phase = (cyc % 2);
+                            const fillPct = Math.min(phase / 1.5, 1);
+                            const g2 = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+                            g2.addColorStop(0, '#3b82f6'); g2.addColorStop(1, '#60a5fa');
+                            ctx.fillStyle = g2;
+                            ctx.fillRect(barX, barY, barW * fillPct * (si === 0 ? 0.9 : si === 1 ? 0.5 : 0.2), barH);
+
+                            ctx.font = 'bold 16px sans-serif';
+                            ctx.fillStyle = s.color;
+                            ctx.fillText(s.bonus, w / 2, 148);
+
+                            ctx.font = '12px sans-serif';
+                            ctx.fillStyle = '#666';
+                            ctx.fillText(`XP multiplier: ${s.mult}`, w / 2, 170);
                         }
                     }
                 ]

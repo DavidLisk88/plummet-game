@@ -56,6 +56,7 @@
             <h1 class="title">PLUMMET</h1>
             <p id="menu-profile-name" class="subtitle"></p>
             <div id="grid-size-selector">
+                <span id="hard-mode-hint" class="hard-mode-hint hidden">Hard Mode: 4+ letters only</span>
                 <label>Grid Size:</label>
                 <div class="size-buttons">
                     <button class="size-btn" data-size="3">3×3</button>
@@ -84,6 +85,11 @@
             <button id="resume-game-btn" class="primary-btn hidden">▶ Resume Game</button>
             <button id="challenges-btn" class="secondary-btn challenges-btn-glow">🏆 Challenges</button>
             <button id="music-menu-btn" class="secondary-btn">🎵 Music</button>
+            <div id="menu-level-display">
+                <div id="menu-level-badge">Lv. <span id="menu-level-num">1</span></div>
+                <div id="menu-xp-bar-track"><div id="menu-xp-bar-fill"></div></div>
+                <span id="menu-xp-text">0 / 100 XP</span>
+            </div>
             <div id="menu-stats">
                 <p class="high-score-text">High Score: <span id="menu-high-score">0</span></p>
                 <p class="stat-text">Games Played: <span id="menu-games-played">0</span></p>
@@ -184,6 +190,11 @@
         <!-- PLAYING SCREEN -->
         <div id="play-screen" class="screen">
             <div id="word-popup" aria-live="polite"></div>
+            <div id="level-bar">
+                <span id="level-text">Lv. 1</span>
+                <div id="xp-bar-track"><div id="xp-bar-fill"></div></div>
+                <span id="xp-text">0 / 100</span>
+            </div>
             <div id="score-bar">
                 <div class="score-item">
                     <span class="score-label">Score</span>
@@ -284,9 +295,35 @@
             <h1 class="title">GAME OVER</h1>
             <p id="final-score-text">Score: 0</p>
             <p id="new-high-score-text" class="hidden">🏆 New High Score!</p>
+            <div id="xp-earned-display">
+                <div id="xp-earned-text">+0 XP</div>
+                <div id="gameover-level-text">Level 1</div>
+                <div id="gameover-xp-bar-track"><div id="gameover-xp-bar-fill"></div></div>
+            </div>
             <button id="restart-btn" class="primary-btn">Play Again</button>
             <button id="words-found-btn" class="secondary-btn">📝 Words Found</button>
             <button id="menu-btn" class="secondary-btn">Main Menu</button>
+        </div>
+
+        <!-- LEVEL UP OVERLAY -->
+        <div id="level-up-overlay" class="overlay">
+            <div class="overlay-content level-up-content">
+                <div id="level-up-stars">✦ ✦ ✦</div>
+                <h2 id="level-up-title">LEVEL UP!</h2>
+                <p id="level-up-level">Level 2</p>
+                <div id="level-up-bar-track"><div id="level-up-bar-fill"></div></div>
+                <button id="level-up-ok-btn" class="primary-btn">Nice!</button>
+            </div>
+        </div>
+
+        <!-- XP TUTORIAL POPUP (first game only) -->
+        <div id="xp-tutorial-overlay" class="overlay">
+            <div class="overlay-content xp-tutorial-content">
+                <h2>⬆️ Leveling System</h2>
+                <canvas id="xp-tutorial-canvas" width="300" height="180"></canvas>
+                <p id="xp-tutorial-desc">You have a level that grows as you earn XP! Play harder modes, smaller grids, and beat your own records to earn more XP. The stronger you get, the harder it is to level up — push yourself!</p>
+                <button id="xp-tutorial-ok-btn" class="primary-btn">Got It!</button>
+            </div>
         </div>
 
         <!-- WORDS FOUND SCREEN -->

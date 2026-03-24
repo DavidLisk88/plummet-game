@@ -172,7 +172,7 @@ chef chin chip chop cite city clad clam clan clap claw clay clip clod clog clot 
 clue coal coat code coil coin coke cold cole colt comb come cone cook cool cope copy
 cord core cork corn cost coup cove crew crop crow cube cult curb cure curl curt dash
 data date dawn dead deaf deal dear debt deck deed deem deep deer dent desk dial dice
-diet dime dine dire dirt disc dish disk dock does doll dome done doom door dose dose
+die diet dime dine dire dirt disc dish disk dock does doll dome done doom door dose dose
 down doze drag draw drew drip drop drug drum dual duck duel duff duke dull dump dune
 dusk dust duty each earl earn ease east easy edge edit eggs emit envy epic euro even
 exam exec exit expo face fact fade fail fair fake fall fame fang fare farm fast fate
@@ -197,7 +197,7 @@ mood moon moor more moss most moth move much muck mule muse musk must myth nail 
 navy near neat neck need nest news next nice nine node none noon norm nose note noun
 obey odor oink omen once only onto open oral oven over pace pack page paid pail pain
 pair pale palm pane pang park part pass past path pave peak peal pear peat peck peek
-peel peer pelt perk pest pick pier pile pill pine pink pipe plan play plea plot plow
+peel peer pelt pent perk pest pick pier pile pill pine pink pipe plan play plea plot plow
 plug plum plus poem poet poke pole poll polo pond pony pool poor pope pork port pose
 post pour pray prey prod prop prow pull pulp pump pure push quit quiz race rack raft
 rage raid rail rain rake ramp rang rank rare rash rate rave read real rear reed reef
@@ -630,6 +630,7 @@ const IRREGULAR_VERBS = {
     shoot: ['shoots', 'shot', 'shooting'],
     feed: ['feeds', 'fed', 'feeding'],
     lay: ['lays', 'laid', 'laying'],
+    die: ['dies', 'died', 'dying'],
     lie: ['lies', 'lay', 'lain', 'lying'],
     seek: ['seeks', 'sought', 'seeking'],
     stick: ['sticks', 'stuck', 'sticking'],
@@ -677,6 +678,12 @@ const BANNED = new Set([
     'PISSED','PISSING','DICKS','ASSES','SLUTS','WHORED','WHORING',
 ]);
 
+// ─── Manual extras ──────────────────────────────────────────────────
+// Quick-add words here — no inflection, added exactly as written.
+// Just toss in any missing words you find during gameplay.
+const MANUAL_EXTRAS = `
+`.split(/\s+/).filter(w => w.length >= 2);
+
 // ─── Main build process ────────────────────────────────────────────
 
 function main() {
@@ -688,7 +695,8 @@ function main() {
     for (const w of ADJECTIVES) allWords.add(w.toUpperCase());
     for (const w of OTHER_WORDS) allWords.add(w.toUpperCase());
     for (const w of TWO_LETTER_WORDS) allWords.add(w.toUpperCase());
-    console.log(`Base words: ${allWords.size} (including ${TWO_LETTER_WORDS.length} two-letter words)`);
+    for (const w of MANUAL_EXTRAS) allWords.add(w.toUpperCase());
+    console.log(`Base words: ${allWords.size} (including ${TWO_LETTER_WORDS.length} two-letter words, ${MANUAL_EXTRAS.length} manual extras)`);
 
     // 2. Generate proper inflections
     const beforeInflect = allWords.size;
