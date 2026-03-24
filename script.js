@@ -124,7 +124,7 @@ const CHALLENGE_TYPES = Object.freeze({
 const CHALLENGE_META = Object.freeze({
     [CHALLENGE_TYPES.TARGET_WORD]: {
         title: "Target Word",
-        description: "Spell specific target words that appear on screen for big bonus points!",
+        description: "Spell target words for bonus points! Words turn green — tap to claim them when you're ready.",
         icon: "🎯",
     },
     [CHALLENGE_TYPES.SPEED_ROUND]: {
@@ -373,6 +373,7 @@ class Grid {
     findWordsThrough(row, col, minWordLength = 3) {
         const foundWords = [];
         const cellsToRemove = new Set();
+        const wordCellMap = []; // [{word, cells: Set}]
 
         for (const [dr, dc] of Grid.DIRS) {
             // Walk backward to find start of contiguous segment
@@ -422,30 +423,46 @@ class Grid {
 
             if (bestWord) {
                 foundWords.push(bestWord);
-                for (const s of bestCells) cellsToRemove.add(`${s.r},${s.c}`);
+                const wordCells = new Set();
+                for (const s of bestCells) {
+                    const key = `${s.r},${s.c}`;
+                    cellsToRemove.add(key);
+                    wordCells.add(key);
+                }
+                wordCellMap.push({ word: bestWord, cells: wordCells });
             }
         }
 
-        return { words: foundWords, cells: cellsToRemove };
+        return { words: foundWords, cells: cellsToRemove, wordCellMap };
     }
 
     // Full-board scan for any valid words (used during chain reactions)
     findAllWords(minWordLength = 3) {
         const foundWords = [];
         const cellsToRemove = new Set();
+        const allWordCellMap = [];
 
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
                 if (isWordLetter(this.cells[r][c])) {
-                    const { words, cells } = this.findWordsThrough(r, c, minWordLength);
+                    const { words, cells, wordCellMap } = this.findWordsThrough(r, c, minWordLength);
                     for (const w of words) foundWords.push(w);
                     for (const cell of cells) cellsToRemove.add(cell);
+                    for (const wc of wordCellMap) allWordCellMap.push(wc);
                 }
             }
         }
 
-        // Deduplicate words
-        return { words: [...new Set(foundWords)], cells: cellsToRemove };
+        // Deduplicate words and their cell maps
+        const seenWords = new Set();
+        const dedupedMap = [];
+        for (const wc of allWordCellMap) {
+            if (!seenWords.has(wc.word)) {
+                seenWords.add(wc.word);
+                dedupedMap.push(wc);
+            }
+        }
+        return { words: [...new Set(foundWords)], cells: cellsToRemove, wordCellMap: dedupedMap };
     }
 
     // Remove cells and apply gravity. Returns list of gravity animations [{r,c,fromR}]
@@ -507,9 +524,17 @@ class Renderer {
         this.flashTimer = 0;
         this.gravityAnims = [];        // {col, fromRow, toRow, letter, progress}
         this.hintCells = new Set();    // cells glowing orange (hint mode)
+        this.validatedCells = new Set(); // cells highlighted green (target word challenge)
         this.blastCells = new Set();
         this.blastCenterKey = null;
         this.blastProgress = 0;
+    }
+
+    // Convert pixel coordinates (relative to canvas) to grid row/col, or null if outside
+    pixelToCell(px, py) {
+        const col = Math.floor((px - this.offsetX) / this.cellSize);
+        const row = Math.floor((py - this.offsetY) / this.cellSize);
+        return { row, col };
     }
 
     getGhostRow(grid, block) {
@@ -621,10 +646,19 @@ class Renderer {
                 }
 
                 // Hint glow (orange) — one letter away from a word
-                if (this.hintCells.has(key) && !this.flashCells.has(key) && !isBlastCell) {
+                if (this.hintCells.has(key) && !this.flashCells.has(key) && !isBlastCell && !this.validatedCells.has(key)) {
                     ctx.fillStyle = "rgba(255, 140, 0, 0.25)";
                     ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
                     ctx.strokeStyle = "rgba(255, 140, 0, 0.7)";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
+                }
+
+                // Validated cells glow (green) — tap to claim in Target Word challenge
+                if (this.validatedCells.has(key) && !this.flashCells.has(key) && !isBlastCell) {
+                    ctx.fillStyle = "rgba(0, 200, 80, 0.3)";
+                    ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+                    ctx.strokeStyle = "rgba(0, 220, 100, 0.8)";
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
                 }
@@ -640,7 +674,8 @@ class Renderer {
                 const letter = grid.get(r, c);
                 if (letter) {
                     let color = this.hintCells.has(key) && !this.flashCells.has(key) ? "#ff8c00" : "#fff";
-                    if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#da70d6"; // orchid purple for wildcards
+                    if (this.validatedCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for validated
+                    else if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#da70d6"; // orchid purple for wildcards
                     let scale = 1;
                     let alpha = 1;
                     if (isBlastCell) {
@@ -1372,6 +1407,10 @@ class Game {
         this.speedRoundBaseInterval = 0.9;
         this._challengePreviewAnimations = [];
 
+        // Target Word challenge: tap-to-claim state
+        this._validatedWordGroups = []; // [{word, cells: Set of "r,c", pts}]
+        this._claimAnimating = false;
+
         document.body.classList.toggle("touch-input", this.usesTouchSwipeInput);
 
         this._bindUI();
@@ -1379,6 +1418,7 @@ class Game {
         this._bindMusic();
         this._bindProfiles();
         this._bindLetterChoice();
+        this._bindCanvasTap();
         this._initMutePref();
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
         this._updateHintsBtn();
@@ -2271,6 +2311,10 @@ class Game {
         this.renderer.particles = [];
         this.renderer.gravityAnims = [];
         this.pendingGravityMoves = [];
+        this._validatedWordGroups = [];
+        this._claimAnimating = false;
+        this.renderer.validatedCells = new Set();
+        this.activeChallenge = null;
         this._updateScoreDisplay();
         this._updateHighScoreDisplay();
         this._highlightSizeButton();
@@ -2330,6 +2374,7 @@ class Game {
         this.renderer.particles = [];
         this.renderer.gravityAnims = [];
         this.renderer.hintCells = new Set();
+        this.renderer.validatedCells = new Set();
         this._activeHintKey = null;
         this.pendingGravityMoves = [];
         this.nextLetter = randomLetter();
@@ -2352,6 +2397,8 @@ class Game {
         // Reset challenge state (activeChallenge is set before calling this for challenges)
         this.targetWord = null;
         this.targetWordsCompleted = 0;
+        this._validatedWordGroups = [];
+        this._claimAnimating = false;
         this.els.targetWordDisplay.classList.add("hidden");
 
         this._updateScoreDisplay();
@@ -2482,8 +2529,14 @@ class Game {
         if (result.words.length === 0 && result.cells.size === 0) {
             // Word check already ran above and found nothing.
             // If the grid is now completely full, the last placed letter
-            // didn't form any word — game over.
+            // didn't form any word — game over (unless validated words can be claimed).
             if (this.grid.isGridFull()) {
+                if (this._validatedWordGroups.length > 0) {
+                    // Player can still tap green cells to free space
+                    this.clearing = false;
+                    this._claimAnimating = false;
+                    return;
+                }
                 this._gameOver();
                 return;
             }
@@ -2495,6 +2548,7 @@ class Game {
                 this._updateScoreDisplay();
             }
             this.clearing = false;
+            this._claimAnimating = false;
             this._computeHintCells();
 
             // Show word popup if any words were found in this chain
@@ -2504,6 +2558,27 @@ class Game {
                 this._showWordPopup(chainWords);
                 return;
             }
+            // Don't spawn a new block if one already exists (e.g. after tap-to-claim)
+            if (!this.block) this._spawnBlock();
+            return;
+        }
+
+        // ── Target Word challenge: tap-to-claim mode ──
+        // Instead of auto-clearing, highlight validated words green
+        // and let the player tap to claim them.
+        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
+            const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
+            if (newWords.length > 0) {
+                for (const word of newWords) {
+                    this.foundWordsThisGame.add(word);
+                }
+                // Build per-word cell groups from the result
+                // We re-detect each word individually to get its specific cells
+                this._addValidatedWords(result, newWords);
+            }
+            // Don't enter clearing state — spawn next block
+            this.clearing = false;
+            this._computeHintCells();
             this._spawnBlock();
             return;
         }
@@ -2667,7 +2742,7 @@ class Game {
             setTimeout(() => {
                 container.innerHTML = "";
                 this._wordPopupActive = false;
-                this._spawnBlock();
+                if (!this.block) this._spawnBlock();
             }, 400);
         }, 2000);
     }
@@ -2684,7 +2759,10 @@ class Game {
         this.block = null;
         this.audio.gameOver();
         this.renderer.hintCells = new Set();
+        this.renderer.validatedCells = new Set();
         this._activeHintKey = null;
+        this._validatedWordGroups = [];
+        this._claimAnimating = false;
 
         // Clean up bonus indicators
         this.freezeActive = false;
@@ -3218,6 +3296,159 @@ class Game {
         this._renderMusicScreen();
     }
 
+    // ── Target Word: tap-to-claim ──
+
+    _addValidatedWords(result, words) {
+        // Use per-word cell mapping from the detection result
+        const newWordSet = new Set(words);
+        for (const wc of result.wordCellMap) {
+            if (!newWordSet.has(wc.word)) continue;
+            if (this._validatedWordGroups.some(g => g.word === wc.word)) continue;
+            const pts = wc.word.length * 10 * wc.word.length;
+            this._validatedWordGroups.push({ word: wc.word, cells: new Set(wc.cells), pts });
+        }
+        this._rebuildValidatedCells();
+    }
+
+    _rebuildValidatedCells() {
+        const allCells = new Set();
+        for (const group of this._validatedWordGroups) {
+            for (const key of group.cells) allCells.add(key);
+        }
+        this.renderer.validatedCells = allCells;
+    }
+
+    _handleCanvasTap(clientX, clientY) {
+        if (this.activeChallenge !== CHALLENGE_TYPES.TARGET_WORD) return;
+        if (this._validatedWordGroups.length === 0) return;
+        if (this._claimAnimating || this.clearing) return;
+
+        // Convert client coordinates to canvas-relative coordinates
+        const rect = this.renderer.canvas.getBoundingClientRect();
+        const scaleX = this.renderer.canvas.width / (window.devicePixelRatio || 1) / rect.width;
+        const scaleY = this.renderer.canvas.height / (window.devicePixelRatio || 1) / rect.height;
+        const px = (clientX - rect.left) * scaleX;
+        const py = (clientY - rect.top) * scaleY;
+
+        const { row, col } = this.renderer.pixelToCell(px, py);
+        if (row < 0 || row >= this.gridSize || col < 0 || col >= this.gridSize) return;
+
+        const key = `${row},${col}`;
+        if (!this.renderer.validatedCells.has(key)) return;
+
+        // Found a green cell tap — claim all word groups containing this cell
+        this._claimValidatedAt(key);
+    }
+
+    _claimValidatedAt(tappedKey) {
+        // Find all validated word groups that include the tapped cell
+        const toClaim = [];
+        const remaining = [];
+        for (const group of this._validatedWordGroups) {
+            if (group.cells.has(tappedKey)) {
+                toClaim.push(group);
+            } else {
+                remaining.push(group);
+            }
+        }
+        if (toClaim.length === 0) return;
+
+        // Score claimed words
+        const prevScore = this.score;
+        const claimedWords = [];
+        for (const group of toClaim) {
+            let pts = group.pts;
+            if (this.scoreMultiplier > 1) {
+                pts *= this.scoreMultiplier;
+                this.scoreMultiplier = 1;
+                this.els.score2xIndicator.classList.add("hidden");
+            }
+            this.score += pts;
+            this.wordsFound.push({ word: group.word, pts });
+            claimedWords.push({ word: group.word, pts });
+
+            // Check for target word match
+            if (this.targetWord && group.word === this.targetWord) {
+                this.targetWordsCompleted++;
+                this.score += 200;
+                this._pickTargetWord();
+            }
+        }
+        this._checkBonusUnlock(prevScore, this.score);
+        this._updateScoreDisplay();
+
+        // Collect all cells from claimed groups
+        const cellsToClear = new Set();
+        for (const group of toClaim) {
+            for (const key of group.cells) cellsToClear.add(key);
+        }
+
+        // Remove claimed groups; also remove remaining groups whose cells overlap
+        // (since those cells are about to be cleared)
+        this._validatedWordGroups = remaining.filter(g => {
+            for (const key of cellsToClear) {
+                if (g.cells.has(key)) return false;
+            }
+            return true;
+        });
+        this._rebuildValidatedCells();
+
+        // Show word popup
+        if (claimedWords.length > 0) {
+            this._showWordPopup(claimedWords);
+        }
+
+        // Flash and clear the claimed cells
+        this.audio.clear();
+        this._claimAnimating = true;
+        this.clearing = true;
+        this.clearPhase = "flash";
+        this.clearTimer = 0;
+        this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
+        this.pendingClearMode = "words";
+        this.renderer.flashCells = new Set(cellsToClear);
+        this.renderer.blastCells.clear();
+        this.renderer.blastCenterKey = null;
+        this.renderer.blastProgress = 0;
+        this.renderer.spawnParticles(cellsToClear);
+        this._pendingClearCells = cellsToClear;
+        // After _processClearPhase finishes gravity + re-check, _claimAnimating is cleared
+    }
+
+    _bindCanvasTap() {
+        const canvas = this.renderer.canvas;
+
+        // Click for desktop
+        canvas.addEventListener("click", (e) => {
+            this._handleCanvasTap(e.clientX, e.clientY);
+        });
+
+        // For touch: we need to detect taps (not swipes) on green cells
+        // Use a short-distance threshold to distinguish tap from swipe
+        let tapStart = null;
+        canvas.addEventListener("touchstart", (e) => {
+            if (this.activeChallenge !== CHALLENGE_TYPES.TARGET_WORD) return;
+            if (this._validatedWordGroups.length === 0) return;
+            const touch = e.changedTouches[0];
+            if (!touch) return;
+            tapStart = { x: touch.clientX, y: touch.clientY, id: touch.identifier };
+        }, { passive: true });
+
+        canvas.addEventListener("touchend", (e) => {
+            if (!tapStart) return;
+            const touch = [...e.changedTouches].find(t => t.identifier === tapStart.id);
+            if (!touch) { tapStart = null; return; }
+            const dx = touch.clientX - tapStart.x;
+            const dy = touch.clientY - tapStart.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 20) {
+                // Short enough to be a tap
+                this._handleCanvasTap(touch.clientX, touch.clientY);
+            }
+            tapStart = null;
+        }, { passive: true });
+    }
+
     // ── Challenge methods ──
 
     _renderChallengesGrid() {
@@ -3386,7 +3617,7 @@ class Game {
 
         let tutorialText = "";
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
-            tutorialText = "A target word will appear at the top of the screen. Form it on the grid to earn 200 bonus points! A new target appears each time you succeed. All normal scoring still applies. Game lasts 5 minutes.";
+            tutorialText = "A target word appears at the top of the screen. Words don't auto-clear — instead, validated words turn GREEN on the grid. Tap any green letter to claim that word for points! This lets you build longer words without sub-words being cleared first. Spelling the target word earns 200 bonus points! Game lasts 5 minutes.";
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
             tutorialText = "Blocks start falling at normal speed but get faster every 500 points! The fall speed keeps increasing until you can barely keep up. Game lasts 5 minutes — score as high as you can!";
         }
@@ -3474,8 +3705,8 @@ class Game {
                             this.block.row = nextRow;
                         } else if (this.block.row < 0) {
                             // Block is in buffer and column below is full — hover, don't land
-                            // Game over only if every column is full
-                            if (this.grid.isGridFull()) {
+                            // Game over only if every column is full and no validated words to claim
+                            if (this.grid.isGridFull() && this._validatedWordGroups.length === 0) {
                                 this._gameOver();
                             }
                             // Otherwise just stay hovering at current buffer row
