@@ -3011,7 +3011,7 @@ class Game {
         this.nextLetter = randomLetter();
         this.els.nextLetter.textContent = this.nextLetter;
         this.fallTimer = 0;
-        this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0.5 : 2.0;
+        this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0 : 2.0;
         this._updateBonusButton();
     }
 
@@ -3866,7 +3866,7 @@ class Game {
                     },
                     {
                         title: 'Spawn Freeze',
-                        desc: 'After each block lands, there\'s a 2-second pause before the next block appears. This is your planning window — scan the grid for words, decide where you want the next letter, and get ready! If you\'re ready early, SWIPE DOWN once to break the freeze timer, then SWIPE DOWN again to drop the next block faster. In Speed Round challenges, the freeze is only 0.5 seconds!',
+                        desc: 'After each block lands, there\'s a 2-second pause before the next block appears. This is your planning window — scan the grid for words, decide where you want the next letter, and get ready! If you\'re ready early, SWIPE DOWN once to break the freeze timer, then SWIPE DOWN again to drop the next block faster. In Speed Round challenges, there is NO freeze — the next block falls immediately!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -3896,6 +3896,47 @@ class Game {
                                 gC(ctx, ox, oy, cs, 2, 2, 'H', '#2a2a3e');
                                 gF(ctx, ox, oy, cs, -0.5, 2, 'R');
                                 gT(ctx, w / 2, oy - cs * 0.9, 'Next block!', '#4caf50', Math.floor(cs * 0.3));
+                            }
+                        }
+                    },
+                    {
+                        title: 'Pause & Resume',
+                        desc: 'Need a break? Tap the ⏸ pause button in the top-left corner of the screen during gameplay to freeze the action. The game pauses completely — no blocks fall and the timer stops. From the pause menu you can also view your found words list or toggle music. Tap Resume to pick up right where you left off. On desktop, press ESCAPE or P to toggle pause.',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const placed = [[4,0,'G'],[4,1,'A'],[4,2,'M'],[4,3,'E'],[4,4,'S'],
+                                            [3,1,'R'],[3,2,'I'],[3,3,'D']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            const cyc = t % 4;
+                            // Pause button position - top-left area
+                            const btnX = ox + cs * 0.5, btnY = oy - cs * 0.6;
+                            const btnR = cs * 0.35;
+                            if (cyc < 1.5) {
+                                // Show the pause icon pulsing
+                                const pulse = 1 + Math.sin(t * 4) * 0.1;
+                                ctx.save();
+                                ctx.translate(btnX, btnY);
+                                ctx.scale(pulse, pulse);
+                                ctx.beginPath();
+                                ctx.arc(0, 0, btnR, 0, Math.PI * 2);
+                                ctx.fillStyle = 'rgba(255,255,255,0.15)';
+                                ctx.fill();
+                                ctx.fillStyle = '#fff';
+                                ctx.font = `bold ${Math.floor(btnR * 1.1)}px sans-serif`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText('⏸', 0, 1);
+                                ctx.restore();
+                                gTap(ctx, btnX, btnY, t);
+                                gT(ctx, w / 2, oy - cs * 1.3, 'Tap ⏸ to pause!', '#ffd700', Math.floor(cs * 0.3));
+                            } else {
+                                // Show "PAUSED" overlay
+                                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                                ctx.fillRect(ox, oy, cs * gs, cs * gs);
+                                const flash = Math.sin(t * 3) > 0 ? '#fff' : '#ccc';
+                                gT(ctx, w / 2, oy + cs * 2.5, '⏸ PAUSED', flash, Math.floor(cs * 0.55));
+                                gT(ctx, w / 2, oy + cs * 3.3, 'Tap Resume to continue', '#999', Math.floor(cs * 0.22));
                             }
                         }
                     }
@@ -4274,7 +4315,7 @@ class Game {
                     },
                     {
                         title: 'Speed Round',
-                        desc: 'Speed Round starts at normal pace, but every 500 points the falling speed INCREASES! Blocks drop faster and faster, leaving you less time to think and place them. The spawn freeze is also shorter (0.5 seconds instead of 2). The speed keeps ramping up until it hits maximum velocity. Score as high as you can in 5 minutes before the grid fills up! This challenge tests your reaction time and quick thinking.',
+                        desc: 'Speed Round starts at normal pace, but every 500 points the falling speed INCREASES! Blocks drop faster and faster, leaving you less time to think and place them. There is NO spawn freeze — the next block starts falling immediately! The speed keeps ramping up until it hits maximum velocity. Score as high as you can in 3 minutes before the grid fills up! This challenge tests your reaction time and quick thinking.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -4757,12 +4798,15 @@ class Game {
 
     _bindTutorialSwipe() {
         const view = this.els.tutorialSlides;
-        let startX = 0, startY = 0, dragging = false, moved = false;
+        const slideView = document.getElementById('tutorial-slide-view');
+        let startX = 0, startY = 0, dragging = false, moved = false, currentDx = 0;
 
         this._tutorialPointerDown = (e) => {
-            dragging = true; moved = false;
+            dragging = true; moved = false; currentDx = 0;
             startX = e.touches ? e.touches[0].clientX : e.clientX;
             startY = e.touches ? e.touches[0].clientY : e.clientY;
+            slideView.classList.remove('slide-left', 'slide-right');
+            slideView.classList.add('swiping');
         };
 
         this._tutorialPointerMove = (e) => {
@@ -4771,18 +4815,38 @@ class Game {
             const y = e.touches ? e.touches[0].clientY : e.clientY;
             const dx = x - startX, dy = y - startY;
             if (!moved && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
-                dragging = false; return;
+                dragging = false;
+                slideView.classList.remove('swiping');
+                slideView.style.transform = '';
+                slideView.style.opacity = '';
+                return;
             }
             if (Math.abs(dx) > 10) moved = true;
             if (moved && e.cancelable) e.preventDefault();
+            if (moved) {
+                // Dampen the drag if at bounds (first/last slide)
+                const atStart = this._tutorialIndex === 0 && dx > 0;
+                const atEnd = this._tutorialIndex === this._tutorialTotal - 1 && dx < 0;
+                const dampened = (atStart || atEnd) ? dx * 0.25 : dx;
+                currentDx = dampened;
+                const viewW = slideView.offsetWidth || 300;
+                const progress = Math.abs(dampened) / viewW;
+                const opacity = 1 - progress * 0.5;
+                slideView.style.transform = `translateX(${dampened}px)`;
+                slideView.style.opacity = Math.max(0.4, opacity);
+            }
         };
 
         this._tutorialPointerUp = (e) => {
             if (!dragging) return;
             dragging = false;
+            slideView.classList.remove('swiping');
             const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
             const dx = x - startX;
-            if (Math.abs(dx) > 50) {
+            const viewW = slideView.offsetWidth || 300;
+            const threshold = viewW * 0.15; // 15% of width to commit
+
+            if (Math.abs(dx) > threshold) {
                 const oldIndex = this._tutorialIndex;
                 if (dx < 0 && this._tutorialIndex < this._tutorialTotal - 1) {
                     this._tutorialIndex++;
@@ -4790,9 +4854,15 @@ class Game {
                     this._tutorialIndex--;
                 }
                 if (this._tutorialIndex !== oldIndex) {
+                    slideView.style.transform = '';
+                    slideView.style.opacity = '';
                     this._animateTutorialSlide(dx < 0 ? 'left' : 'right');
+                    return;
                 }
             }
+            // Snap back with transition
+            slideView.style.transform = '';
+            slideView.style.opacity = '';
         };
 
         view.addEventListener('touchstart', this._tutorialPointerDown, { passive: true });
@@ -5144,7 +5214,7 @@ class Game {
             this.block.visualRow = -BUFFER_ROWS;
             this.block.dropAnimating = false;
             this.fallTimer = 0;
-            this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0.5 : 2.0;
+            this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0 : 2.0;
         }
     }
 
@@ -5316,7 +5386,9 @@ class Game {
         this.gridSize = this.challengeGridSize;
         this.difficulty = "casual";
 
-        this._beginNewGame(CHALLENGE_TIME_LIMIT);
+        const timeLimit = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND
+            ? 3 * 60 : CHALLENGE_TIME_LIMIT;
+        this._beginNewGame(timeLimit);
 
         // After _beginNewGame sets up state, apply challenge specifics
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
