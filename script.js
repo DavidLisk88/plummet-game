@@ -260,18 +260,52 @@ function shuffleList(items) {
     return shuffled;
 }
 
-function drawRandomBonusType(bonusBag, lastBonusType = null) {
-    let nextBag = Array.isArray(bonusBag) ? [...bonusBag] : [];
+function drawRandomBonusType(bonusBag, lastBonusType = null, recentHistory = []) {
+    // Base weights for each bonus type (higher = more likely)
+    const baseWeights = {
+        [BONUS_TYPES.LETTER_PICK]: 18,
+        [BONUS_TYPES.SCORE_2X]:    16,
+        [BONUS_TYPES.FREEZE]:      14,
+        [BONUS_TYPES.ROW_CLEAR]:   12,
+        [BONUS_TYPES.WILDCARD]:    10,
+        [BONUS_TYPES.SHUFFLE]:      8,
+        [BONUS_TYPES.BOMB]:         7,
+    };
 
-    if (nextBag.length === 0) {
-        nextBag = shuffleList(BONUS_TYPE_POOL);
-        if (lastBonusType && nextBag.length > 1 && nextBag[0] === lastBonusType) {
-            [nextBag[0], nextBag[1]] = [nextBag[1], nextBag[0]];
+    // Build effective weights with recency penalty
+    const weights = {};
+    for (const type of BONUS_TYPE_POOL) {
+        weights[type] = baseWeights[type] || 10;
+    }
+
+    // Penalize recently awarded types (heavier penalty for more recent)
+    for (let i = 0; i < recentHistory.length; i++) {
+        const recent = recentHistory[i];
+        if (weights[recent] !== undefined) {
+            // Most recent gets heaviest penalty, older ones less
+            const penalty = i === 0 ? 0.15 : i === 1 ? 0.4 : 0.7;
+            weights[recent] *= penalty;
         }
     }
 
-    const bonusType = nextBag.shift();
-    return { bonusType, nextBag };
+    // Never repeat the immediately previous bonus
+    if (lastBonusType && weights[lastBonusType] !== undefined) {
+        weights[lastBonusType] = 0;
+    }
+
+    // Weighted random selection
+    const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+    let roll = Math.random() * totalWeight;
+    let bonusType = BONUS_TYPE_POOL[0];
+    for (const type of BONUS_TYPE_POOL) {
+        roll -= weights[type];
+        if (roll <= 0) { bonusType = type; break; }
+    }
+
+    // Update history (keep last 3)
+    const nextHistory = [bonusType, ...recentHistory].slice(0, 3);
+
+    return { bonusType, nextBag: bonusBag, nextHistory };
 }
 
 // Number of buffer rows above the grid where the block is visible but outside play area
@@ -691,6 +725,7 @@ class Renderer {
         this.flashCells = new Set();   // cells flashing before removal
         this.flashTimer = 0;
         this.gravityAnims = [];        // {col, fromRow, toRow, letter, progress}
+        this.shuffleAnims = [];        // {letter, fromRow, fromCol, toRow, toCol, progress}
         this.hintCells = new Set();    // cells glowing orange (hint mode)
         this.validatedCells = new Set(); // cells highlighted green (target word challenge)
         this.blastCells = new Set();
@@ -838,7 +873,7 @@ class Renderer {
 
                 // Letter
                 const letter = grid.get(r, c);
-                if (letter) {
+                if (letter && this.shuffleAnims.length === 0) {
                     let color = "#fff";
                     if (this.validatedCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for validated
                     else if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#da70d6"; // orchid purple for wildcards
@@ -866,6 +901,24 @@ class Renderer {
             ctx.fillStyle = "#2a2a2a";
             ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
             this._drawToken(anim.letter, x + cs / 2, y + cs / 2, cs, "#fff");
+        }
+
+        // Shuffle animations (letters flying to new positions)
+        for (const anim of this.shuffleAnims) {
+            if (anim.progress <= 0) continue;
+            const t = anim.progress;
+            // Ease-in-out for smooth arcing flight
+            const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            const curRow = anim.fromRow + (anim.toRow - anim.fromRow) * ease;
+            const curCol = anim.fromCol + (anim.toCol - anim.fromCol) * ease;
+            // Arc upward in the middle of the flight
+            const arc = -1.5 * Math.sin(t * Math.PI);
+            const x = this.offsetX + curCol * cs;
+            const y = this.offsetY + (curRow + arc) * cs;
+            const scale = 0.8 + 0.4 * Math.sin(t * Math.PI); // grow slightly mid-flight
+            ctx.fillStyle = "#2a2a3e";
+            ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+            this._drawToken(anim.letter, x + cs / 2, y + cs / 2, cs, "#ffd700", scale);
         }
 
         // Grid lines
@@ -1543,6 +1596,8 @@ class Game {
             challengeStartBtn: document.getElementById("challenge-start-btn"),
             challengeResumeBtn: document.getElementById("challenge-resume-btn"),
             challengeBackToSelectBtn: document.getElementById("challenge-back-to-select-btn"),
+            challengeSetupMusicBtn: document.getElementById("challenge-setup-music-btn"),
+            challengesMusicBtn: document.getElementById("challenges-music-btn"),
             challengeMainMenuBtn: document.getElementById("challenge-main-menu-btn"),
             challengeTutorialBtn: document.getElementById("challenge-tutorial-btn"),
             challengeTutorialOverlay: document.getElementById("challenge-tutorial-overlay"),
@@ -1756,6 +1811,16 @@ class Game {
         this.els.challengeMainMenuBtn.addEventListener("click", () => {
             this._showScreen("menu");
         });
+        this.els.challengesMusicBtn.addEventListener("click", () => {
+            this._musicBackTarget = "challenges";
+            this._showScreen("music");
+            this._renderMusicScreen();
+        });
+        this.els.challengeSetupMusicBtn.addEventListener("click", () => {
+            this._musicBackTarget = "challenge-setup";
+            this._showScreen("music");
+            this._renderMusicScreen();
+        });
         this.els.challengeTutorialBtn.addEventListener("click", () => this._openChallengeTutorial());
         this.els.challengeTutorialCloseBtn.addEventListener("click", () => this._closeChallengeTutorial());
 
@@ -1786,6 +1851,12 @@ class Game {
                 this._musicBackTarget = null;
                 this._showScreen("play");
                 this.els.pauseOverlay.classList.add("active");
+            } else if (this._musicBackTarget === "challenges") {
+                this._musicBackTarget = null;
+                this._showScreen("challenges");
+            } else if (this._musicBackTarget === "challenge-setup") {
+                this._musicBackTarget = null;
+                this._showScreen("challenge-setup");
             } else {
                 this._showScreen("menu");
             }
@@ -1847,7 +1918,23 @@ class Game {
         this.els.hintsBtn.title = this.hintsEnabled ? "Hints ON" : "Hints OFF";
     }
 
+    _detectBoardWords() {
+        if (!this.grid || this.clearing) return;
+        const minLen = this._getMinWordLength();
+        const result = this.grid.findAllWords(minLen);
+        if (result.words.length === 0) return;
+        const newWords = result.words.filter(w => !this.foundWordsThisGame.has(w));
+        if (newWords.length === 0) return;
+        for (const word of newWords) {
+            this.foundWordsThisGame.add(word);
+        }
+        this._addValidatedWords(result, newWords);
+    }
+
     _computeHintCells() {
+        // First, detect any valid words sitting on the board and validate them green
+        this._detectBoardWords();
+
         if (!this.hintsEnabled || !this.grid) {
             this.renderer.hintCells = new Set();
             this._activeHintKey = null;
@@ -2029,15 +2116,18 @@ class Game {
             if (!this.block) return;
             switch (e.code) {
                 case "ArrowLeft":
+                case "KeyA":
                     e.preventDefault();
                     this._moveBlock(-1);
                     break;
                 case "ArrowRight":
+                case "KeyD":
                     e.preventDefault();
                     this._moveBlock(1);
                     break;
                 case "Space":
                 case "ArrowDown":
+                case "KeyS":
                     e.preventDefault();
                     this._fastDrop();
                     break;
@@ -2347,7 +2437,7 @@ class Game {
         this.els.bonusBtn.classList.toggle("hidden", !canUseBonus);
         this.els.bonusBtn.textContent = bonusMeta?.buttonLabel || "Bonus!";
         this.els.bonusBtn.title = bonusMeta?.buttonTitle || "Use Bonus";
-        this.els.bonusBtn.disabled = !this.block || this.clearing || this.letterChoiceActive;
+        this.els.bonusBtn.disabled = !this.block || this.letterChoiceActive;
     }
 
     // ── Save / Resume game state ──
@@ -2419,12 +2509,73 @@ class Game {
     _checkBonusUnlock(prevScore, newScore) {
         if (this.availableBonusType) return;
         if (prevScore < this.nextBonusScore && newScore >= this.nextBonusScore) {
-            const draw = drawRandomBonusType(this.bonusBag, this.lastAwardedBonusType);
+            if (!this._bonusHistory) this._bonusHistory = [];
+            const draw = drawRandomBonusType(this.bonusBag, this.lastAwardedBonusType, this._bonusHistory);
             this.availableBonusType = draw.bonusType;
             this.bonusBag = draw.nextBag;
+            this._bonusHistory = draw.nextHistory;
             this.lastAwardedBonusType = draw.bonusType;
             this._updateBonusButton();
+            const bonusMeta = BONUS_METADATA[this.availableBonusType];
+            this._showBonusPopup(bonusMeta.previewSymbol || "🎁", bonusMeta.buttonLabel || "Bonus!");
         }
+    }
+
+    _showBonusPopup(icon, label) {
+        const overlay = document.getElementById("bonus-popup-overlay");
+        const card = document.getElementById("bonus-popup-card");
+        const iconEl = document.getElementById("bonus-popup-icon");
+        const labelEl = document.getElementById("bonus-popup-label");
+
+        iconEl.textContent = icon;
+        labelEl.textContent = label;
+        card.classList.remove("dust-out");
+        overlay.classList.remove("hidden");
+
+        // Hold time matches card entrance animation (0.5s) + 0.5s buffer
+        const holdMs = 1000;
+
+        setTimeout(() => {
+            // Start dust-out on the card
+            card.classList.add("dust-out");
+
+            // Spawn dust particles that travel to the bonus button
+            const cardRect = card.getBoundingClientRect();
+            const btnRect = this.els.bonusBtn.getBoundingClientRect();
+            const targetX = btnRect.left + btnRect.width / 2;
+            const targetY = btnRect.top + btnRect.height / 2;
+            const cx = cardRect.left + cardRect.width / 2;
+            const cy = cardRect.top + cardRect.height / 2;
+
+            const particleCount = 18;
+            for (let i = 0; i < particleCount; i++) {
+                const p = document.createElement("div");
+                p.className = "bonus-dust-particle";
+                // Scatter starting positions around the card center
+                const angle = (Math.PI * 2 * i) / particleCount;
+                const spread = 30 + Math.random() * 30;
+                const sx = cx + Math.cos(angle) * spread;
+                const sy = cy + Math.sin(angle) * spread;
+                p.style.left = sx + "px";
+                p.style.top = sy + "px";
+                document.body.appendChild(p);
+
+                const delay = i * 20;
+                const duration = 500 + Math.random() * 200;
+                p.animate([
+                    { left: sx + "px", top: sy + "px", opacity: 1, transform: "scale(1)" },
+                    { left: targetX + "px", top: targetY + "px", opacity: 0.3, transform: "scale(0.3)" }
+                ], { duration, delay, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" });
+
+                setTimeout(() => p.remove(), delay + duration + 50);
+            }
+
+            // Hide overlay after dust animation
+            setTimeout(() => {
+                overlay.classList.add("hidden");
+                card.classList.remove("dust-out");
+            }, 700);
+        }, holdMs);
     }
 
     _openLetterChoiceModal() {
@@ -2540,39 +2691,94 @@ class Game {
     }
 
     _executeShuffle() {
-        // Collect all letters currently on the grid
-        const letters = [];
+        // Collect all letters and their current positions
+        const entries = [];
         for (let r = 0; r < this.grid.rows; r++) {
             for (let c = 0; c < this.grid.cols; c++) {
                 const letter = this.grid.get(r, c);
-                if (letter !== null) letters.push(letter);
+                if (letter !== null) entries.push({ letter, fromRow: r, fromCol: c });
             }
         }
-        if (letters.length === 0) return;
+        if (entries.length === 0) return;
 
-        // Fisher-Yates shuffle
-        for (let i = letters.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [letters[i], letters[j]] = [letters[j], letters[i]];
+        // Advanced randomization: multiple Fisher-Yates passes for thorough mixing
+        const letters = entries.map(e => e.letter);
+        for (let pass = 0; pass < 3; pass++) {
+            for (let i = letters.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [letters[i], letters[j]] = [letters[j], letters[i]];
+            }
         }
 
-        // Place them back using gravity (fill from bottom)
-        // Clear the grid first
-        for (let r = 0; r < this.grid.rows; r++) {
-            for (let c = 0; c < this.grid.cols; c++) {
+        // Distribute letters randomly across columns with gravity
+        // Randomize column assignment order so letters don't fill left-to-right
+        const cols = this.grid.cols;
+        const rows = this.grid.rows;
+        const colFill = new Array(cols).fill(0); // how many letters stacked in each column
+
+        // Assign each letter to a random column (weighted toward less-full columns)
+        const assignments = [];
+        for (let i = 0; i < letters.length; i++) {
+            // Build list of columns that still have space
+            const available = [];
+            for (let c = 0; c < cols; c++) {
+                if (colFill[c] < rows) available.push(c);
+            }
+            // Pick a random available column
+            const col = available[Math.floor(Math.random() * available.length)];
+            const row = rows - 1 - colFill[col];
+            colFill[col]++;
+            assignments.push({ letter: letters[i], toRow: row, toCol: col });
+        }
+
+        // Clear grid and place shuffled letters
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
                 this.grid.cells[r][c] = null;
             }
         }
-
-        // Fill columns from left to right, bottom to top
-        let idx = 0;
-        for (let c = 0; c < this.grid.cols && idx < letters.length; c++) {
-            for (let r = this.grid.rows - 1; r >= 0 && idx < letters.length; r--) {
-                this.grid.cells[r][c] = letters[idx++];
-            }
+        for (const a of assignments) {
+            this.grid.cells[a.toRow][a.toCol] = a.letter;
         }
 
+        // Build animation data — each letter flies from old position to new position
+        this._shuffleAnims = [];
+        for (let i = 0; i < entries.length; i++) {
+            this._shuffleAnims.push({
+                letter: assignments[i].letter,
+                fromRow: entries[i].fromRow,
+                fromCol: entries[i].fromCol,
+                toRow: assignments[i].toRow,
+                toCol: assignments[i].toCol,
+                progress: 0,
+                delay: Math.random() * 0.15, // stagger starts slightly
+            });
+        }
+        this._shuffleAnimActive = true;
+        this._shuffleAnimTimer = 0;
+
+        this._validatedWordGroups = [];
+        this._rebuildValidatedCells();
         this._computeHintCells();
+    }
+
+    _updateShuffleAnim(dt) {
+        if (!this._shuffleAnimActive) return;
+        this._shuffleAnimTimer += dt;
+        const duration = 0.55; // seconds for the flight
+        let allDone = true;
+        for (const a of this._shuffleAnims) {
+            const elapsed = this._shuffleAnimTimer - a.delay;
+            if (elapsed <= 0) { allDone = false; continue; }
+            a.progress = Math.min(1, elapsed / duration);
+            if (a.progress < 1) allDone = false;
+        }
+        this.renderer.shuffleAnims = this._shuffleAnims;
+        if (allDone) {
+            this._shuffleAnimActive = false;
+            this._shuffleAnims = [];
+            this.renderer.shuffleAnims = [];
+        }
     }
 
     _resumeGame() {
@@ -2744,6 +2950,7 @@ class Game {
         this.totalLettersInChain = 0;
         this._chainWords = [];
         this._wordPopupActive = false;
+        this._wordPopupCount = 0;
         this.els.wordPopup.innerHTML = "";
         this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
         this.pendingClearMode = "";
@@ -2932,11 +3139,9 @@ class Game {
             this._claimAnimating = false;
             this._computeHintCells();
 
-            // Show word popup if any words were found in this chain
+            // Chain words were already shown via _addWordPopupRow during claiming
             if (this._chainWords && this._chainWords.length > 0) {
-                const chainWords = this._chainWords;
                 this._chainWords = [];
-                this._showWordPopup(chainWords);
                 return;
             }
             // Don't spawn a new block if one already exists (e.g. after tap-to-claim)
@@ -3023,54 +3228,58 @@ class Game {
     }
 
     _showWordPopup(words) {
+        for (const entry of words) {
+            this._addWordPopupRow(entry);
+        }
+    }
+
+    _addWordPopupRow(entry) {
         const container = this.els.wordPopup;
-        container.innerHTML = "";
 
-        // Build a row for each word with individually animated letters
-        words.forEach((entry, wordIdx) => {
-            const row = document.createElement("div");
-            row.className = "word-popup-row";
+        const row = document.createElement("div");
+        row.className = "word-popup-row";
 
-            const letters = entry.word.split("");
-            letters.forEach((ch, i) => {
-                const span = document.createElement("span");
-                span.className = "word-popup-letter";
-                span.textContent = ch;
-                // Random rotation for the entrance scatter effect
-                const randomRot = Math.floor(Math.random() * 120) - 60;
-                span.style.setProperty("--r", randomRot);
-                // Stagger each letter, offset each word row
-                const delay = wordIdx * 0.15 + i * 0.06;
-                span.style.setProperty("--d", delay + "s");
-                row.appendChild(span);
-            });
-
-            // Points label after letters
-            const pts = document.createElement("span");
-            pts.className = "word-popup-pts";
-            pts.textContent = "+" + entry.pts;
-            const ptsDelay = wordIdx * 0.15 + letters.length * 0.06 + 0.1;
-            pts.style.setProperty("--d", ptsDelay + "s");
-            row.appendChild(pts);
-
-            container.appendChild(row);
+        const letters = entry.word.split("");
+        letters.forEach((ch, i) => {
+            const span = document.createElement("span");
+            span.className = "word-popup-letter";
+            span.textContent = ch;
+            const randomRot = Math.floor(Math.random() * 120) - 60;
+            span.style.setProperty("--r", randomRot);
+            span.style.setProperty("--d", i * 0.06 + "s");
+            row.appendChild(span);
         });
 
-        // Pause falling — block stays frozen while popup is visible
+        const pts = document.createElement("span");
+        pts.className = "word-popup-pts";
+        pts.textContent = "+" + entry.pts;
+        pts.style.setProperty("--d", letters.length * 0.06 + 0.1 + "s");
+        row.appendChild(pts);
+
+        container.appendChild(row);
+
+        // Pause falling while any popup row is visible
         this._wordPopupActive = true;
+        if (!this._wordPopupCount) this._wordPopupCount = 0;
+        this._wordPopupCount++;
 
-        // After 2 seconds, animate out then spawn next block
+        // Hold time = animation duration + small buffer to read
+        const animDuration = letters.length * 0.06 + 0.1 + 0.3; // pts is last to finish
+        const holdMs = (animDuration + 0.5) * 1000;
+
+        // Each row exits on its own timer after its animation completes
         setTimeout(() => {
-            const rows = container.querySelectorAll(".word-popup-row");
-            rows.forEach(r => r.classList.add("pop-out"));
-
-            // Remove after exit animation completes and spawn block
+            row.classList.add("pop-out");
             setTimeout(() => {
-                container.innerHTML = "";
-                this._wordPopupActive = false;
-                if (!this.block) this._spawnBlock();
+                row.remove();
+                this._wordPopupCount--;
+                if (this._wordPopupCount <= 0) {
+                    this._wordPopupCount = 0;
+                    this._wordPopupActive = false;
+                    if (!this.block) this._spawnBlock();
+                }
             }, 400);
-        }, 2000);
+        }, holdMs);
     }
 
 
@@ -3568,6 +3777,52 @@ class Game {
                         }
                     },
                     {
+                        title: 'Multi-Word Claims',
+                        desc: 'If a green letter sits at the intersection of two or more valid words, tapping that shared letter claims ALL of them at once! Look for spots where words cross — one tap on the shared letter scores every connected word simultaneously. This is a powerful strategy to rack up massive points in a single tap!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const cyc = t % 5;
+                            const placed = [[2,2,'T'],[3,2,'A'],
+                                            [4,0,'R'],[4,1,'A'],[4,2,'N'],[4,3,'K']];
+                            const word1 = [[4,0],[4,1],[4,2],[4,3]]; // RANK
+                            const word2 = [[2,2],[3,2],[4,2]]; // TAN
+                            const allGreen = [...word1, ...word2];
+                            const sharedR = 4, sharedC = 2; // N is shared
+                            if (cyc < 3) {
+                                for (const [r,c,l] of placed) {
+                                    const hit = allGreen.some(([wr,wc]) => wr === r && wc === c);
+                                    gC(ctx, ox, oy, cs, r, c, l,
+                                       hit ? '#2e5c2e' : '#2a2a3e',
+                                       hit ? '#4caf50' : null);
+                                }
+                                if (cyc < 1.5) {
+                                    gT(ctx, w / 2, oy - cs * 0.7, '"RANK" + "TAN"', '#4caf50', Math.floor(cs * 0.3));
+                                } else {
+                                    const tapX = ox + sharedC * cs + cs / 2;
+                                    const tapY = oy + sharedR * cs + cs / 2;
+                                    gTap(ctx, tapX, tapY, t);
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'TAP shared letter!', '#ffd700', Math.floor(cs * 0.3));
+                                }
+                            } else {
+                                const alpha = 1 - (cyc - 3) * 0.8;
+                                for (const [r,c,l] of placed) {
+                                    const hit = allGreen.some(([wr,wc]) => wr === r && wc === c);
+                                    if (hit) {
+                                        ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
+                                        gC(ctx, ox, oy, cs, r, c, l, '#2e5c2e', '#4caf50');
+                                        ctx.restore();
+                                    } else {
+                                        gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                    }
+                                }
+                                const pts = Math.floor(clamp(1 - alpha, 0, 1) * 340);
+                                if (alpha < 0.5) gT(ctx, w / 2, oy + 2 * cs, '+' + pts + ' pts!', '#ffd700',
+                                    Math.floor(cs * 0.5), clamp(1 - (cyc - 3.8) * 3, 0, 1));
+                            }
+                        }
+                    },
+                    {
                         title: 'Chains & Scoring',
                         desc: 'Scoring formula: word length² × 10 (so a 3-letter word = 90 pts, 5-letter word = 250 pts!). After you claim a word, letters above fall down — if they form a NEW valid word, that\'s a CHAIN REACTION worth +50 bonus points per chain! Chains can keep going as long as new words keep forming. Strategic letter placement is the key to triggering massive chain combos.',
                         draw(ctx, w, h, t) {
@@ -3611,7 +3866,7 @@ class Game {
                     },
                     {
                         title: 'Spawn Freeze',
-                        desc: 'After each block lands, there\'s a 2-second pause before the next block appears. This is your planning window — scan the grid for words, decide where you want the next letter, and get ready! If you\'re ready early, SWIPE DOWN to skip the freeze and spawn the next block immediately. In Speed Round challenges, the freeze is only 0.5 seconds!',
+                        desc: 'After each block lands, there\'s a 2-second pause before the next block appears. This is your planning window — scan the grid for words, decide where you want the next letter, and get ready! If you\'re ready early, SWIPE DOWN once to break the freeze timer, then SWIPE DOWN again to drop the next block faster. In Speed Round challenges, the freeze is only 0.5 seconds!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -4432,7 +4687,18 @@ class Game {
     }
 
     _goToTutorialSlide(index) {
+        const oldIndex = this._tutorialIndex;
         this._tutorialIndex = Math.max(0, Math.min(index, this._tutorialTotal - 1));
+        const dir = this._tutorialIndex > oldIndex ? 'left' : 'right';
+        this._animateTutorialSlide(dir);
+    }
+
+    _animateTutorialSlide(dir) {
+        const view = document.getElementById('tutorial-slide-view');
+        view.classList.remove('slide-left', 'slide-right');
+        // Force reflow to restart animation
+        void view.offsetWidth;
+        view.classList.add(dir === 'left' ? 'slide-left' : 'slide-right');
         this._updateTutorialSlide();
     }
 
@@ -4517,12 +4783,15 @@ class Game {
             const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
             const dx = x - startX;
             if (Math.abs(dx) > 50) {
+                const oldIndex = this._tutorialIndex;
                 if (dx < 0 && this._tutorialIndex < this._tutorialTotal - 1) {
                     this._tutorialIndex++;
                 } else if (dx > 0 && this._tutorialIndex > 0) {
                     this._tutorialIndex--;
                 }
-                this._updateTutorialSlide();
+                if (this._tutorialIndex !== oldIndex) {
+                    this._animateTutorialSlide(dx < 0 ? 'left' : 'right');
+                }
             }
         };
 
@@ -4845,7 +5114,7 @@ class Game {
         });
         this._rebuildValidatedCells();
 
-        // Show word popup
+        // Show word popup for each claimed word immediately
         if (claimedWords.length > 0) {
             this._showWordPopup(claimedWords);
         }
@@ -5141,6 +5410,8 @@ class Game {
 
             if (this.clearing) {
                 this._processClearPhase(dt);
+            } else if (this._shuffleAnimActive) {
+                this._updateShuffleAnim(dt);
             } else if (this._wordPopupActive) {
                 // Word popup is showing — freeze, don't fall or spawn
             } else if (this.freezeActive) {

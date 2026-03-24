@@ -158,6 +158,7 @@
             <div id="challenges-grid">
                 <!-- Populated by JS -->
             </div>
+            <button id="challenges-music-btn" class="secondary-btn">🎵 Music</button>
         </div>
 
         <!-- CHALLENGE SETUP SCREEN -->
@@ -176,6 +177,7 @@
             <button id="challenge-start-btn" class="primary-btn">START CHALLENGE</button>
             <button id="challenge-resume-btn" class="primary-btn hidden">▶ Resume Challenge</button>
             <button id="challenge-back-to-select-btn" class="secondary-btn">← Back to Challenges</button>
+            <button id="challenge-setup-music-btn" class="secondary-btn">🎵 Music</button>
             <button id="challenge-main-menu-btn" class="secondary-btn">Main Menu</button>
         </div>
 
@@ -199,6 +201,12 @@
             <button id="pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏸</button>
             <button id="hints-btn" class="icon-btn play-fab-btn play-hint-btn" title="Toggle Hints" aria-label="Toggle Hints">💡</button>
             <button id="bonus-btn" class="bonus-btn hidden" title="Use Bonus Letter">Bonus!</button>
+            <div id="bonus-popup-overlay" class="bonus-popup-overlay hidden">
+                <div id="bonus-popup-card" class="bonus-popup-card">
+                    <div id="bonus-popup-icon" class="bonus-popup-icon"></div>
+                    <div id="bonus-popup-label" class="bonus-popup-label"></div>
+                </div>
+            </div>
             <div id="target-word-display" class="hidden">
                 <span class="target-label">TARGET:</span>
                 <span id="target-word-text"></span>

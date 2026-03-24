@@ -532,7 +532,7 @@ since small sound start state still story their there think three under until wa
 where which while world young also another because before between cannot country differ
 during follow found great house large later learn might never often place right small
 sound start state still story these three under until water where which while world french
-vile`.split(/\s+/).filter(w => w.length >= 3);
+vile tub tube stud studs dog dogs`.split(/\s+/).filter(w => w.length >= 3);
 
 // Common irregular plurals
 const IRREGULAR_PLURALS = {
