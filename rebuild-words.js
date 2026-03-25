@@ -1170,6 +1170,119 @@ wayside whitewater wholehearted wildlife windfall windmill winery wistful withho
 withstand woodland woodwind worldly worthless wrath wretched yearlong zealous zesty
 `.split(/\s+/).filter(w => w.length >= 2);
 
+// ─── Contractions (apostrophe removed) ─────────────────────────────
+// "I've" → IVE, "don't" → DONT, etc.  Stored without apostrophes.
+const CONTRACTIONS = `
+ive youre youve youll youd hes hed shes itll weve
+theyre theyve theyll theyd thatll wholl whod whats whatll
+theres hows whens whys
+isnt arent wasnt werent dont doesnt didnt wont wouldnt shouldnt couldnt
+cant havent hasnt hadnt mustnt neednt aint
+couldve shouldve wouldve mightve mustve whove
+thered whered whatd howd therell itve
+wanna gotta yall maam oclock
+`.split(/\s+/).filter(w => w.length >= 2);
+
+// ─── Challenge Category Word Lists ─────────────────────────────────
+// Used by the Category Challenge — each list is a curated set of words
+// that belong to a game category. Words must exist in the main dictionary.
+
+const CATEGORY_FOOD = `
+apple apricot avocado bacon bagel bake banana baste bean beef berry biscuit blanch
+braise bread breakfast broccoli broth brownie brunch burger burrito butter cake
+calorie candy caramel caramelize casserole celery cereal cheese cherry chicken chili
+chive chocolate chowder cinnamon clam coconut concoct cookie corn cracker cream
+crepe crisp croissant crouton cucumber cupcake curdle curry custard dairy danish
+dessert diet dine dinner dough dumpling egg enchilada entree espresso fajita feast
+ferment fig flavor fondue food fork fried frosting fry fudge garlic garnish ginger
+gourmet gravy grill grind guacamole hamburger herb honey jam jelly julienne kale
+ketchup kettle knead lamb lemon lettuce lime lunch macaroni mango marinate mayo
+meal meat meatball melt melon menu microwave morsel mousse muffin mushroom mustard
+noodle nut oatmeal olive onion orange oyster pancake panini parfait parsley pasta
+pastry peach peanut pear pepper pepperoni pickle pie pineapple pizza platter poach
+popcorn pork potato poultry pretzel produce pudding pumpkin puree ramekin raspberry
+recipe rice risotto roast rotisserie salad salmon salsa sandwich sardine sauce
+sausage saute savory scallop scramble seafood seasoning sesame shrimp simmer skewer
+skillet slice smoothie snack souffle soup spaghetti spatula spice spinach spoonful
+squash steak steam stew strudel succulent sundae sushi tablespoon taco teaspoon
+tenderloin teriyaki toast tofu tomato tortilla tuna turkey vanilla vegetable waffle
+walnut watermelon wheat whisk yogurt zucchini
+`.split(/\s+/).filter(w => w.length >= 3);
+
+const CATEGORY_ANIMALS = `
+alligator ant ape baboon badger bat bear beaver beetle bird bison boar buffalo
+bull bunny butterfly buzzard camel canary caribou cat caterpillar cheetah chick
+chicken chipmunk clam cobra cockroach cod coyote crab crane cricket crocodile crow
+cub cuckoo deer dinosaur doe dog dolphin donkey dove dragon dragonfly duck eagle
+eel elephant elk emu ewe falcon ferret finch firefly fish flamingo flea fly
+fox frog gerbil giraffe goat goldfish goose gopher gorilla grasshopper grizzly
+groundhog gull hamster hare hawk hedgehog hen heron hippo hog hound hummingbird
+hyena iguana jackal jaguar jay jellyfish kangaroo kitten koala ladybug lamb leopard
+lion lizard llama lobster loon lynx macaw magpie mammal manatee minnow mole monkey
+moose mosquito moth mouse mussel newt octopus opossum orca oriole osprey ostrich
+otter owl ox oyster panda panther parrot peacock pelican penguin pheasant pig
+pigeon pike piranha platypus poodle porcupine porpoise puma pup puppy quail rabbit
+raccoon ram raptor rat raven reptile robin rooster salmon sardine scorpion seahorse
+seal shark sheep shrimp skunk slug snail snake sparrow spider squid squirrel stag
+stallion stingray stork swan tiger toad tortoise toucan trout tuna turkey turtle
+vulture walrus weasel whale whippet wildcat wildlife wolf wolverine woodpecker
+wren yak zebra
+`.split(/\s+/).filter(w => w.length >= 3);
+
+const CATEGORY_SPORTS = `
+athlete athletic badminton baseball basketball bat bike binocular bowling boxing
+canoe catch championship climbing coach compete competition court cricket cross
+cycling cyclist dart defense dribble drive event exercise fault field fitness
+football freestyle frisbee game goal golf goalie grind gym gymnast gymnastics
+handball helmet hike hockey hoop hurdle jersey jog jump kayak kayaking kick
+kickball lacrosse league marathon match medal net offense olympic pitch player
+playoff polo pool practice punt race racket rally referee rider rink rival rivalry
+rugby run runner score scout serve shot skate skateboard ski skill slam soccer
+softball speed sprint squad stadium surf surfboard swim swimmer swimsuit table
+tackle team tennis tournament track trail trainer triathlon trophy tryout umpire
+volleyball walk weight whitewater win wrestler yoga
+`.split(/\s+/).filter(w => w.length >= 3);
+
+const CATEGORY_NATURE = `
+acre altitude atmosphere aurora autumn avalanche bay beach bloom blossom boulder
+breeze brook bush campfire campsite canyon cave celestial cliff climate cloud coast
+coastline cobblestone coral creek crest crevice crystal current dam dawn desert dew
+drought dune dust earthquake ecology ecosystem erosion eruption evergreen fern flora
+flower fog foliage forest fossil fountain freeze frost glacier globe gorge granite
+grove habitat harvest hay heat hemisphere hill hilltop hurricane ice island jungle
+lagoon lake landscape lava leaf lightning lily limestone mainland marsh meadow mesa
+mineral moisture molecule moon moonlight moss mountain mushroom nitrogen oak oasis
+ocean offshore orchid oxygen palm park parkway pasture path pebble petal pine planet
+plant plateau pollinate pond prairie rainfall rainforest ravine redwood reef ridge
+river riverside rock root sand sandstone scenic sea seafront seaport seaside
+sediment sequoia shore shoreline sierra sky slope snowfall soil south sphere spring
+star stellar stone storm stream summit sun sunburn sunlight sunrise sunset surf swamp
+terrain thicket thorn thunder tide timber topography trail trailhead trailside tree
+tropical tundra valley vine volcano wave wavelength weather wetland wilderness
+wildfire wildlife wind windmill winter wood woodland
+`.split(/\s+/).filter(w => w.length >= 3);
+
+const CATEGORY_TECHNOLOGY = `
+admin algorithm analytics animate app automate backup binary bitcoin blockchain
+blog bluetooth broadband browser buffer byte cache cellular clickbait click clipboard
+cloud code compile compute computer cursor dashboard data database debug deepfake
+decrypt desktop digital display download email emoji encrypt ethernet extension
+feedback fetch filename filter fintech firewall firmware flash font format framework
+gadget gaming gigabyte gigahertz github glitch graphic hacker hardware hashtag
+homepage hotspot html icon inbox input install interface internet iterate keyboard
+laptop laser livestream login logout loop malware megabyte merge microchip
+microphone microprocessor modem module monitor motherboard mouse multimedia
+network neural node notification offline online operate optimize output override
+password payload phaseout photon pixel platform playlist plugin podcast portal
+processor program programmer protocol proxy ransomware reallocate reboot rebrand
+reconfigure redirect registry render repository rewind router runtime scaffold
+scalable scanner screenshot script scroll selfie sensor server silicon smartphone
+software startup storage stream streamline subscribe sync tablet tech telecommute
+template terminal texture thumbnail timeline toggle toolbar touchscreen transmit
+troubleshoot tutorial tweet ultraviolet update upgrade upload url username virtual
+virus voltage webcam website widget wifi wireless
+`.split(/\s+/).filter(w => w.length >= 3);
+
 // ─── Main build process ────────────────────────────────────────────
 
 function main() {
@@ -1182,7 +1295,8 @@ function main() {
     for (const w of OTHER_WORDS) allWords.add(w.toUpperCase());
     for (const w of TWO_LETTER_WORDS) allWords.add(w.toUpperCase());
     for (const w of MANUAL_EXTRAS) allWords.add(w.toUpperCase());
-    console.log(`Base words: ${allWords.size} (including ${TWO_LETTER_WORDS.length} two-letter words, ${MANUAL_EXTRAS.length} manual extras)`);
+    for (const w of CONTRACTIONS) allWords.add(w.toUpperCase());
+    console.log(`Base words: ${allWords.size} (including ${TWO_LETTER_WORDS.length} two-letter words, ${MANUAL_EXTRAS.length} manual extras, ${CONTRACTIONS.length} contractions)`);
 
     // 2. Generate proper inflections
     const beforeInflect = allWords.size;
@@ -1240,13 +1354,34 @@ function main() {
 
     // 4. Sort and write words.json directly
     filtered.sort();
+    const filteredSet = new Set(filtered);
+
+    // 5. Build category maps (only include words that exist in the dictionary)
+    const categoryDefs = {
+        food:       { words: CATEGORY_FOOD,       label: "Food & Cooking",  icon: "🍕" },
+        animals:    { words: CATEGORY_ANIMALS,     label: "Animals",         icon: "🐾" },
+        sports:     { words: CATEGORY_SPORTS,      label: "Sports",          icon: "⚽" },
+        nature:     { words: CATEGORY_NATURE,      label: "Nature",          icon: "🌿" },
+        technology: { words: CATEGORY_TECHNOLOGY,  label: "Technology",      icon: "💻" },
+        adjectives: { words: ADJECTIVES,           label: "Adjectives",      icon: "✨" },
+    };
+    const categories = {};
+    for (const [key, def] of Object.entries(categoryDefs)) {
+        const catWords = def.words
+            .map(w => w.toUpperCase())
+            .filter(w => filteredSet.has(w));
+        categories[key] = { label: def.label, icon: def.icon, words: [...new Set(catWords)].sort() };
+        console.log(`  Category "${def.label}": ${categories[key].words.length} words`);
+    }
+
+    const output = { words: filtered, categories };
     const outFile = path.join(__dirname, 'words.json');
-    fs.writeFileSync(outFile, JSON.stringify(filtered));
+    fs.writeFileSync(outFile, JSON.stringify(output));
 
     console.log(`\nDone! Wrote words.json: ${filtered.length} words (${fs.statSync(outFile).size} bytes)`);
 
     // Verify some common words
-    const set = new Set(filtered);
+    const set = filteredSet;
     console.log('\nVerification:');
     for (const w of ['CAT', 'CATS', 'DOG', 'DOGS', 'RUN', 'RUNS', 'RUNNING', 'RAN',
                       'PLAY', 'PLAYS', 'PLAYED', 'PLAYING', 'PLAYER',

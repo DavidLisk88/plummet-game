@@ -24,14 +24,24 @@ function _buildHintSets() {
 }
 
 // ── Load dictionary from the bundled words.json ──
+let WORD_CATEGORIES = {};   // { food: { label, icon, words: Set }, ... }
 
 async function loadDictionary() {
     try {
         const resp = await fetch("./words.json");
         if (!resp.ok) throw new Error(`words.json fetch failed: ${resp.status}`);
-        const words = await resp.json();        // Already uppercase, 3+ letters, deduplicated
+        const data = await resp.json();
+        // Support both old flat array and new {words, categories} format
+        const words = Array.isArray(data) ? data : data.words;
         DICTIONARY = new Set(words);
         console.log(`Dictionary ready: ${DICTIONARY.size} valid words`);
+        // Load categories if present
+        if (data.categories) {
+            for (const [key, cat] of Object.entries(data.categories)) {
+                WORD_CATEGORIES[key] = { label: cat.label, icon: cat.icon, words: new Set(cat.words) };
+            }
+            console.log(`Categories loaded: ${Object.keys(WORD_CATEGORIES).length}`);
+        }
     } catch (err) {
         console.error("Failed to load words.json; no words will be valid.", err);
         DICTIONARY = new Set();
@@ -163,6 +173,7 @@ const GAME_MODES = Object.freeze({
 const CHALLENGE_TYPES = Object.freeze({
     TARGET_WORD: "target-word",
     SPEED_ROUND: "speed-round",
+    WORD_CATEGORY: "word-category",
 });
 
 const CHALLENGE_META = Object.freeze({
@@ -176,10 +187,26 @@ const CHALLENGE_META = Object.freeze({
         description: "Blocks fall faster and faster as your score climbs. How long can you survive?",
         icon: "⚡",
     },
+    [CHALLENGE_TYPES.WORD_CATEGORY]: {
+        title: "Word Category",
+        description: "Choose a category and find matching words for bonus points! Harder categories earn more.",
+        icon: "📂",
+    },
 });
 
 const CHALLENGE_GRID_SIZES = [6, 7, 8];
 const CHALLENGE_TIME_LIMIT = 7 * 60; // 7 minutes
+
+// Category difficulty tiers — higher tier = harder words = more reward
+// ptsMult applies to bonus-match scoring, xpMult applies to section 7 XP bonus
+const CATEGORY_TIERS = Object.freeze({
+    food:       { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
+    animals:    { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
+    sports:     { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
+    nature:     { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "Hard" },
+    technology: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "Hard" },
+    adjectives: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "Hard" },
+});
 
 const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 8, 10, 15, 20];
 
@@ -226,7 +253,8 @@ function xpRequiredForLevel(level) {
  */
 function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
                             isChallenge, challengeType, previousBest, playerLevel,
-                            timeLimitSeconds, timeRemainingSeconds, targetWordsCompleted }) {
+                            timeLimitSeconds, timeRemainingSeconds, targetWordsCompleted,
+                            bonusWordsCompleted, categoryKey }) {
     if (score <= 0) return 1;
 
     // ═══ 1. BASE XP (power-curve diminishing returns) ═══
@@ -287,13 +315,23 @@ function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
         xp = Math.floor(xp * (1 + 0.2 * Math.pow(usageRatio, 2)));
     }
 
-    // ═══ 7. TARGET WORD COMPLETION BONUS ═══
-    // Logarithmic stacking: each successive target is worth more.
-    // 1 target→+12xp, 3→+48, 5→+93, 10→+230
-    if (isChallenge && challengeType === CHALLENGE_TYPES.TARGET_WORD
-        && targetWordsCompleted > 0) {
-        xp += Math.floor(targetWordsCompleted * 12
-            * Math.log2(targetWordsCompleted + 1));
+    // ═══ 7. TARGET / CATEGORY WORD BONUS ═══
+    // Logarithmic stacking: each successive bonus word is worth more.
+    // 1→+12xp, 3→+48, 5→+93, 10→+230
+    // Category tier multiplies the bonus (tech/nature 1.6×, sports/animals 1.3×, food 1.0×)
+    const isBonusChallenge = isChallenge && (
+        challengeType === CHALLENGE_TYPES.TARGET_WORD
+        || challengeType === CHALLENGE_TYPES.WORD_CATEGORY);
+    const totalBonusWords = (targetWordsCompleted || 0) + (bonusWordsCompleted || 0);
+    if (isBonusChallenge && totalBonusWords > 0) {
+        const tierXpMult = (categoryKey && CATEGORY_TIERS[categoryKey])
+            ? CATEGORY_TIERS[categoryKey].xpMult : 1.0;
+        xp += Math.floor(totalBonusWords * 12
+            * Math.log2(totalBonusWords + 1) * tierXpMult);
+    }
+    // Penalty: if no bonus words found in a bonus challenge, slash XP
+    if (isBonusChallenge && totalBonusWords === 0) {
+        xp = Math.floor(xp * 0.3);
     }
 
     // ═══ 8. PERFORMANCE VS PERSONAL BEST (sigmoid curve) ═══
@@ -1828,8 +1866,14 @@ class Game {
             wordsFoundScreen: document.getElementById("words-found-screen"),
             wordsFoundBtn:    document.getElementById("words-found-btn"),
             wordsFoundBackBtn: document.getElementById("words-found-back-btn"),
+            wordsFoundTitle:  document.getElementById("words-found-title"),
             wordsFoundCount:  document.getElementById("words-found-count"),
             wordsFoundList:   document.getElementById("words-found-list"),
+            wfDots:           document.getElementById("wf-dots"),
+            wfSlideView:      document.getElementById("wf-slide-view"),
+            wfSlideStrip:     document.getElementById("wf-slide-strip"),
+            bonusWordsCount:  document.getElementById("bonus-words-count"),
+            bonusWordsList:   document.getElementById("bonus-words-list"),
             gameModeSelector: document.getElementById("game-mode-selector"),
             difficultySelector: document.getElementById("difficulty-selector"),
             wordPopup: document.getElementById("word-popup"),
@@ -1856,6 +1900,8 @@ class Game {
             challengesGrid: document.getElementById("challenges-grid"),
             challengeSetupScreen: document.getElementById("challenge-setup-screen"),
             challengeSetupName: document.getElementById("challenge-setup-name"),
+            challengeCategorySelector: document.getElementById("challenge-category-selector"),
+            challengeCategoryButtons: document.getElementById("challenge-category-buttons"),
             challengeStartBtn: document.getElementById("challenge-start-btn"),
             challengeResumeBtn: document.getElementById("challenge-resume-btn"),
             challengeBackToSelectBtn: document.getElementById("challenge-back-to-select-btn"),
@@ -1943,6 +1989,7 @@ class Game {
         // Challenge state
         this.activeChallenge = null; // null or CHALLENGE_TYPES value
         this._gameOverChallenge = null;
+        this._gameOverCategoryKey = null;
         this.challengeGridSize = 7;
         this.targetWord = null;
         this.targetWordsCompleted = 0;
@@ -2038,6 +2085,7 @@ class Game {
             if (this._gameOverChallenge) {
                 this.activeChallenge = this._gameOverChallenge;
                 this._gameOverChallenge = null;
+                this._gameOverCategoryKey = null;
                 this._startChallengeGame();
             } else {
                 this._startGame();
@@ -2046,6 +2094,7 @@ class Game {
         this.els.menuBtn.addEventListener("click", () => {
             if (this._gameOverChallenge) {
                 this._gameOverChallenge = null;
+                this._gameOverCategoryKey = null;
                 this._showScreen("challenges");
             } else {
                 this._showScreen("menu");
@@ -2695,10 +2744,15 @@ class Game {
             this.state = State.PAUSED;
         }
         this._renderWordsFound();
+        // Reset to page 0
+        this._wfPage = 0;
+        this._goToWfPage(0);
         this._showScreen("wordsfound");
+        this._bindWfSwipe();
     }
 
     _closeWordsFound() {
+        this._unbindWfSwipe();
         const target = this.wordsFoundBackTarget || "gameover";
         this._showScreen(target === "pause" ? "play" : target);
         if (target === "pause") {
@@ -2709,6 +2763,96 @@ class Game {
             this.state = State.PLAYING;
         }
         this.wordsFoundResumeState = null;
+    }
+
+    _hasBonusWordsView() {
+        return this._gameOverChallenge === CHALLENGE_TYPES.TARGET_WORD
+            || this._gameOverChallenge === CHALLENGE_TYPES.WORD_CATEGORY
+            || this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
+            || this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY;
+    }
+
+    _goToWfPage(index) {
+        const total = this._hasBonusWordsView() ? 2 : 1;
+        this._wfPage = Math.max(0, Math.min(index, total - 1));
+        this.els.wfSlideStrip.classList.remove("swiping");
+        this.els.wfSlideStrip.style.transform = `translateX(-${this._wfPage * 100}%)`;
+        // Update dots
+        this.els.wfDots.querySelectorAll(".wf-dot").forEach((d, i) =>
+            d.classList.toggle("active", i === this._wfPage));
+        // Update title
+        this.els.wordsFoundTitle.textContent = this._wfPage === 0 ? "Words Found" : "Bonus Words";
+    }
+
+    _bindWfSwipe() {
+        this._unbindWfSwipe();
+        if (!this._hasBonusWordsView()) return;
+        const view = this.els.wfSlideView;
+        const strip = this.els.wfSlideStrip;
+        let startX = 0, dragging = false, moved = false;
+        const total = 2;
+
+        this._wfPointerDown = (e) => {
+            dragging = true; moved = false;
+            startX = e.touches ? e.touches[0].clientX : e.clientX;
+            strip.classList.add("swiping");
+        };
+        this._wfPointerMove = (e) => {
+            if (!dragging) return;
+            const x = e.touches ? e.touches[0].clientX : e.clientX;
+            const y = e.touches ? e.touches[0].clientY : e.clientY;
+            const dx = x - startX;
+            if (!moved && Math.abs(dx) > 10) moved = true;
+            if (moved && e.cancelable) e.preventDefault();
+            if (moved) {
+                const viewW = view.offsetWidth || 300;
+                const base = -this._wfPage * viewW;
+                const atStart = this._wfPage === 0 && dx > 0;
+                const atEnd = this._wfPage === total - 1 && dx < 0;
+                const dampened = (atStart || atEnd) ? dx * 0.25 : dx;
+                strip.style.transform = `translateX(${base + dampened}px)`;
+            }
+        };
+        this._wfPointerUp = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            strip.classList.remove("swiping");
+            const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            const dx = x - startX;
+            const viewW = view.offsetWidth || 300;
+            const threshold = viewW * 0.15;
+            if (Math.abs(dx) > threshold) {
+                if (dx < 0 && this._wfPage < total - 1) this._wfPage++;
+                else if (dx > 0 && this._wfPage > 0) this._wfPage--;
+            }
+            this._goToWfPage(this._wfPage);
+        };
+
+        view.addEventListener("touchstart", this._wfPointerDown, { passive: true });
+        view.addEventListener("touchmove", this._wfPointerMove, { passive: false });
+        view.addEventListener("touchend", this._wfPointerUp);
+        view.addEventListener("mousedown", this._wfPointerDown);
+        view.addEventListener("mousemove", this._wfPointerMove);
+        view.addEventListener("mouseup", this._wfPointerUp);
+        view.addEventListener("mouseleave", this._wfPointerUp);
+
+        // Dot clicks
+        this.els.wfDots.querySelectorAll(".wf-dot").forEach(d => {
+            d.addEventListener("click", () => this._goToWfPage(parseInt(d.dataset.page)));
+        });
+    }
+
+    _unbindWfSwipe() {
+        const view = this.els.wfSlideView;
+        if (this._wfPointerDown) {
+            view.removeEventListener("touchstart", this._wfPointerDown);
+            view.removeEventListener("touchmove", this._wfPointerMove);
+            view.removeEventListener("touchend", this._wfPointerUp);
+            view.removeEventListener("mousedown", this._wfPointerDown);
+            view.removeEventListener("mousemove", this._wfPointerMove);
+            view.removeEventListener("mouseup", this._wfPointerUp);
+            view.removeEventListener("mouseleave", this._wfPointerUp);
+        }
     }
 
     _updateHighScoreDisplay() {
@@ -2768,6 +2912,8 @@ class Game {
             activeChallenge: this.activeChallenge || null,
             targetWord: this.targetWord || null,
             targetWordsCompleted: this.targetWordsCompleted || 0,
+            activeCategoryKey: this.activeCategoryKey || null,
+            categoryWordsFound: this.categoryWordsFound || [],
         };
         localStorage.setItem(key, JSON.stringify(state));
     }
@@ -3203,6 +3349,16 @@ class Game {
             this.fallInterval = Math.min(this.fallInterval, 0.9);
             this.speedRoundBaseInterval = 0.9;
             this.els.targetWordDisplay.classList.add("hidden");
+        } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
+            this.activeCategoryKey = saved.activeCategoryKey || null;
+            this.categoryWordsFound = saved.categoryWordsFound || [];
+            if (this.activeCategoryKey && WORD_CATEGORIES[this.activeCategoryKey]) {
+                this.activeCategorySet = WORD_CATEGORIES[this.activeCategoryKey].words;
+                const cat = WORD_CATEGORIES[this.activeCategoryKey];
+                this.els.targetWordDisplay.classList.remove("hidden");
+                this.els.targetWordDisplay.querySelector(".target-label").textContent = "CATEGORY:";
+                this.els.targetWordText.textContent = `${cat.icon} ${cat.label}`;
+            }
         }
 
         this._updateScoreDisplay();
@@ -3265,6 +3421,7 @@ class Game {
         this.nextLetter = randomLetter();
         this.wordsFound = [];  // track all words found this round
         this.foundWordsThisGame = new Set();
+        this.categoryWordsFound = [];  // track category words found this round
         this.availableBonusType = null;
         this.bonusBag = [];
         this.lastAwardedBonusType = null;
@@ -3611,6 +3768,7 @@ class Game {
         this.els.freezeIndicator.classList.add("hidden");
         this.els.score2xIndicator.classList.add("hidden");
         this.els.targetWordDisplay.classList.add("hidden");
+        this.els.targetWordDisplay.querySelector(".target-label").textContent = "TARGET:";
 
         // Clear saved game — this run is over
         this._clearGameState();
@@ -3664,6 +3822,8 @@ class Game {
                 timeLimitSeconds: this.timeLimitSeconds,
                 timeRemainingSeconds: this.timeRemainingSeconds,
                 targetWordsCompleted: this.targetWordsCompleted || 0,
+                bonusWordsCompleted: (this.categoryWordsFound || []).length,
+                categoryKey: this.activeCategoryKey || null,
             });
         }
 
@@ -3679,6 +3839,10 @@ class Game {
             finalText += `\nTarget Words: ${this.targetWordsCompleted}`;
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
             finalText += `\nFinal Speed: ${this.fallInterval.toFixed(2)}s`;
+        } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
+            const catCount = (this.categoryWordsFound || []).length;
+            const cat = this.activeCategoryKey && WORD_CATEGORIES[this.activeCategoryKey];
+            finalText += `\n${cat ? cat.icon + " " : ""}Category Words: ${catCount}`;
         }
 
         this.els.finalScore.textContent = finalText;
@@ -3686,6 +3850,7 @@ class Game {
 
         // Store challenge type for gameover screen buttons before resetting
         this._gameOverChallenge = this.activeChallenge;
+        this._gameOverCategoryKey = this.activeCategoryKey;
 
         // Reset challenge state
         this.activeChallenge = null;
@@ -3997,11 +4162,12 @@ class Game {
     _getUniqueWordsFound() {
         const uniqueWords = new Map();
 
-        for (const { word, pts } of this.wordsFound || []) {
+        for (const { word, pts, bonus } of this.wordsFound || []) {
             const existing = uniqueWords.get(word);
             if (existing) {
                 existing.count += 1;
                 existing.totalPts += pts;
+                if (bonus) existing.bonus = true;
                 continue;
             }
 
@@ -4009,6 +4175,7 @@ class Game {
                 word,
                 count: 1,
                 totalPts: pts,
+                bonus: !!bonus,
             });
         }
 
@@ -4023,17 +4190,54 @@ class Game {
 
         if (words.length === 0) {
             list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">No words found this round.</p>';
-            return;
+        } else {
+            for (const { word, count, totalPts, bonus } of words) {
+                const item = document.createElement("div");
+                item.className = "word-found-item" + (bonus ? " bonus-word" : "");
+                item.innerHTML = `
+                    <span class="word-found-text">${word}</span>
+                    <span class="word-found-pts">${count > 1 ? `x${count} · ` : ""}+${totalPts} pts</span>
+                `;
+                list.appendChild(item);
+            }
         }
 
-        for (const { word, count, totalPts } of words) {
-            const item = document.createElement("div");
-            item.className = "word-found-item";
-            item.innerHTML = `
-                <span class="word-found-text">${word}</span>
-                <span class="word-found-pts">${count > 1 ? `x${count} · ` : ""}+${totalPts} pts</span>
-            `;
-            list.appendChild(item);
+        // Populate bonus words page
+        const bonusList = this.els.bonusWordsList;
+        bonusList.innerHTML = "";
+        const bonusWords = words.filter(w => w.bonus);
+        const hasBonus = this._hasBonusWordsView();
+
+        if (hasBonus) {
+            this.els.wfDots.classList.remove("hidden");
+            // Determine bonus label
+            const ch = this.activeChallenge || this._gameOverChallenge;
+            let label = "Bonus Words";
+            if (ch === CHALLENGE_TYPES.TARGET_WORD) {
+                label = "🎯 Target Words";
+            } else if (ch === CHALLENGE_TYPES.WORD_CATEGORY) {
+                const catKey = this.activeCategoryKey || this._gameOverCategoryKey;
+                const catMeta = catKey && WORD_CATEGORIES[catKey];
+                label = catMeta ? `${catMeta.icon} ${catMeta.label}` : "📂 Category Words";
+            }
+            this.els.bonusWordsCount.textContent = `${bonusWords.length} ${label} found`;
+
+            if (bonusWords.length === 0) {
+                bonusList.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">No bonus words found.</p>';
+            } else {
+                for (const { word, count, totalPts } of bonusWords) {
+                    const item = document.createElement("div");
+                    item.className = "word-found-item bonus-word";
+                    item.innerHTML = `
+                        <span class="word-found-text">${word}</span>
+                        <span class="word-found-pts">${count > 1 ? `x${count} · ` : ""}+${totalPts} pts</span>
+                    `;
+                    bonusList.appendChild(item);
+                }
+            }
+        } else {
+            this.els.wfDots.classList.add("hidden");
+            this.els.bonusWordsCount.textContent = "";
         }
     }
 
@@ -4873,6 +5077,38 @@ class Game {
                             gF(ctx, ox, oy, cs, clamp(fallRow, -0.5, 2), 2, 'Z');
                             gT(ctx, ox + gs * cs / 2, oy - cs * 0.7,
                                 `Speed: ${speed.toFixed(1)}×`, '#ff9800', Math.floor(cs * 0.35));
+                        }
+                    },
+                    {
+                        title: 'Word Category',
+                        desc: 'In Word Category challenge, you are given a category like "Food & Cooking" or "Animals" at the top of the screen. Your goal: find as many words that fit the category as possible! Category words earn 2× points, while other words earn only ¼ the usual points. The more category words you find, the more XP you earn. Finding zero category words slashes your XP! Swipe left on the Words Found screen to see your category matches. Game lasts 7 minutes.',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs, 15);
+                            gBg(ctx, ox, oy, cs, gs);
+                            // Category banner
+                            const catY = oy - cs * 1.4;
+                            ctx.fillStyle = '#1a1a2e';
+                            const tw = cs * 5, th = cs * 0.8;
+                            ctx.fillRect((w - tw) / 2, catY - th / 2, tw, th);
+                            ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 1;
+                            ctx.strokeRect((w - tw) / 2, catY - th / 2, tw, th);
+                            gT(ctx, w / 2, catY, '📂 Food', '#4caf50', Math.floor(cs * 0.4));
+                            const foodCells = [
+                                [3,0,'C'],[3,1,'A'],[3,2,'K'],[3,3,'E'],
+                                [4,1,'P'],[4,2,'I'],[4,3,'E']
+                            ];
+                            const otherCells = [[4,0,'X'],[4,4,'R'],[3,4,'W'],[2,0,'N'],[2,3,'H']];
+                            for (const [r,c,l] of otherCells) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            const cyc = t % 4;
+                            for (let i = 0; i < foodCells.length; i++) {
+                                const [r,c,l] = foodCells[i];
+                                const lit = cyc > 2;
+                                gC(ctx, ox, oy, cs, r, c, l, lit ? '#2e5c2e' : '#2a2a3e', lit ? '#4caf50' : null);
+                            }
+                            if (cyc > 2.5) {
+                                gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '2× POINTS!', '#4caf50',
+                                    Math.floor(cs * 0.4), clamp((cyc - 2.5) * 3, 0, 1));
+                            }
                         }
                     }
                 ]
@@ -5780,7 +6016,33 @@ class Game {
                 return ![...g.cells].every(k => newCells.has(k));
             });
 
-            const pts = wc.word.length * 10 * wc.word.length;
+            let pts = wc.word.length * 10 * wc.word.length;
+
+            // Word complexity bonus: longer words get progressively more
+            // 3-letter base, 4→+15%, 5→+35%, 6→+60%, 7→+90%, 8+→+125%
+            const len = wc.word.length;
+            if (len >= 4) {
+                const complexityMult = 1 + 0.15 * Math.pow(len - 3, 1.4);
+                pts = Math.floor(pts * complexityMult);
+            }
+
+            // In Target Word / Category challenges, reduce base pts for non-matching words
+            const isBonusChallenge = this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
+                || this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY;
+            if (isBonusChallenge) {
+                const isMatch = this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
+                    ? (this.targetWord && wc.word === this.targetWord)
+                    : (this.activeCategorySet && this.activeCategorySet.has(wc.word));
+                if (isMatch) {
+                    // Bonus match: 2× base, scaled by category tier
+                    const tier = CATEGORY_TIERS[this.activeCategoryKey];
+                    const tierMult = tier ? tier.ptsMult : 1.0;
+                    pts = Math.floor(pts * 2 * tierMult);
+                } else {
+                    pts = Math.floor(pts * 0.25);
+                }
+            }
+
             this._validatedWordGroups.push({ word: wc.word, cells: newCells, pts });
         }
         this._rebuildValidatedCells();
@@ -5856,16 +6118,24 @@ class Game {
             }
             this.score += pts;
             this.totalWordsInChain++;
-            this.wordsFound.push({ word: group.word, pts });
+            const isBonus = this._isChallengeBonusWord(group.word);
+            this.wordsFound.push({ word: group.word, pts, bonus: isBonus });
             claimedWords.push({ word: group.word, pts });
             if (!this._chainWords) this._chainWords = [];
             this._chainWords.push({ word: group.word, pts });
 
             // Check for target word match
-            if (this.targetWord && group.word === this.targetWord) {
+            if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
+                && this.targetWord && group.word === this.targetWord) {
                 this.targetWordsCompleted++;
                 this.score += 200;
                 this._pickTargetWord();
+            }
+
+            // Track category word matches
+            if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY && isBonus) {
+                if (!this.categoryWordsFound) this.categoryWordsFound = [];
+                this.categoryWordsFound.push(group.word);
             }
         }
         this._checkBonusUnlock(prevScore, this.score);
@@ -5980,6 +6250,7 @@ class Game {
                 this._stopChallengePreviewAnimations();
                 this.activeChallenge = key;
                 this.els.challengeSetupName.textContent = `${meta.icon} ${meta.title}`;
+                this._setupCategorySelector(key);
                 this._showScreen("challengesetup");
             });
             grid.appendChild(card);
@@ -5987,6 +6258,47 @@ class Game {
             // Start animated preview on the card's canvas
             const canvas = card.querySelector("canvas");
             this._startChallengePreview(canvas, key);
+        }
+    }
+
+    _setupCategorySelector(challengeKey) {
+        const sel = this.els.challengeCategorySelector;
+        const wrap = this.els.challengeCategoryButtons;
+        if (challengeKey !== CHALLENGE_TYPES.WORD_CATEGORY) {
+            sel.classList.add("hidden");
+            this._selectedCategoryKey = null;
+            return;
+        }
+        sel.classList.remove("hidden");
+        wrap.innerHTML = "";
+
+        // Exclude adjectives from the selectable UI (it's internal-only)
+        const playable = ["food", "animals", "sports", "nature", "technology"];
+        let first = true;
+        for (const catKey of playable) {
+            const cat = WORD_CATEGORIES[catKey];
+            if (!cat) continue;
+            const tier = CATEGORY_TIERS[catKey] || { tier: 1, label: "" };
+            const btn = document.createElement("button");
+            btn.className = "category-pick-btn" + (first ? " selected" : "");
+            btn.dataset.cat = catKey;
+            const tierStars = "★".repeat(tier.tier) + "☆".repeat(3 - tier.tier);
+            const tierText = tier.label ? `${tierStars} ${tier.label}` : tierStars;
+            btn.innerHTML = `
+                <span class="cat-icon">${cat.icon}</span>
+                <span class="cat-label">${cat.label}</span>
+                <span class="cat-tier">${tierText}</span>
+            `;
+            btn.addEventListener("click", () => {
+                wrap.querySelectorAll(".category-pick-btn").forEach(b => b.classList.remove("selected"));
+                btn.classList.add("selected");
+                this._selectedCategoryKey = catKey;
+            });
+            wrap.appendChild(btn);
+            if (first) {
+                this._selectedCategoryKey = catKey;
+                first = false;
+            }
         }
     }
 
@@ -6000,84 +6312,343 @@ class Game {
         const gridSize = 5;
         const cellSize = size / gridSize;
 
-        // Generate a random mini grid
-        const cells = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
-        const fillCount = 8 + Math.floor(Math.random() * 6);
-        for (let i = 0; i < fillCount; i++) {
-            const r = Math.floor(Math.random() * gridSize);
-            const c = Math.floor(Math.random() * gridSize);
-            cells[r][c] = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-        }
+        // ─── TARGET WORD preview ───────────────────────────────────
+        if (challengeType === CHALLENGE_TYPES.TARGET_WORD) {
+            const target = "CAT";
+            // Falling letters: each has col, y, letter, speed, settled row, glow phase
+            const letters = [];
+            const settled = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+            let nextDrop = 0;
+            const dropQueue = [];
+            // Pre-fill some random background letters
+            for (let i = 0; i < 6; i++) {
+                const r = 2 + Math.floor(Math.random() * 3);
+                const c = Math.floor(Math.random() * gridSize);
+                if (!settled[r][c]) settled[r][c] = { letter: String.fromCharCode(65 + Math.floor(Math.random() * 26)), glow: 0 };
+            }
+            // Schedule target letters dropping then random letters
+            const targetCols = [1, 2, 3];
+            for (let i = 0; i < target.length; i++) {
+                dropQueue.push({ letter: target[i], col: targetCols[i], isTarget: true, delay: 20 + i * 25 });
+            }
+            for (let i = 0; i < 8; i++) {
+                dropQueue.push({ letter: String.fromCharCode(65 + Math.floor(Math.random() * 26)), col: Math.floor(Math.random() * gridSize), isTarget: false, delay: 110 + i * 18 });
+            }
 
-        let tick = 0;
-        const draw = () => {
-            tick++;
-            ctx.fillStyle = "#1a1a1a";
-            ctx.fillRect(0, 0, size, size);
+            let tick = 0, cycle = 0;
+            const draw = () => {
+                tick++;
+                const localTick = tick - cycle * 220;
 
-            // Draw grid
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    const x = c * cellSize;
-                    const y = r * cellSize;
-                    ctx.fillStyle = "#2a2a2a";
-                    ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
-                    if (cells[r][c]) {
-                        ctx.fillStyle = "#fff";
-                        ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
-                        ctx.textAlign = "center";
-                        ctx.textBaseline = "middle";
-                        ctx.fillText(cells[r][c], x + cellSize / 2, y + cellSize / 2);
+                // Reset cycle
+                if (localTick > 220) {
+                    cycle++;
+                    for (let r = 0; r < gridSize; r++) for (let c = 0; c < gridSize; c++) settled[r][c] = null;
+                    letters.length = 0;
+                    for (let i = 0; i < 6; i++) {
+                        const r = 2 + Math.floor(Math.random() * 3);
+                        const c = Math.floor(Math.random() * gridSize);
+                        if (!settled[r][c]) settled[r][c] = { letter: String.fromCharCode(65 + Math.floor(Math.random() * 26)), glow: 0 };
                     }
                 }
-            }
 
-            // Challenge-specific visual
-            if (challengeType === CHALLENGE_TYPES.TARGET_WORD) {
-                // Pulsing target word overlay
-                const alpha = 0.5 + 0.3 * Math.sin(tick * 0.08);
+                // Spawn drops
+                for (const dq of dropQueue) {
+                    if (localTick === dq.delay) {
+                        letters.push({ letter: dq.letter, col: dq.col, y: -cellSize, isTarget: dq.isTarget, speed: 2.5 });
+                    }
+                }
+
+                // Update falling letters
+                for (let i = letters.length - 1; i >= 0; i--) {
+                    const fl = letters[i];
+                    // Find landing row
+                    let landRow = gridSize - 1;
+                    for (let r = 0; r < gridSize; r++) {
+                        if (settled[r][fl.col]) { landRow = r - 1; break; }
+                    }
+                    const landY = landRow * cellSize;
+                    fl.y += fl.speed;
+                    if (fl.y >= landY) {
+                        fl.y = landY;
+                        if (landRow >= 0) settled[landRow][fl.col] = { letter: fl.letter, glow: fl.isTarget ? 1 : 0 };
+                        letters.splice(i, 1);
+                    }
+                }
+
+                // Draw
+                ctx.fillStyle = "#1a1a1a";
+                ctx.fillRect(0, 0, size, size);
+
+                for (let r = 0; r < gridSize; r++) {
+                    for (let c = 0; c < gridSize; c++) {
+                        const x = c * cellSize, y = r * cellSize;
+                        ctx.fillStyle = "#2a2a2a";
+                        ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+                        const s = settled[r][c];
+                        if (s) {
+                            if (s.glow) {
+                                const pulse = 0.4 + 0.3 * Math.sin(tick * 0.1);
+                                ctx.fillStyle = `rgba(255, 215, 0, ${pulse * 0.3})`;
+                                ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+                                ctx.fillStyle = "#ffd700";
+                            } else {
+                                ctx.fillStyle = "#aaa";
+                            }
+                            ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
+                            ctx.textAlign = "center";
+                            ctx.textBaseline = "middle";
+                            ctx.fillText(s.letter, x + cellSize / 2, y + cellSize / 2);
+                        }
+                    }
+                }
+
+                // Draw falling letters
+                for (const fl of letters) {
+                    const x = fl.col * cellSize;
+                    ctx.fillStyle = fl.isTarget ? "#3a3520" : "#2a2a2a";
+                    ctx.fillRect(x + 1, fl.y + 1, cellSize - 2, cellSize - 2);
+                    if (fl.isTarget) {
+                        ctx.strokeStyle = "#ffd700";
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeRect(x + 2, fl.y + 2, cellSize - 4, cellSize - 4);
+                    }
+                    ctx.fillStyle = fl.isTarget ? "#ffd700" : "#fff";
+                    ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(fl.letter, x + cellSize / 2, fl.y + cellSize / 2);
+                }
+
+                // Target label at top
+                const alpha = 0.6 + 0.3 * Math.sin(tick * 0.08);
                 ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
-                ctx.font = `bold ${Math.floor(size * 0.12)}px monospace`;
+                ctx.font = `bold ${Math.floor(size * 0.1)}px monospace`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
-                ctx.fillText("🎯 CAT", size / 2, size * 0.12);
-            } else if (challengeType === CHALLENGE_TYPES.SPEED_ROUND) {
-                // Falling block animation getting faster
-                const blockY = (tick * 2) % size;
-                const blockCol = Math.floor(gridSize / 2);
-                const bx = blockCol * cellSize;
-                ctx.fillStyle = "#3a3520";
-                ctx.fillRect(bx + 1, blockY, cellSize - 2, cellSize - 2);
-                ctx.strokeStyle = "#ffd700";
-                ctx.lineWidth = 2;
-                ctx.strokeRect(bx + 2, blockY + 1, cellSize - 4, cellSize - 4);
-                ctx.fillStyle = "#ffd700";
-                ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
+                ctx.fillText("🎯 " + target, size / 2, size * 0.08);
+
+                // Grid lines
+                ctx.strokeStyle = "#333";
+                ctx.lineWidth = 0.5;
+                for (let r = 0; r <= gridSize; r++) { ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(size, r * cellSize); ctx.stroke(); }
+                for (let c = 0; c <= gridSize; c++) { ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, size); ctx.stroke(); }
+            };
+            draw();
+            const id = setInterval(draw, 60);
+            this._challengePreviewAnimations.push(id);
+            return;
+        }
+
+        // ─── SPEED ROUND preview ──────────────────────────────────
+        if (challengeType === CHALLENGE_TYPES.SPEED_ROUND) {
+            const settled = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+            // Pre-fill bottom rows
+            for (let r = 3; r < gridSize; r++) for (let c = 0; c < gridSize; c++) {
+                if (Math.random() < 0.6) settled[r][c] = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+            }
+            const fallers = [];
+            let tick = 0, speed = 1.5, spawnTimer = 0, spawnInterval = 22;
+
+            const draw = () => {
+                tick++;
+
+                // Gradually speed up
+                speed = 1.5 + tick * 0.008;
+                if (spawnInterval > 6) spawnInterval = Math.max(6, 22 - Math.floor(tick / 30));
+
+                // Spawn new fallers
+                spawnTimer++;
+                if (spawnTimer >= spawnInterval) {
+                    spawnTimer = 0;
+                    const col = Math.floor(Math.random() * gridSize);
+                    fallers.push({ col, y: -cellSize, letter: String.fromCharCode(65 + Math.floor(Math.random() * 26)) });
+                }
+
+                // Update fallers
+                for (let i = fallers.length - 1; i >= 0; i--) {
+                    fallers[i].y += speed;
+                    if (fallers[i].y > size) fallers.splice(i, 1);
+                }
+
+                // Draw
+                ctx.fillStyle = "#1a1a1a";
+                ctx.fillRect(0, 0, size, size);
+
+                for (let r = 0; r < gridSize; r++) {
+                    for (let c = 0; c < gridSize; c++) {
+                        const x = c * cellSize, y = r * cellSize;
+                        ctx.fillStyle = "#2a2a2a";
+                        ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+                        if (settled[r][c]) {
+                            ctx.fillStyle = "#aaa";
+                            ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
+                            ctx.textAlign = "center";
+                            ctx.textBaseline = "middle";
+                            ctx.fillText(settled[r][c], x + cellSize / 2, y + cellSize / 2);
+                        }
+                    }
+                }
+
+                // Draw fallers with speed trails
+                for (const f of fallers) {
+                    const x = f.col * cellSize;
+                    // Motion trail
+                    const trailLen = Math.min(speed * 4, cellSize);
+                    const grad = ctx.createLinearGradient(x + cellSize / 2, f.y - trailLen, x + cellSize / 2, f.y);
+                    grad.addColorStop(0, "rgba(255, 215, 0, 0)");
+                    grad.addColorStop(1, "rgba(255, 215, 0, 0.3)");
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(x + 4, f.y - trailLen, cellSize - 8, trailLen);
+
+                    ctx.fillStyle = "#3a3520";
+                    ctx.fillRect(x + 1, f.y + 1, cellSize - 2, cellSize - 2);
+                    ctx.strokeStyle = "#ffd700";
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(x + 2, f.y + 2, cellSize - 4, cellSize - 4);
+                    ctx.fillStyle = "#ffd700";
+                    ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(f.letter, x + cellSize / 2, f.y + cellSize / 2);
+                }
+
+                // Speed indicator
+                const barW = size * 0.6;
+                const barH = 6;
+                const barX = (size - barW) / 2;
+                const barY = size - 10;
+                const pct = Math.min(1, (speed - 1.5) / 5);
+                ctx.fillStyle = "#333";
+                ctx.fillRect(barX, barY, barW, barH);
+                const barGrad = ctx.createLinearGradient(barX, 0, barX + barW * pct, 0);
+                barGrad.addColorStop(0, "#ffd700");
+                barGrad.addColorStop(1, "#ff4444");
+                ctx.fillStyle = barGrad;
+                ctx.fillRect(barX, barY, barW * pct, barH);
+
+                // Grid lines
+                ctx.strokeStyle = "#333";
+                ctx.lineWidth = 0.5;
+                for (let r = 0; r <= gridSize; r++) { ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(size, r * cellSize); ctx.stroke(); }
+                for (let c = 0; c <= gridSize; c++) { ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, size); ctx.stroke(); }
+
+                // Reset cycle
+                if (tick > 300) {
+                    tick = 0; speed = 1.5; spawnInterval = 22; spawnTimer = 0;
+                    fallers.length = 0;
+                }
+            };
+            draw();
+            const id = setInterval(draw, 60);
+            this._challengePreviewAnimations.push(id);
+            return;
+        }
+
+        // ─── WORD CATEGORY preview ────────────────────────────────
+        if (challengeType === CHALLENGE_TYPES.WORD_CATEGORY) {
+            const categories = [
+                { icon: "🍕", label: "Food", words: ["CAKE", "RICE", "SOUP", "FISH"] },
+                { icon: "🐾", label: "Animals", words: ["BEAR", "FROG", "HAWK", "DUCK"] },
+                { icon: "⚽", label: "Sports", words: ["GOLF", "SWIM", "KICK", "RACE"] },
+                { icon: "🌿", label: "Nature", words: ["TREE", "RAIN", "LAKE", "LEAF"] },
+            ];
+            let catIdx = 0, tick = 0, wordSlots = [], phase = "reveal"; // reveal → glow → fade
+
+            const setupCategory = () => {
+                const cat = categories[catIdx];
+                wordSlots = cat.words.map((w, i) => ({
+                    word: w,
+                    row: 1 + i,
+                    col: Math.floor((gridSize - w.length) / 2),
+                    revealedCount: 0,
+                    glowing: false,
+                    alpha: 1,
+                }));
+                phase = "reveal";
+            };
+            setupCategory();
+
+            const draw = () => {
+                tick++;
+                const cat = categories[catIdx];
+
+                // Phase timing
+                if (phase === "reveal") {
+                    // Reveal letters one by one across all words
+                    const revealTick = Math.floor(tick / 4);
+                    let allDone = true;
+                    for (const ws of wordSlots) {
+                        const target = Math.min(ws.word.length, revealTick - ws.row * 2);
+                        ws.revealedCount = Math.max(0, Math.min(ws.word.length, target));
+                        if (ws.revealedCount < ws.word.length) allDone = false;
+                    }
+                    if (allDone) { phase = "glow"; tick = 0; }
+                } else if (phase === "glow") {
+                    for (const ws of wordSlots) ws.glowing = true;
+                    if (tick > 60) { phase = "fade"; tick = 0; }
+                } else if (phase === "fade") {
+                    for (const ws of wordSlots) ws.alpha = Math.max(0, 1 - tick / 20);
+                    if (tick > 25) {
+                        catIdx = (catIdx + 1) % categories.length;
+                        setupCategory();
+                        tick = 0;
+                    }
+                }
+
+                // Draw
+                ctx.fillStyle = "#1a1a1a";
+                ctx.fillRect(0, 0, size, size);
+
+                for (let r = 0; r < gridSize; r++) {
+                    for (let c = 0; c < gridSize; c++) {
+                        const x = c * cellSize, y = r * cellSize;
+                        ctx.fillStyle = "#2a2a2a";
+                        ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+                    }
+                }
+
+                // Draw word slots
+                for (const ws of wordSlots) {
+                    for (let i = 0; i < ws.revealedCount; i++) {
+                        const c = ws.col + i;
+                        const x = c * cellSize, y = ws.row * cellSize;
+                        if (ws.glowing) {
+                            const pulse = 0.3 + 0.2 * Math.sin(tick * 0.12 + i);
+                            ctx.fillStyle = `rgba(76, 175, 80, ${pulse * ws.alpha})`;
+                            ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+                        }
+                        ctx.globalAlpha = ws.alpha;
+                        ctx.fillStyle = ws.glowing ? "#4caf50" : "#fff";
+                        ctx.font = `bold ${Math.floor(cellSize * 0.45)}px monospace`;
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(ws.word[i], x + cellSize / 2, y + cellSize / 2);
+                        ctx.globalAlpha = 1;
+                    }
+                }
+
+                // Category label at top
+                const labelAlpha = phase === "fade" ? Math.max(0, 1 - tick / 15) : Math.min(1, tick / 10);
+                ctx.globalAlpha = labelAlpha;
+                ctx.fillStyle = "#4caf50";
+                ctx.font = `bold ${Math.floor(size * 0.1)}px monospace`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
-                ctx.fillText("⚡", bx + cellSize / 2, blockY + cellSize / 2);
-            }
+                ctx.fillText(`${cat.icon} ${cat.label}`, size / 2, size * 0.08);
+                ctx.globalAlpha = 1;
 
-            // Grid lines
-            ctx.strokeStyle = "#333";
-            ctx.lineWidth = 0.5;
-            for (let r = 0; r <= gridSize; r++) {
-                ctx.beginPath();
-                ctx.moveTo(0, r * cellSize);
-                ctx.lineTo(size, r * cellSize);
-                ctx.stroke();
-            }
-            for (let c = 0; c <= gridSize; c++) {
-                ctx.beginPath();
-                ctx.moveTo(c * cellSize, 0);
-                ctx.lineTo(c * cellSize, size);
-                ctx.stroke();
-            }
-        };
-
-        draw();
-        const id = setInterval(draw, 80);
-        this._challengePreviewAnimations.push(id);
+                // Grid lines
+                ctx.strokeStyle = "#333";
+                ctx.lineWidth = 0.5;
+                for (let r = 0; r <= gridSize; r++) { ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(size, r * cellSize); ctx.stroke(); }
+                for (let c = 0; c <= gridSize; c++) { ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, size); ctx.stroke(); }
+            };
+            draw();
+            const id = setInterval(draw, 60);
+            this._challengePreviewAnimations.push(id);
+            return;
+        }
     }
 
     _stopChallengePreviewAnimations() {
@@ -6103,7 +6674,21 @@ class Game {
             this.fallInterval = 0.9;
             this.speedRoundBaseInterval = this.fallInterval;
             this.els.targetWordDisplay.classList.add("hidden");
+        } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
+            this.categoryWordsFound = [];
+            this._pickCategory(this._selectedCategoryKey);
+            this.els.targetWordDisplay.classList.remove("hidden");
         }
+    }
+
+    _isChallengeBonusWord(word) {
+        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
+            return this.targetWord && word === this.targetWord;
+        }
+        if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
+            return this.activeCategorySet && this.activeCategorySet.has(word);
+        }
+        return false;
     }
 
     _pickTargetWord() {
@@ -6115,6 +6700,25 @@ class Game {
         if (candidates.length === 0) return;
         this.targetWord = candidates[Math.floor(Math.random() * candidates.length)];
         this.els.targetWordText.textContent = this.targetWord;
+    }
+
+    _pickCategory(specificKey) {
+        let pick;
+        if (specificKey && WORD_CATEGORIES[specificKey]) {
+            pick = specificKey;
+        } else {
+            const keys = Object.keys(WORD_CATEGORIES);
+            if (keys.length === 0) return;
+            do {
+                pick = keys[Math.floor(Math.random() * keys.length)];
+            } while (keys.length > 1 && pick === this.activeCategoryKey);
+        }
+        this.activeCategoryKey = pick;
+        this.activeCategorySet = WORD_CATEGORIES[pick].words;
+        const cat = WORD_CATEGORIES[pick];
+        this.els.targetWordText.textContent = `${cat.icon} ${cat.label}`;
+        // Update the label from "TARGET:" to "CATEGORY:"
+        this.els.targetWordDisplay.querySelector(".target-label").textContent = "CATEGORY:";
     }
 
     _updateSpeedRound() {
@@ -6132,9 +6736,11 @@ class Game {
 
         let tutorialText = "";
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
-            tutorialText = "A target word appears at the top of the screen. Spelling the target word earns 200 bonus points! A new target word is picked each time you complete one. Game lasts 7 minutes.";
+            tutorialText = "A target word appears at the top of the screen. Spelling the target word earns 2× points and a 200-point bonus! Non-target words earn reduced points. Finding no target words slashes your XP. Game lasts 7 minutes.";
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
             tutorialText = "Blocks start falling at normal speed but get faster every 500 points! The fall speed keeps increasing until you can barely keep up. Game lasts 3 minutes — score as high as you can!";
+        } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
+            tutorialText = "Choose a category before starting. Words matching your category earn bonus points! Harder categories (Technology, Nature) earn even more points and XP. Longer, more complex words also score higher. Other words earn reduced points. Game lasts 7 minutes.";
         }
         this.els.challengeTutorialText.textContent = tutorialText;
 

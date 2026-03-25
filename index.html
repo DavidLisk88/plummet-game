@@ -175,6 +175,10 @@
             <button id="challenge-tutorial-btn" class="tutorial-btn tutorial-btn-small" title="How This Challenge Works">📖</button>
             <h1 class="title">PLUMMET</h1>
             <p id="challenge-setup-name" class="subtitle challenge-mode-label"></p>
+            <div id="challenge-category-selector" class="hidden">
+                <label>Choose Category:</label>
+                <div id="challenge-category-buttons"></div>
+            </div>
             <div id="challenge-grid-size-selector">
                 <label>Grid Size:</label>
                 <div class="size-buttons">
@@ -338,11 +342,27 @@
         <div id="words-found-screen" class="screen">
             <div id="words-found-header">
                 <button id="words-found-back-btn" class="icon-btn back-btn">←</button>
-                <h2>Words Found</h2>
+                <h2 id="words-found-title">Words Found</h2>
                 <div style="width:40px"></div>
             </div>
-            <p id="words-found-count"></p>
-            <div id="words-found-list"></div>
+            <div id="wf-dots" class="hidden">
+                <button class="wf-dot active" data-page="0"></button>
+                <button class="wf-dot" data-page="1"></button>
+            </div>
+            <div id="wf-slide-view">
+                <div id="wf-slide-strip">
+                    <!-- Page 0: All Words -->
+                    <div class="wf-page">
+                        <p id="words-found-count"></p>
+                        <div id="words-found-list"></div>
+                    </div>
+                    <!-- Page 1: Bonus Words (Target/Category) -->
+                    <div class="wf-page">
+                        <p id="bonus-words-count"></p>
+                        <div id="bonus-words-list"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
