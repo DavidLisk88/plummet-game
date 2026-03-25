@@ -430,35 +430,33 @@ html, body {
 
 .play-pause-btn {
     right: calc(8px + var(--safe-right));
-    top: 50%;
-    transform: translateY(-50%);
+    top: 28%;
     width: 48px;
     height: 48px;
-    background: rgba(40, 40, 40, 0.92);
-    border: 1px solid #626262;
+    background: rgba(40, 40, 40, 0.35);
+    border: 1px solid rgba(98, 98, 98, 0.4);
     font-size: 1.25rem;
     color: #fff;
 }
 
 .play-pause-btn:hover {
-    background: rgba(68, 68, 68, 0.96);
+    background: rgba(68, 68, 68, 0.55);
     border-color: #ffd700;
 }
 
 .play-hint-btn {
     left: calc(8px + var(--safe-left));
-    top: 50%;
-    transform: translateY(-50%);
+    top: 28%;
     width: 42px;
     height: 42px;
-    background: rgba(34, 34, 34, 0.82);
-    border: 1px solid rgba(255, 215, 0, 0.28);
+    background: rgba(34, 34, 34, 0.35);
+    border: 1px solid rgba(255, 215, 0, 0.18);
     font-size: 1.15rem;
     color: #ffd700;
 }
 
 .play-hint-btn:hover {
-    background: rgba(46, 46, 46, 0.94);
+    background: rgba(46, 46, 46, 0.55);
     border-color: rgba(255, 215, 0, 0.7);
 }
 
@@ -1801,7 +1799,7 @@ body.touch-input #mobile-controls {
 
     .play-pause-btn {
         right: calc(4px + var(--safe-right));
-        top: 46%;
+        top: 26%;
         width: 40px;
         height: 40px;
         font-size: 1.1rem;
@@ -1864,7 +1862,7 @@ body.touch-input #mobile-controls {
     }
 
     .play-hint-btn {
-        top: 46%;
+        top: 26%;
     }
 }
 
@@ -1984,7 +1982,7 @@ body.touch-input #mobile-controls {
 
     .play-pause-btn {
         right: calc(2px + var(--safe-right));
-        top: 46%;
+        top: 24%;
         width: 36px;
         height: 36px;
         font-size: 0.96rem;

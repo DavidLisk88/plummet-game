@@ -53,7 +53,7 @@ const LETTER_FREQ = {
 };
 const _FREQ_TOTAL = Object.values(LETTER_FREQ).reduce((a, b) => a + b, 0);
 const _letterHistory = [];       // last N letters picked
-const _HISTORY_MAX = 8;          // track last 8 letters for cooldown
+const _HISTORY_MAX = 14;         // track last 14 letters for cooldown
 const _letterCounts = {};        // how many times each letter has been picked
 let _totalPicks = 0;
 
@@ -62,30 +62,47 @@ for (const ch of Object.keys(LETTER_FREQ)) _letterCounts[ch] = 0;
 function randomLetter() {
     const letters = Object.keys(LETTER_FREQ);
 
-    // Build effective weights: base frequency, cooldown penalty, deficit boost
+    // Build effective weights: base frequency, smooth cooldown, deficit/surplus balancing
     const weights = [];
     for (const ch of letters) {
         let w = LETTER_FREQ[ch];
 
-        // Cooldown: if letter appeared recently, heavily penalise
+        // ── Smooth cooldown ──
+        // Recently picked letters get a penalty that smoothly decays
+        // using a power curve: near-zero for very recent, approaches 1.0
+        // as the letter ages out of the history window.
         const histIdx = _letterHistory.lastIndexOf(ch);
         if (histIdx !== -1) {
             const recency = _letterHistory.length - histIdx; // 1 = most recent
-            if (recency <= 2) w *= 0.02;       // almost zero if in last 2
-            else if (recency <= 4) w *= 0.15;  // very low if in last 4
-            else if (recency <= 6) w *= 0.4;   // reduced if in last 6
-            else w *= 0.7;                     // slight penalty for 7-8
+            const cooldown = Math.pow(recency / _HISTORY_MAX, 1.5);
+            w *= Math.max(cooldown, 0.005);
         }
 
-        // Deficit boost: if a letter has appeared less than expected, boost it
-        if (_totalPicks > 10) {
+        // ── Deficit / surplus balancing ──
+        // Aggressively boost underrepresented letters and dampen
+        // overrepresented ones to keep the distribution diverse.
+        if (_totalPicks > 8) {
             const expected = (LETTER_FREQ[ch] / _FREQ_TOTAL) * _totalPicks;
             const actual = _letterCounts[ch];
-            if (actual < expected * 0.5) w *= 2.5;       // significantly underrepresented
-            else if (actual < expected * 0.75) w *= 1.5;  // somewhat underrepresented
+            const ratio = expected > 0 ? actual / expected : 0;
+
+            if (ratio < 0.25)      w *= 4.0;   // severely underrepresented
+            else if (ratio < 0.5)  w *= 2.8;   // very underrepresented
+            else if (ratio < 0.75) w *= 1.8;   // moderately underrepresented
+            else if (ratio < 0.9)  w *= 1.3;   // slightly underrepresented
+            else if (ratio > 2.0)  w *= 0.3;   // heavily overrepresented
+            else if (ratio > 1.5)  w *= 0.5;   // quite overrepresented
+            else if (ratio > 1.2)  w *= 0.7;   // somewhat overrepresented
         }
 
-        weights.push(Math.max(w, 0.001)); // never fully zero
+        // ── Never-seen guarantee ──
+        // After enough picks, any letter that hasn't appeared at all
+        // gets a strong floor boost so it actually shows up.
+        if (_totalPicks >= 20 && _letterCounts[ch] === 0) {
+            w = Math.max(w, 5);
+        }
+
+        weights.push(Math.max(w, 0.01)); // absolute floor
     }
 
     // Weighted random selection
@@ -4421,7 +4438,7 @@ class Game {
                     },
                     {
                         title: 'Pause & Resume',
-                        desc: 'Need a break? Tap the ⏸ pause button on the right side of the screen during gameplay to freeze the action. The game pauses completely — no blocks fall and the timer stops. From the pause menu you can also view your found words list or toggle music. Tap Resume to pick up right where you left off. On desktop, press ESCAPE or P to toggle pause.',
+                        desc: 'Need a break? Tap the ⏸ pause button in the top-right corner during gameplay to freeze the action. The game pauses completely — no blocks fall and the timer stops. From the pause menu you can also view your found words list or toggle music. Tap Resume to pick up right where you left off. On desktop, press ESCAPE or P to toggle pause.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -4429,8 +4446,8 @@ class Game {
                                             [3,1,'R'],[3,2,'I'],[3,3,'D']];
                             for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
                             const cyc = t % 4;
-                            // Pause button position - right side, vertically centered
-                            const btnX = ox + cs * gs + cs * 0.5, btnY = oy + cs * gs * 0.5;
+                            // Pause button position - right side, near top (spawn area)
+                            const btnX = ox + cs * gs + cs * 0.5, btnY = oy + cs * 0.5;
                             const btnR = cs * 0.35;
                             if (cyc < 1.5) {
                                 // Show the pause icon pulsing
