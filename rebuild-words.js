@@ -556,7 +556,7 @@ zebra zucchini`.split(/\s+/).filter(w => w.length >= 3);
 
 const VERBS = `
 ace act add age aid aim air ask ate ban bar bat bay bed bet bid bit boo bow bug bum
-buy can cap car cob con cop cry cub cue cup cut dab dam dig dim din dip dog don dot
+buy can cap car cob con cop cry cub cue cup cut dab dam dig dill dim din dip dog don dot
 dry dub dud dug dye ear eat egg end era err eye fag fan fax fed fig fin fit fix fly
 fog for fry fun fur gag gap gas get gin got gum gun gut guy had ham has hat hid him
 hit hob hog hop hug hum ice ink ion jab jag jam jar jig jog jot joy jug jut key kid
@@ -1193,7 +1193,7 @@ braise bread breakfast broccoli broth brownie brunch burger burrito butter cake
 calorie candy caramel caramelize casserole celery cereal cheese cherry chicken chili
 chive chocolate chowder cinnamon clam coconut concoct cookie corn cracker cream
 crepe crisp croissant crouton cucumber cupcake curdle curry custard dairy danish
-dessert diet dine dinner dough dumpling egg enchilada entree espresso fajita feast
+dessert diet dill dine dinner dough dumpling egg enchilada entree espresso fajita feast
 ferment fig flavor fondue food fork fried frosting fry fudge garlic garnish ginger
 gourmet gravy grill grind guacamole hamburger herb honey jam jelly julienne kale
 ketchup kettle knead lamb lemon lettuce lime lunch macaroni mango marinate mayo
