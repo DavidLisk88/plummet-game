@@ -39,12 +39,15 @@
 
         <!-- New Profile Modal -->
         <div id="profile-modal" class="overlay">
-            <div class="overlay-content">
-                <h2 id="profile-modal-title">New Profile</h2>
-                <input type="text" id="profile-name-input" class="text-input" placeholder="Enter username..." maxlength="20">
-                <div class="modal-buttons">
-                    <button id="profile-save-btn" class="primary-btn">Create</button>
-                    <button id="profile-cancel-btn" class="secondary-btn">Cancel</button>
+            <div class="modal-panel">
+                <div class="modal-panel-header">
+                    <div style="width:36px"></div>
+                    <h2 id="profile-modal-title">New Profile</h2>
+                    <button id="profile-cancel-btn" class="modal-panel-close">✕</button>
+                </div>
+                <div class="modal-panel-body">
+                    <input type="text" id="profile-name-input" class="text-input" placeholder="Enter username..." maxlength="20">
+                    <button id="profile-save-btn" class="primary-btn" style="width:100%;max-width:280px">Create</button>
                 </div>
             </div>
         </div>
@@ -277,15 +280,20 @@
         </div>
 
         <div id="letter-choice-modal" class="overlay">
-            <div class="overlay-content modal-wide letter-choice-content">
-                <button id="letter-choice-close-btn" class="letter-choice-close-btn" title="Close Bonus Window">✕</button>
-                <h2 id="letter-choice-title">Choose Your Letter</h2>
-                <p id="letter-choice-text" class="subtitle">Pick the next falling letter for this drop.</p>
-                <div id="letter-choice-preview" class="letter-choice-preview hidden"></div>
-                <div id="letter-choice-grid"></div>
-                <div class="modal-buttons">
-                    <button id="letter-choice-accept-btn" class="primary-btn hidden">Accept</button>
-                    <button id="letter-choice-later-btn" class="secondary-btn">Use Later</button>
+            <div class="modal-panel">
+                <div class="modal-panel-header">
+                    <div style="width:36px"></div>
+                    <h2 id="letter-choice-title">Choose Your Letter</h2>
+                    <button id="letter-choice-close-btn" class="modal-panel-close" title="Close Bonus Window">✕</button>
+                </div>
+                <div class="modal-panel-body">
+                    <p id="letter-choice-text" class="subtitle">Pick the next falling letter for this drop.</p>
+                    <div id="letter-choice-preview" class="letter-choice-preview hidden"></div>
+                    <div id="letter-choice-grid"></div>
+                    <div class="modal-buttons">
+                        <button id="letter-choice-accept-btn" class="primary-btn hidden">Accept</button>
+                        <button id="letter-choice-later-btn" class="secondary-btn">Use Later</button>
+                    </div>
                 </div>
             </div>
         </div>

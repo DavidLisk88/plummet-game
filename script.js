@@ -6260,7 +6260,7 @@ window.addEventListener("resize", () => {
 document.addEventListener("touchmove", (e) => {
     const target = e.target;
     const game = window._game;
-    const isScrollablePanel = target.closest("#words-found-list, #track-list, #profiles-list, #playlist-tabs, #playlist-track-picker, .overlay-content");
+    const isScrollablePanel = target.closest("#words-found-list, #track-list, #profiles-list, #playlist-tabs, #playlist-track-picker, .overlay-content, .modal-panel-body");
     if (isScrollablePanel) return;
     if (game?.state === State.PLAYING && target.closest("#play-screen")) {
         e.preventDefault();
