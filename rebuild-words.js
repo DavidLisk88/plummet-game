@@ -1207,6 +1207,9 @@ skillet slice smoothie snack souffle soup spaghetti spatula spice spinach spoonf
 squash steak steam stew strudel succulent sundae sushi tablespoon taco teaspoon
 tenderloin teriyaki toast tofu tomato tortilla tuna turkey vanilla vegetable waffle
 walnut watermelon wheat whisk yogurt zucchini
+water juice tea coffee lemonade milkshake soda cider cocoa latte mocha cappuccino
+punch nectar ale beer wine champagne cocktail bourbon whiskey vodka rum brandy gin
+tonic kombucha matcha chai eggnog sangria mead decaf brew beverage drink gulp sip
 `.split(/\s+/).filter(w => w.length >= 3);
 
 const CATEGORY_ANIMALS = `
