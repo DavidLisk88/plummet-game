@@ -1168,6 +1168,17 @@ vindicate vindictive vintage virtuoso virtuous visceral vitality vivacious vocat
 volatile volatility voltage voyage wanderlust warmhearted watercolor wavelength
 wayside whitewater wholehearted wildlife windfall windmill winery wistful withhold
 withstand woodland woodwind worldly worthless wrath wretched yearlong zealous zesty
+pesto wasabi aioli tahini sriracha vinaigrette chutney
+tongs toaster grater saucepan strainer sieve chopstick broiler carafe decanter
+mandolin whetstone zester placemat
+grape plum strawberry blueberry blackberry cranberry nectarine cantaloupe grapefruit
+tangerine raisin prune date rhubarb guava papaya plantain pomegranate kiwi
+persimmon honeydew quince currant mulberry elderberry gooseberry boysenberry
+clementine kumquat lychee starfruit dragonfruit tangelo passionfruit
+carrot cabbage cauliflower asparagus artichoke arugula beet turnip parsnip
+radish rutabaga leek shallot scallion endive fennel chard collard eggplant okra
+yam pea lentil chickpea soybean sprout watercress daikon jicama turmeric kohlrabi
+chestnut hazelnut pecan pistachio almond cashew macadamia
 `.split(/\s+/).filter(w => w.length >= 2);
 
 // ─── Contractions (apostrophe removed) ─────────────────────────────
@@ -1210,6 +1221,21 @@ walnut watermelon wheat whisk yogurt zucchini
 water juice tea coffee lemonade milkshake soda cider cocoa latte mocha cappuccino
 punch nectar ale beer wine champagne cocktail bourbon whiskey vodka rum brandy gin
 tonic kombucha matcha chai eggnog sangria mead decaf brew beverage drink gulp sip
+ranch relish aioli barbecue chutney glaze horseradish hummus mayo marinade pesto
+sriracha tahini tartar vinegar wasabi dressing vinaigrette soy teriyaki hot
+knife spoon plate bowl cup mug pan pot wok oven stove tongs ladle blender toaster
+grater peeler colander saucepan griddle apron napkin tray jar foil pitcher strainer
+sieve chopstick glass mixer fryer broiler burner straw dish placemat carafe decanter
+rolling whisk cleaver corkscrew funnel mandolin mortar pestle skimmer thermometer
+timer tureen whetstone zester lid rack shelf pantry counter cupboard ingredient
+grape plum strawberry blueberry blackberry cranberry nectarine cantaloupe grapefruit
+tangerine raisin prune date rhubarb guava papaya plantain pomegranate kiwi
+persimmon honeydew quince currant mulberry elderberry gooseberry boysenberry
+clementine kumquat lychee starfruit dragonfruit tangelo passionfruit
+carrot cabbage cauliflower asparagus artichoke arugula beet turnip parsnip
+radish rutabaga leek shallot scallion endive fennel chard collard eggplant okra
+yam pea lentil chickpea soybean sprout watercress daikon jicama turmeric kohlrabi
+chestnut hazelnut pecan pistachio almond cashew macadamia
 `.split(/\s+/).filter(w => w.length >= 3);
 
 const CATEGORY_ANIMALS = `
