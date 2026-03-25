@@ -4,7 +4,9 @@
     "export:distinct-words": "node dedupe-words.js --output distinct-words.js"
   },
   "dependencies": {
+    "an-array-of-english-words": "^2.0.0",
     "english-word-list": "^1.0.5",
-    "popular-english-words": "^1.0.2"
+    "popular-english-words": "^1.0.2",
+    "word-list-json": "^0.2.0"
   }
 }
