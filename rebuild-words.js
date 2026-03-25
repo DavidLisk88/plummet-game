@@ -681,7 +681,7 @@ const BANNED = new Set([
 // ─── Manual extras ──────────────────────────────────────────────────
 // Quick-add words here — no inflection, added exactly as written.
 // Just toss in any missing words you find during gameplay.
-const MANUAL_EXTRAS = `
+const MANUAL_EXTRAS = `fever fevers bye
 `.split(/\s+/).filter(w => w.length >= 2);
 
 // ─── Main build process ────────────────────────────────────────────

@@ -162,7 +162,7 @@ const CHALLENGE_META = Object.freeze({
 });
 
 const CHALLENGE_GRID_SIZES = [6, 7, 8];
-const CHALLENGE_TIME_LIMIT = 5 * 60; // 5 minutes
+const CHALLENGE_TIME_LIMIT = 7 * 60; // 7 minutes
 
 const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 8, 10, 15, 20];
 
@@ -186,61 +186,124 @@ const BOMB_CLEAR_FLASH_DURATION = 1.8;
 // LEVELING / XP SYSTEM
 // ────────────────────────────────────────
 const MAX_LEVEL = 500;
-const GRID_XP_MULTIPLIERS = { 3: 1.8, 4: 1.5, 5: 1.2, 6: 1.0, 7: 0.9, 8: 0.85 };
 
 /** XP required to advance from `level` to `level + 1`. */
 function xpRequiredForLevel(level) {
     return Math.floor(100 + 20 * Math.pow(Math.max(level - 1, 0), 1.3));
 }
 
-/** Calculate XP earned from a single game. */
+/**
+ * Calculate XP earned from a single game using multi-factor analysis.
+ *
+ * Factors weighted:
+ *   1. Base XP          – score^0.75 (diminishing returns via power curve)
+ *   2. Grid difficulty   – 6/gridSize ratio (smaller grid = harder = more XP)
+ *   3. Word quality      – average word length (sigmoid), longest word (log),
+ *                          total words found (square root)
+ *   4. Difficulty mode   – hard ×1.5
+ *   5. Game mode         – timed ×1.3, challenge speed ×1.5, challenge target ×1.35
+ *   6. Time pressure     – quadratic curve rewarding surviving longer in timed modes
+ *   7. Target words      – logarithmic stacking bonus per target completed
+ *   8. Performance vs PB – sigmoid curve (smooth bonus/penalty vs personal best)
+ *   9. Level scaling     – log₁₀ progression to keep pace with rising thresholds
+ */
 function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
-                            isChallenge, challengeType, previousBest, playerLevel }) {
+                            isChallenge, challengeType, previousBest, playerLevel,
+                            timeLimitSeconds, timeRemainingSeconds, targetWordsCompleted }) {
     if (score <= 0) return 1;
 
-    // Base XP from score
-    let xp = Math.max(1, Math.floor(score * 0.12));
+    // ═══ 1. BASE XP (power-curve diminishing returns) ═══
+    // score^0.75 rewards all ranges while compressing extremes.
+    // 100pts→16, 500pts→42, 1000pts→71, 2000pts→119, 5000pts→238
+    let xp = Math.max(1, Math.floor(0.4 * Math.pow(score, 0.75)));
 
-    // Grid-size multiplier (smaller grid = harder = more XP)
-    xp *= (GRID_XP_MULTIPLIERS[gridSize] || 1.0);
+    // ═══ 2. GRID DIFFICULTY FACTOR ═══
+    // Derived from cell-count ratio: fewer cells = harder placement.
+    // 6×6 is the reference (1.0×). 3×3→2.0×, 4×4→1.5×, 5×5→1.2×,
+    // 7×7→0.857×, 8×8→0.75×
+    const gridFactor = 6 / gridSize;
+    xp = Math.floor(xp * gridFactor);
 
-    // Difficulty multiplier
-    if (difficulty === "hard") xp *= 1.5;
+    // ═══ 3. WORD QUALITY ANALYSIS ═══
+    const wordEntries = Array.isArray(wordsFound) ? wordsFound : [];
+    const wordLengths = wordEntries
+        .map(w => (w.word || "").length)
+        .filter(l => l > 0);
+    const totalWords = wordLengths.length;
 
-    // Mode multiplier
-    if (isChallenge) {
-        xp *= challengeType === CHALLENGE_TYPES.SPEED_ROUND ? 1.4 : 1.3;
-    } else if (gameMode === GAME_MODES.TIMED) {
-        xp *= 1.3;
+    if (totalWords > 0) {
+        const avgLen = wordLengths.reduce((a, b) => a + b, 0) / totalWords;
+        const longestLen = Math.max(...wordLengths);
+
+        // a) Average word length bonus — sigmoid centered at 4.5 letters
+        //    avgLen 3→+2%, 4→+10%, 5→+24%, 6+→+30%
+        const avgBonus = 0.3 / (1 + Math.exp(-2 * (avgLen - 4.5)));
+
+        // b) Longest word bonus — log scale, caps at +20%
+        //    5-letter→+8%, 6→+13%, 7→+17%, 8+→+20%
+        const longBonus = Math.min(0.2, Math.log2(Math.max(1, longestLen - 2)) * 0.07);
+
+        // c) Word count bonus — sqrt diminishing returns (additive)
+        //    5 words→+11xp, 10→+16, 20→+22, 50→+35
+        const wordCountXP = Math.floor(5 * Math.sqrt(totalWords));
+
+        xp = Math.floor(xp * (1 + avgBonus + longBonus)) + wordCountXP;
     }
 
-    // Words-found bonus (logarithmic)
-    xp += Math.floor(Math.log2(Math.max(1, wordsFound)) * 5);
+    // ═══ 4. DIFFICULTY MULTIPLIER ═══
+    if (difficulty === "hard") xp = Math.floor(xp * 1.5);
 
-    // Performance vs personal best
+    // ═══ 5. GAME MODE MULTIPLIER ═══
+    if (isChallenge) {
+        xp = Math.floor(xp * (challengeType === CHALLENGE_TYPES.SPEED_ROUND ? 1.5 : 1.35));
+    } else if (gameMode === GAME_MODES.TIMED) {
+        xp = Math.floor(xp * 1.3);
+    }
+
+    // ═══ 6. TIME PRESSURE BONUS (timed modes only) ═══
+    // Reward surviving longer — quadratic curve so the final stretch
+    // of the timer is worth more than the opening seconds.
+    // 0% used→1.0×, 50%→1.05×, 80%→1.13×, 100%→1.2×
+    if (timeLimitSeconds > 0) {
+        const timeUsed = Math.max(0, timeLimitSeconds - (timeRemainingSeconds || 0));
+        const usageRatio = timeUsed / timeLimitSeconds;
+        xp = Math.floor(xp * (1 + 0.2 * Math.pow(usageRatio, 2)));
+    }
+
+    // ═══ 7. TARGET WORD COMPLETION BONUS ═══
+    // Logarithmic stacking: each successive target is worth more.
+    // 1 target→+12xp, 3→+48, 5→+93, 10→+230
+    if (isChallenge && challengeType === CHALLENGE_TYPES.TARGET_WORD
+        && targetWordsCompleted > 0) {
+        xp += Math.floor(targetWordsCompleted * 12
+            * Math.log2(targetWordsCompleted + 1));
+    }
+
+    // ═══ 8. PERFORMANCE VS PERSONAL BEST (sigmoid curve) ═══
+    // Smooth continuous function instead of stepped brackets.
     if (previousBest > 0) {
         const ratio = score / previousBest;
         if (score > previousBest) {
-            const improvement = Math.min((score - previousBest) / previousBest, 1.5);
-            xp = Math.floor(xp * (1 + improvement * 0.5)) + 50;
-        } else if (ratio >= 0.85) {
-            xp = Math.floor(xp * (0.85 + ratio * 0.15));
-        } else if (ratio >= 0.6) {
-            xp = Math.floor(xp * 0.7);
-        } else if (ratio >= 0.35) {
-            xp = Math.floor(xp * 0.5);
+            // New PB! Sigmoid bonus: smooth 1.0→1.7× as improvement grows.
+            // 5% over PB→1.15×, 25% over→1.45×, 50%+ over→1.65×
+            const improv = (score - previousBest) / previousBest;
+            const pbBonus = 1 + 0.7 / (1 + Math.exp(-4 * (improv - 0.25)));
+            xp = Math.floor(xp * pbBonus) + 50;
         } else {
-            xp = Math.floor(xp * 0.3);
+            // Below PB: sigmoid penalty centered at 65% of best.
+            // ratio 0.9→0.93×, 0.7→0.65×, 0.5→0.42×, 0.3→0.33×
+            const penaltyMult = 0.3 + 0.7 / (1 + Math.exp(-7 * (ratio - 0.65)));
+            xp = Math.floor(xp * penaltyMult);
         }
     }
 
-    // Level-scaling: gently increase XP earned as levels climb so the
-    // grind stays challenging but never becomes impossibly slow.
-    // At level 1 this is 1.0×, at level 100 ≈ 1.38×, at level 500 ≈ 1.72×.
+    // ═══ 9. LEVEL SCALING ═══
+    // Gentle log₁₀ progression so XP keeps pace with rising thresholds.
+    // Lv1→1.0×, Lv10→1.27×, Lv50→1.46×, Lv100→1.54×, Lv500→1.73×
     const lvl = Math.max(1, playerLevel || 1);
-    xp *= 1 + Math.log10(lvl) * 0.27;
+    xp = Math.floor(xp * (1 + Math.log10(lvl) * 0.27));
 
-    return Math.max(1, Math.floor(xp));
+    return Math.max(1, xp);
 }
 
 const BONUS_METADATA = Object.freeze({
@@ -716,16 +779,33 @@ class Grid {
             }
         }
 
-        // Deduplicate words and their cell maps
-        const seenWords = new Set();
-        const dedupedMap = [];
+        // Deduplicate: collapse identical word names, then remove any word
+        // whose cells are a strict subset of a longer word on the same line.
+        const seenKeys = new Set();
+        let dedupedMap = [];
         for (const wc of allWordCellMap) {
-            if (!seenWords.has(wc.word)) {
-                seenWords.add(wc.word);
+            // Unique key = word + sorted cell keys (same word at same position)
+            const cellKey = [...wc.cells].sort().join("|");
+            const key = wc.word + "~" + cellKey;
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key);
                 dedupedMap.push(wc);
             }
         }
-        return { words: [...new Set(foundWords)], cells: cellsToRemove, wordCellMap: dedupedMap };
+        // Sort longest-first so the subset filter is order-independent
+        dedupedMap.sort((a, b) => b.word.length - a.word.length);
+        dedupedMap = dedupedMap.filter((wc, i) => {
+            // Drop this word if a strictly longer word covers all its cells
+            for (let j = 0; j < i; j++) {
+                const longer = dedupedMap[j];
+                if (longer.word.length > wc.word.length
+                    && [...wc.cells].every(k => longer.cells.has(k))) {
+                    return false;
+                }
+            }
+            return true;
+        });
+        return { words: dedupedMap.map(wc => wc.word), cells: cellsToRemove, wordCellMap: dedupedMap };
     }
 
     // Remove cells and apply gravity. Returns list of gravity animations [{r,c,fromR}]
@@ -3380,9 +3460,21 @@ class Game {
                 this.renderer.blastProgress = 0;
                 this.pendingClearMode = "";
 
+                // Invalidate validated groups whose cells were just removed
+                this._validatedWordGroups = this._validatedWordGroups.filter(g => {
+                    for (const key of this._pendingClearCells) {
+                        if (g.cells.has(key)) return false;
+                    }
+                    return true;
+                });
+                this._rebuildValidatedCells();
+
                 // Apply gravity
                 const moves = this.grid.applyGravity();
                 if (moves.length > 0) {
+                    // Gravity shifts cells — clear all validated groups (rescan will re-detect)
+                    this._validatedWordGroups = [];
+                    this._rebuildValidatedCells();
                     this.pendingGravityMoves = moves.map(m => ({ ...m, progress: 0 }));
                     this.renderer.gravityAnims = this.pendingGravityMoves;
                     this.clearPhase = "gravity";
@@ -3544,7 +3636,7 @@ class Game {
             const lvlInfo = this.profileMgr.getLevelInfo();
             xpEarned = calculateGameXP({
                 score: this.score,
-                wordsFound: wordsCount.length,
+                wordsFound: wordsCount,
                 gridSize: gs,
                 difficulty: this.difficulty,
                 gameMode: this.gameMode,
@@ -3552,6 +3644,9 @@ class Game {
                 challengeType: this.activeChallenge,
                 previousBest,
                 playerLevel: lvlInfo.level,
+                timeLimitSeconds: this.timeLimitSeconds,
+                timeRemainingSeconds: this.timeRemainingSeconds,
+                targetWordsCompleted: this.targetWordsCompleted || 0,
             });
         }
 
@@ -4694,11 +4789,11 @@ class Game {
             // ═══ CHALLENGES ═══
             {
                 id: 'challenges', icon: '🏆', label: 'Challenges',
-                desc: 'Special 5-minute timed modes with unique twists',
+                desc: 'Special timed modes with unique twists',
                 slides: [
                     {
                         title: 'Target Word',
-                        desc: 'In Target Word challenge, a specific word (3-5 letters) appears at the top of the screen. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! When you do, you earn a 200-point bonus on top of the normal word score, and a new target word is assigned. All challenges are 5 minutes long, use Casual difficulty, and are limited to 6×6, 7×7, or 8×8 grids. Your stats are tracked separately for each challenge!',
+                        desc: 'In Target Word challenge, a specific word (3-5 letters) appears at the top of the screen. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! When you do, you earn a 200-point bonus on top of the normal word score, and a new target word is assigned. All challenges are 7 minutes long, use Casual difficulty, and are limited to 6×6, 7×7, or 8×8 grids. Your stats are tracked separately for each challenge!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, 15);
                             gBg(ctx, ox, oy, cs, gs);
@@ -5095,7 +5190,7 @@ class Game {
                 slides: [
                     {
                         title: 'How XP Works',
-                        desc: 'Every game you play earns you experience points (XP). When your XP bar fills up, you level up! XP is based on your score, grid size, difficulty, and game mode. Smaller grids, Hard mode, Timed games, and Challenges all multiply your XP. Beat your own personal best in any mode for a big bonus!',
+                        desc: 'Every game earns XP based on multiple factors: your score, grid size (smaller grids give more XP!), word quality (longer words = bigger bonus), difficulty, game mode, time pressure, and how you perform against your personal best. Finding long words, beating your high score, surviving timed modes, and playing on small grids all boost your XP!',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -5638,10 +5733,14 @@ class Game {
     // ── Target Word: tap-to-claim ──
 
     _addValidatedWords(result, words) {
-        // Use per-word cell mapping from the detection result
+        // Use per-word cell mapping from the detection result.
+        // Process longest words first so shorter subsets are always caught.
         const newWordSet = new Set(words);
-        for (const wc of result.wordCellMap) {
-            if (!newWordSet.has(wc.word)) continue;
+        const incoming = result.wordCellMap
+            .filter(wc => newWordSet.has(wc.word))
+            .sort((a, b) => b.word.length - a.word.length);
+
+        for (const wc of incoming) {
             const newCells = new Set(wc.cells);
 
             // Skip if these exact cells are already validated
@@ -5652,7 +5751,7 @@ class Game {
             });
             if (alreadyValidated) continue;
 
-            // If a longer existing word already covers all these cells, skip the shorter word
+            // If a longer (or equal-length) existing word already covers all these cells, skip
             const coveredByLonger = this._validatedWordGroups.some(g =>
                 g.word.length >= wc.word.length && [...newCells].every(k => g.cells.has(k))
             );
@@ -6016,9 +6115,9 @@ class Game {
 
         let tutorialText = "";
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
-            tutorialText = "A target word appears at the top of the screen. Spelling the target word earns 200 bonus points! A new target word is picked each time you complete one. Game lasts 5 minutes.";
+            tutorialText = "A target word appears at the top of the screen. Spelling the target word earns 200 bonus points! A new target word is picked each time you complete one. Game lasts 7 minutes.";
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
-            tutorialText = "Blocks start falling at normal speed but get faster every 500 points! The fall speed keeps increasing until you can barely keep up. Game lasts 5 minutes — score as high as you can!";
+            tutorialText = "Blocks start falling at normal speed but get faster every 500 points! The fall speed keeps increasing until you can barely keep up. Game lasts 3 minutes — score as high as you can!";
         }
         this.els.challengeTutorialText.textContent = tutorialText;
 
