@@ -528,13 +528,13 @@ html, body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 28px 40px;
-    border-radius: 18px;
+    gap: 8px;
+    padding: 22px 28px;
+    border-radius: 16px;
     background: linear-gradient(135deg, #ff69b4, #ff1493);
     box-shadow: 0 0 40px rgba(255, 105, 180, 0.6), 0 8px 32px rgba(0, 0, 0, 0.4);
     animation: bonusCardIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    max-width: min(85vw, 340px);
+    max-width: min(80vw, 300px);
     box-sizing: border-box;
 }
 
@@ -804,9 +804,9 @@ body.touch-input #mobile-controls {
     z-index: 10;
     align-items: center;
     justify-content: center;
-    padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
+    padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right)) calc(12px + var(--safe-bottom)) calc(12px + var(--safe-left));
     box-sizing: border-box;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .overlay.active {
@@ -817,29 +817,31 @@ body.touch-input #mobile-controls {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
-    padding: 24px 20px;
+    gap: 12px;
+    padding: 22px 18px;
     background: #222;
-    border-radius: 16px;
+    border-radius: 14px;
     border: 2px solid #555;
-    width: min(90vw, 400px);
-    max-width: 100%;
-    max-height: calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom));
+    width: min(90vw, 380px);
+    max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
+    max-height: calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom));
     overflow-y: auto;
+    overflow-x: hidden;
     box-sizing: border-box;
     flex-shrink: 1;
 }
 
 .letter-choice-content {
     position: relative;
-    width: min(88vw, 420px);
-    max-width: 100%;
+    width: min(88vw, 380px);
+    max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
     box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 .letter-choice-content #letter-choice-text {
-    font-size: 0.88rem;
-    line-height: 1.4;
+    font-size: 0.85rem;
+    line-height: 1.35;
 }
 
 .letter-choice-close-btn {
@@ -1477,10 +1479,10 @@ body.touch-input #mobile-controls {
 
 /* ---------- Playlist Modal ---------- */
 .modal-wide {
-    width: min(90vw, 440px);
-    max-width: 100%;
-    max-height: 80vh;
-    max-height: min(80vh, calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom)));
+    width: min(90vw, 400px);
+    max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
+    max-height: min(80vh, calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom)));
+    overflow-x: hidden;
 }
 
 .text-input {
@@ -1626,22 +1628,22 @@ body.touch-input #mobile-controls {
     }
 
     .overlay-content {
-        padding: 20px 16px;
-        gap: 12px;
-        width: min(92vw, 380px);
+        padding: 18px 14px;
+        gap: 10px;
+        width: min(92vw, 360px);
     }
 
     .overlay-content h2 {
-        font-size: 1.15rem;
+        font-size: 1.1rem;
     }
 
     .overlay-content .subtitle {
-        font-size: 0.85rem;
+        font-size: 0.82rem;
     }
 
     .letter-choice-content,
     .modal-wide {
-        width: min(92vw, 360px);
+        width: min(92vw, 340px);
     }
 
     #letter-choice-grid {
@@ -1649,13 +1651,13 @@ body.touch-input #mobile-controls {
     }
 
     .letter-choice-btn {
-        min-height: 40px;
-        font-size: 1.05rem;
+        min-height: 38px;
+        font-size: 1rem;
     }
 
     .letter-choice-preview {
-        min-height: 72px;
-        font-size: 2.4rem;
+        min-height: 64px;
+        font-size: 2.2rem;
     }
 
     #score-bar {
@@ -1776,13 +1778,13 @@ body.touch-input #mobile-controls {
     }
 
     .overlay-content {
-        padding: 20px 16px;
+        padding: 18px 14px;
         gap: 10px;
     }
 
     .letter-choice-preview {
-        min-height: 64px;
-        font-size: 2.4rem;
+        min-height: 56px;
+        font-size: 2rem;
     }
 
     .play-hint-btn {
@@ -1920,41 +1922,44 @@ body.touch-input #mobile-controls {
     }
 
     .overlay {
-        padding: calc(10px + var(--safe-top)) calc(10px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(10px + var(--safe-left));
+        padding: calc(8px + var(--safe-top)) calc(8px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left));
     }
 
     .overlay-content {
-        padding: 16px 12px;
+        padding: 14px 12px;
         gap: 8px;
-        width: min(94vw, 340px);
+        width: min(94vw, 320px);
+        border-radius: 12px;
     }
 
     .overlay-content h2 {
-        font-size: 1.05rem;
+        font-size: 1rem;
+        margin: 0;
     }
 
     .overlay-content .subtitle {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
     }
 
     .letter-choice-content,
     .modal-wide {
-        width: min(94vw, 320px);
+        width: min(94vw, 300px);
     }
 
     #letter-choice-grid {
         grid-template-columns: repeat(5, 1fr);
-        gap: 5px;
+        gap: 4px;
     }
 
     .letter-choice-btn {
-        min-height: 36px;
-        font-size: 0.95rem;
+        min-height: 34px;
+        font-size: 0.92rem;
     }
 
     .letter-choice-preview {
-        min-height: 60px;
-        font-size: 2.2rem;
+        min-height: 50px;
+        font-size: 1.8rem;
+        border-radius: 10px;
     }
 
     .modal-buttons {
@@ -1963,8 +1968,8 @@ body.touch-input #mobile-controls {
 
     .modal-buttons .primary-btn,
     .modal-buttons .secondary-btn {
-        padding: 10px 16px;
-        font-size: 0.92rem;
+        padding: 9px 14px;
+        font-size: 0.88rem;
     }
 
     .time-select-btn,
