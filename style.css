@@ -806,7 +806,7 @@ body.touch-input #mobile-controls {
     justify-content: center;
     padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
     box-sizing: border-box;
-    overflow: hidden;
+    overflow-y: auto;
 }
 
 .overlay.active {
@@ -817,16 +817,17 @@ body.touch-input #mobile-controls {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
-    padding: 32px;
+    gap: 14px;
+    padding: 24px 20px;
     background: #222;
     border-radius: 16px;
     border: 2px solid #555;
     width: min(90vw, 400px);
     max-width: 100%;
-    max-height: 100%;
+    max-height: calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom));
     overflow-y: auto;
     box-sizing: border-box;
+    flex-shrink: 1;
 }
 
 .letter-choice-content {
@@ -834,6 +835,11 @@ body.touch-input #mobile-controls {
     width: min(88vw, 420px);
     max-width: 100%;
     box-sizing: border-box;
+}
+
+.letter-choice-content #letter-choice-text {
+    font-size: 0.88rem;
+    line-height: 1.4;
 }
 
 .letter-choice-close-btn {
@@ -859,14 +865,14 @@ body.touch-input #mobile-controls {
 
 .letter-choice-preview {
     width: 100%;
-    min-height: 104px;
+    min-height: 80px;
     display: flex;
     align-items: center;
     justify-content: center;
     border: 2px solid #6a4a1b;
-    border-radius: 16px;
+    border-radius: 12px;
     background: radial-gradient(circle at center, rgba(255, 192, 64, 0.2), rgba(90, 28, 0, 0.5));
-    font-size: 3.2rem;
+    font-size: 2.8rem;
     line-height: 1;
 }
 
@@ -1620,8 +1626,17 @@ body.touch-input #mobile-controls {
     }
 
     .overlay-content {
-        padding: 24px 18px;
+        padding: 20px 16px;
+        gap: 12px;
         width: min(92vw, 380px);
+    }
+
+    .overlay-content h2 {
+        font-size: 1.15rem;
+    }
+
+    .overlay-content .subtitle {
+        font-size: 0.85rem;
     }
 
     .letter-choice-content,
@@ -1630,12 +1645,17 @@ body.touch-input #mobile-controls {
     }
 
     #letter-choice-grid {
-        gap: 8px;
+        gap: 6px;
+    }
+
+    .letter-choice-btn {
+        min-height: 40px;
+        font-size: 1.05rem;
     }
 
     .letter-choice-preview {
-        min-height: 90px;
-        font-size: 2.8rem;
+        min-height: 72px;
+        font-size: 2.4rem;
     }
 
     #score-bar {
@@ -1756,8 +1776,13 @@ body.touch-input #mobile-controls {
     }
 
     .overlay-content {
-        padding: 22px 18px;
-        gap: 12px;
+        padding: 20px 16px;
+        gap: 10px;
+    }
+
+    .letter-choice-preview {
+        min-height: 64px;
+        font-size: 2.4rem;
     }
 
     .play-hint-btn {
@@ -1899,9 +1924,17 @@ body.touch-input #mobile-controls {
     }
 
     .overlay-content {
-        padding: 18px 14px;
-        gap: 10px;
+        padding: 16px 12px;
+        gap: 8px;
         width: min(94vw, 340px);
+    }
+
+    .overlay-content h2 {
+        font-size: 1.05rem;
+    }
+
+    .overlay-content .subtitle {
+        font-size: 0.8rem;
     }
 
     .letter-choice-content,
@@ -1911,12 +1944,27 @@ body.touch-input #mobile-controls {
 
     #letter-choice-grid {
         grid-template-columns: repeat(5, 1fr);
-        gap: 6px;
+        gap: 5px;
+    }
+
+    .letter-choice-btn {
+        min-height: 36px;
+        font-size: 0.95rem;
     }
 
     .letter-choice-preview {
-        min-height: 86px;
-        font-size: 2.6rem;
+        min-height: 60px;
+        font-size: 2.2rem;
+    }
+
+    .modal-buttons {
+        gap: 8px;
+    }
+
+    .modal-buttons .primary-btn,
+    .modal-buttons .secondary-btn {
+        padding: 10px 16px;
+        font-size: 0.92rem;
     }
 
     .time-select-btn,
