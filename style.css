@@ -657,6 +657,11 @@ body.touch-input #canvas-wrapper {
     flex-shrink: 0;
 }
 
+/* Hidden by default — shown via desktop media query */
+#keyboard-hints {
+    display: none;
+}
+
 .control-btn {
     flex: 1;
     max-width: 100px;
@@ -785,6 +790,238 @@ body.touch-input #canvas-wrapper {
 @media (min-width: 769px) and (hover: hover) {
     #mobile-controls {
         display: none;
+    }
+}
+
+/* ========================================
+   DESKTOP-FRIENDLY LAYOUT
+   Only applies on wide screens with mouse.
+   Mobile is completely untouched.
+   ======================================== */
+@media (min-width: 769px) and (hover: hover) {
+
+    /* ── Container: unlock from narrow mobile frame ── */
+    #game-container {
+        max-width: 540px;
+        border-left: 1px solid #2a2a2a;
+        border-right: 1px solid #2a2a2a;
+        box-shadow: 0 0 60px rgba(0, 0, 0, 0.5);
+    }
+
+    /* ── Screens: comfortable desktop padding ── */
+    .screen {
+        padding: 28px 28px 28px 28px;
+        gap: 18px;
+    }
+
+    #play-screen {
+        padding: 12px 14px 4px 14px;
+    }
+
+    /* ── Title: scale up for big monitors ── */
+    .title {
+        font-size: 3.4rem;
+    }
+
+    .subtitle {
+        font-size: 1.2rem;
+    }
+
+    /* ── Buttons: bigger click targets, more padding ── */
+    .primary-btn {
+        padding: 16px 56px;
+        font-size: 1.4rem;
+        border-radius: 14px;
+    }
+
+    .secondary-btn {
+        padding: 14px 44px;
+        font-size: 1.15rem;
+        border-radius: 14px;
+    }
+
+    .primary-btn:hover {
+        background: #ffe44d;
+        transform: scale(1.02);
+    }
+
+    .secondary-btn:hover {
+        background: #555;
+        transform: scale(1.02);
+    }
+
+    /* ── Score Bar: scale for readability ── */
+    #score-bar {
+        padding: 10px 68px 10px 20px;
+    }
+
+    .score-value {
+        font-size: 1.55rem;
+    }
+
+    .score-label {
+        font-size: 0.8rem;
+    }
+
+    /* ── Canvas area: more breathing room ── */
+    #canvas-wrapper {
+        max-width: 540px;
+    }
+
+    /* ── Next letter display ── */
+    #next-letter-display {
+        font-size: 1.05rem;
+        padding: 6px 0;
+    }
+
+    #next-letter {
+        font-size: 1.3rem;
+    }
+
+    /* ── FAB Buttons: bigger on desktop ── */
+    .play-pause-btn {
+        width: 52px;
+        height: 52px;
+        font-size: 1.35rem;
+    }
+
+    .play-hint-btn {
+        width: 46px;
+        height: 46px;
+        font-size: 1.25rem;
+    }
+
+    .global-mute-btn {
+        width: 46px;
+        height: 46px;
+        font-size: 1.4rem;
+    }
+
+    /* ── Overlays & Modals: wider on desktop ── */
+    .overlay-content {
+        width: min(90vw, 440px);
+        padding: 28px 24px;
+        gap: 14px;
+    }
+
+    .modal-panel {
+        max-width: 460px;
+    }
+
+    .modal-panel-header h2 {
+        font-size: 1.5rem;
+    }
+
+    /* ── Grid size / difficulty selector buttons ── */
+    .game-mode-btn {
+        padding: 12px 24px;
+        font-size: 1.05rem;
+    }
+
+    /* ── Profile cards: roomier ── */
+    .profile-card {
+        padding: 16px 20px;
+        gap: 14px;
+    }
+
+    .profile-avatar {
+        width: 48px;
+        height: 48px;
+        font-size: 1.3rem;
+    }
+
+    .profile-name {
+        font-size: 1.15rem;
+    }
+
+    /* ── Game over screen ── */
+    #final-score-text {
+        font-size: 2.3rem;
+    }
+
+    #new-high-score-text {
+        font-size: 1.5rem;
+    }
+
+    /* ── Words found ── */
+    .word-found-item {
+        padding: 12px 16px;
+    }
+
+    .word-found-text {
+        font-size: 1.15rem;
+    }
+
+    /* ── Challenges screen ── */
+    #challenges-grid {
+        max-width: 480px;
+        gap: 18px;
+    }
+
+    .challenge-card {
+        padding: 14px;
+    }
+
+    /* ── Music screen ── */
+    #now-playing-bar {
+        max-width: 540px;
+    }
+
+    /* ── Word popup: slightly larger letters ── */
+    .word-popup-letter {
+        width: 36px;
+        height: 42px;
+        font-size: 1.5rem;
+    }
+
+    /* ── Tutorial slides ── */
+    .tutorial-slide-title {
+        font-size: 1.3rem;
+    }
+
+    .tutorial-slide-desc {
+        font-size: 0.98rem;
+    }
+
+    /* ── Keyboard hints (desktop only) ── */
+    #keyboard-hints {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        padding: 6px 0 10px;
+        width: 100%;
+        max-width: 500px;
+        flex-shrink: 0;
+    }
+
+    .kb-hint {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #666;
+        font-size: 0.75rem;
+        letter-spacing: 0.03em;
+    }
+
+    .kb-key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 26px;
+        height: 24px;
+        padding: 0 6px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #999;
+        font-size: 0.7rem;
+        font-family: monospace;
+        font-weight: bold;
+    }
+
+    /* ── Category pick buttons: roomier ── */
+    .category-pick-btn {
+        padding: 12px 8px;
     }
 }
 

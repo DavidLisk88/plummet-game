@@ -1209,7 +1209,7 @@ ferment fig flavor fondue food fork fried frosting fry fudge garlic garnish ging
 gourmet gravy grill grind guacamole hamburger herb honey jam jelly julienne kale
 ketchup kettle knead lamb lemon lettuce lime lunch macaroni mango marinate mayo
 meal meat meatball melt melon menu microwave morsel mousse muffin mushroom mustard
-noodle nut oatmeal olive onion orange oyster pancake panini parfait parsley pasta
+noodle nut oat oatmeal olive onion orange oyster pancake panini parfait parsley pasta
 pastry peach peanut pear pepper pepperoni pickle pie pineapple pizza platter poach
 popcorn pork potato poultry pretzel produce pudding pumpkin puree ramekin raspberry
 recipe rice risotto roast rotisserie salad salmon salsa sandwich sardine sauce
@@ -1396,11 +1396,22 @@ function main() {
     };
     const categories = {};
     for (const [key, def] of Object.entries(categoryDefs)) {
-        const catWords = def.words
-            .map(w => w.toUpperCase())
-            .filter(w => filteredSet.has(w));
-        categories[key] = { label: def.label, icon: def.icon, words: [...new Set(catWords)].sort() };
-        console.log(`  Category "${def.label}": ${categories[key].words.length} words`);
+        const baseWords = def.words.map(w => w.toUpperCase()).filter(w => filteredSet.has(w));
+        // Expand: also include inflected forms (plurals, verb forms) that exist in dictionary
+        const expanded = new Set(baseWords);
+        for (const base of baseWords) {
+            const bl = base.toLowerCase();
+            for (const form of pluralize(bl)) {
+                const uf = form.toUpperCase();
+                if (filteredSet.has(uf)) expanded.add(uf);
+            }
+            for (const form of verbForms(bl)) {
+                const uf = form.toUpperCase();
+                if (filteredSet.has(uf)) expanded.add(uf);
+            }
+        }
+        categories[key] = { label: def.label, icon: def.icon, words: [...expanded].sort() };
+        console.log(`  Category "${def.label}": ${categories[key].words.length} words (${categories[key].words.length - baseWords.length} inflected)`);
     }
 
     const output = { words: filtered, categories };
