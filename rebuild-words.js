@@ -1199,7 +1199,7 @@ dongle emulate endpoint executable freeware frontend fullstack gpu hotfix
 hyperlink infrared inkjet intranet kernel keychain keystroke latency macro
 mainframe markup megapixel metadata middleware phishing pipeline sandbox
 snippet spam spyware subnet syntax taskbar trojan typeface uninstall unzip
-uptime voicemail vpn webinar webpage whitelist wizard
+uptime voicemail vpn webinar webpage whitelist wizard igloo fend
 `.split(/\s+/).filter(w => w.length >= 2);
 
 // ─── Contractions (apostrophe removed) ─────────────────────────────
@@ -1336,7 +1336,7 @@ weed weeping
 acorn bamboo blizzard bog bulb clover cyclone dandelion dewdrop fjord flint
 geode geyser humus lichen magma mangrove monsoon mound opal pollen quarry
 quartz sapling savanna seashell seedling silt sleet spruce steppe sycamore
-tempest thistle twig willow cypress
+tempest thistle twig willow cypress igloo
 `.split(/\s+/).filter(w => w.length >= 3);
 
 const CATEGORY_TECHNOLOGY = `

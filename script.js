@@ -388,10 +388,10 @@ const BONUS_METADATA = Object.freeze({
     },
     [BONUS_TYPES.ROW_CLEAR]: {
         buttonLabel: "Bonus: Row",
-        buttonTitle: "Clear the bottom row of the grid",
+        buttonTitle: "Drag across a row to clear it",
         modalTitle: "Row Clear Bonus",
-        modalText: "Accept to instantly clear the entire bottom row of the grid.",
-        acceptLabel: "Clear Row",
+        modalText: "Drag your finger or mouse across any row to clear it! Letters turn green as you drag. Swipe the entire row to complete the bonus.",
+        acceptLabel: "Start Dragging",
         previewSymbol: "🧹",
     },
     [BONUS_TYPES.FREEZE]: {
@@ -924,6 +924,7 @@ class Renderer {
         this.shuffleAnims = [];        // {letter, fromRow, fromCol, toRow, toCol, progress}
         this.hintCells = new Set();    // cells glowing orange (hint mode)
         this.validatedCells = new Set(); // cells highlighted green (target word challenge)
+        this.rowDragCells = new Set();   // cells highlighted green during row-drag bonus
         this.blastCells = new Set();
         this.blastCenterKey = null;
         this.blastProgress = 0;
@@ -1060,6 +1061,15 @@ class Renderer {
                     ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
                 }
 
+                // Row drag cells glow (green) — interactive row clear bonus
+                if (this.rowDragCells.has(key) && !this.flashCells.has(key) && !isBlastCell) {
+                    ctx.fillStyle = "rgba(0, 200, 80, 0.35)";
+                    ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+                    ctx.strokeStyle = "rgba(0, 220, 100, 0.9)";
+                    ctx.lineWidth = 2.5;
+                    ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
+                }
+
                 // Flash effect
                 if (this.flashCells.has(key) && !isBlastCell) {
                     const alpha = 0.5 + 0.5 * Math.sin(this.flashTimer * 15);
@@ -1071,7 +1081,8 @@ class Renderer {
                 const letter = grid.get(r, c);
                 if (letter && this.shuffleAnims.length === 0) {
                     let color = "#fff";
-                    if (this.validatedCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for validated
+                    if (this.rowDragCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for row drag
+                    else if (this.validatedCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for validated
                     else if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#da70d6"; // orchid purple for wildcards
                     let scale = 1;
                     let alpha = 1;
@@ -1919,6 +1930,7 @@ class Game {
             freezeIndicator: document.getElementById("freeze-indicator"),
             freezeTimer: document.getElementById("freeze-timer"),
             score2xIndicator: document.getElementById("score-2x-indicator"),
+            rowDragIndicator: document.getElementById("row-drag-indicator"),
             bgCanvas: document.getElementById("bg-canvas"),
             // Level / XP
             levelBar: document.getElementById("level-bar"),
@@ -1986,6 +1998,12 @@ class Game {
         this.freezeTimeRemaining = 0;
         this.scoreMultiplier = 1;
 
+        // Row drag state
+        this.rowDragActive = false;
+        this.rowDragRow = -1;
+        this.rowDragStartCol = -1;
+        this.rowDragCurrentCol = -1;
+
         // Challenge state
         this.activeChallenge = null; // null or CHALLENGE_TYPES value
         this._gameOverChallenge = null;
@@ -2008,6 +2026,7 @@ class Game {
         this._bindProfiles();
         this._bindLetterChoice();
         this._bindCanvasTap();
+        this._bindRowDrag();
         this._bindLevelUpUI();
         this._initMutePref();
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
@@ -2179,7 +2198,13 @@ class Game {
         });
         this.els.wordsFoundBackBtn.addEventListener("click", () => this._closeWordsFound());
 
-        this.els.bonusBtn.addEventListener("click", () => this._openLetterChoiceModal());
+        this.els.bonusBtn.addEventListener("click", () => {
+            if (this.rowDragActive) {
+                this._cancelRowDragMode();
+                return;
+            }
+            this._openLetterChoiceModal();
+        });
 
         // Music menu button
         this.els.musicMenuBtn.addEventListener("click", () => {
@@ -2447,7 +2472,7 @@ class Game {
     _bindInput() {
         // Keyboard
         document.addEventListener("keydown", (e) => {
-            if (this.state !== State.PLAYING || this.clearing) return;
+            if (this.state !== State.PLAYING || this.clearing || this.rowDragActive) return;
             if (!this.block) return;
             switch (e.code) {
                 case "ArrowLeft":
@@ -2478,7 +2503,7 @@ class Game {
         const preventAndDo = (el, fn) => {
             const handler = (e) => {
                 e.preventDefault();
-                if (this.state === State.PLAYING && !this.clearing && this.block) fn();
+                if (this.state === State.PLAYING && !this.clearing && !this.rowDragActive && this.block) fn();
             };
 
             if (window.PointerEvent) {
@@ -2518,7 +2543,7 @@ class Game {
         };
 
         const moveSwipe = (clientX, clientY) => {
-            if (!this.swipeState || this.state !== State.PLAYING || this.clearing || !this.block) return;
+            if (!this.swipeState || this.state !== State.PLAYING || this.clearing || this.rowDragActive || !this.block) return;
 
             const totalDx = clientX - this.swipeState.startX;
             const totalDy = clientY - this.swipeState.startY;
@@ -2556,7 +2581,7 @@ class Game {
         if (window.PointerEvent) {
             swipeSurface.addEventListener("pointerdown", (e) => {
                 if (e.pointerType === "mouse") return;
-                if (this.state !== State.PLAYING || this.clearing || !this.block) return;
+                if (this.state !== State.PLAYING || this.clearing || this.rowDragActive || !this.block) return;
                 startSwipe(e.clientX, e.clientY, e.pointerId);
             });
             swipeSurface.addEventListener("pointermove", (e) => {
@@ -2570,7 +2595,7 @@ class Game {
         }
 
         swipeSurface.addEventListener("touchstart", (e) => {
-            if (this.state !== State.PLAYING || this.clearing || !this.block) return;
+            if (this.state !== State.PLAYING || this.clearing || this.rowDragActive || !this.block) return;
             const touch = e.changedTouches[0];
             if (!touch) return;
             startSwipe(touch.clientX, touch.clientY, touch.identifier);
@@ -2871,6 +2896,13 @@ class Game {
     }
 
     _updateBonusButton() {
+        if (this.rowDragActive) {
+            this.els.bonusBtn.classList.remove("hidden");
+            this.els.bonusBtn.textContent = "Cancel Row";
+            this.els.bonusBtn.title = "Cancel row clear bonus";
+            this.els.bonusBtn.disabled = false;
+            return;
+        }
         const canUseBonus = Boolean(this.availableBonusType);
         const bonusMeta = canUseBonus ? BONUS_METADATA[this.availableBonusType] : null;
         this.els.bonusBtn.classList.toggle("hidden", !canUseBonus);
@@ -3072,8 +3104,8 @@ class Game {
             this.block.letter = WILDCARD_SYMBOL;
             this._closeLetterChoiceModal(true);
         } else if (type === BONUS_TYPES.ROW_CLEAR) {
-            this._executeRowClear();
-            this._closeLetterChoiceModal(true);
+            this._startRowDragMode();
+            this._closeLetterChoiceModal(false);
         } else if (type === BONUS_TYPES.FREEZE) {
             this.freezeActive = true;
             this.freezeTimeRemaining = FREEZE_DURATION;
@@ -3129,6 +3161,157 @@ class Game {
         this.renderer.blastProgress = 0;
         this.renderer.spawnParticles(cellsToClear);
         this._pendingClearCells = cellsToClear;
+    }
+
+    _executeRowClearAtRow(targetRow) {
+        const cellsToClear = new Set();
+        for (let c = 0; c < this.grid.cols; c++) {
+            if (this.grid.get(targetRow, c) !== null) {
+                cellsToClear.add(`${targetRow},${c}`);
+            }
+        }
+        if (cellsToClear.size === 0) return;
+
+        this.clearing = true;
+        this.clearPhase = "flash";
+        this.clearTimer = 0;
+        this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
+        this.pendingClearMode = "words";
+        this.renderer.flashCells = new Set(cellsToClear);
+        this.renderer.blastCells.clear();
+        this.renderer.blastCenterKey = null;
+        this.renderer.blastProgress = 0;
+        this.renderer.spawnParticles(cellsToClear);
+        this._pendingClearCells = cellsToClear;
+    }
+
+    _startRowDragMode() {
+        this.rowDragActive = true;
+        this.rowDragRow = -1;
+        this.rowDragStartCol = -1;
+        this.rowDragCurrentCol = -1;
+        this.renderer.rowDragCells.clear();
+        this.els.rowDragIndicator.classList.remove("hidden");
+        this._updateBonusButton();
+    }
+
+    _cancelRowDragMode() {
+        this.rowDragActive = false;
+        this.rowDragRow = -1;
+        this.rowDragStartCol = -1;
+        this.rowDragCurrentCol = -1;
+        this.renderer.rowDragCells.clear();
+        this.els.rowDragIndicator.classList.add("hidden");
+        this._updateBonusButton();
+    }
+
+    _clientToGridCell(clientX, clientY) {
+        const rect = this.renderer.canvas.getBoundingClientRect();
+        const scaleX = this.renderer.canvas.width / (window.devicePixelRatio || 1) / rect.width;
+        const scaleY = this.renderer.canvas.height / (window.devicePixelRatio || 1) / rect.height;
+        const px = (clientX - rect.left) * scaleX;
+        const py = (clientY - rect.top) * scaleY;
+        return this.renderer.pixelToCell(px, py);
+    }
+
+    _handleRowDragStart(clientX, clientY) {
+        if (!this.rowDragActive || !this.grid) return;
+        const { row, col } = this._clientToGridCell(clientX, clientY);
+        if (row < 0 || row >= this.grid.rows || col < 0 || col >= this.grid.cols) return;
+        // Must start on a cell that has a letter
+        if (this.grid.get(row, col) === null) return;
+
+        this.rowDragRow = row;
+        this.rowDragStartCol = col;
+        this.rowDragCurrentCol = col;
+        this._updateRowDragHighlight();
+    }
+
+    _handleRowDragMove(clientX, clientY) {
+        if (!this.rowDragActive || this.rowDragRow < 0 || !this.grid) return;
+        const { row, col } = this._clientToGridCell(clientX, clientY);
+        // Clamp col to grid bounds
+        const clampedCol = Math.max(0, Math.min(this.grid.cols - 1, col));
+
+        // If dragged to a different row, reset to that row if it has letters
+        if (row !== this.rowDragRow && row >= 0 && row < this.grid.rows) {
+            // Check if the new row has any letters
+            let hasLetters = false;
+            for (let c = 0; c < this.grid.cols; c++) {
+                if (this.grid.get(row, c) !== null) { hasLetters = true; break; }
+            }
+            if (hasLetters) {
+                this.rowDragRow = row;
+                this.rowDragStartCol = clampedCol;
+            }
+        }
+
+        this.rowDragCurrentCol = clampedCol;
+        this._updateRowDragHighlight();
+    }
+
+    _handleRowDragEnd() {
+        if (!this.rowDragActive || this.rowDragRow < 0 || !this.grid) {
+            // Reset partial state
+            this.rowDragRow = -1;
+            this.rowDragStartCol = -1;
+            this.rowDragCurrentCol = -1;
+            this.renderer.rowDragCells.clear();
+            return;
+        }
+
+        // Check if all non-empty cells in the row are highlighted
+        const row = this.rowDragRow;
+        let allCovered = true;
+        for (let c = 0; c < this.grid.cols; c++) {
+            if (this.grid.get(row, c) !== null && !this.renderer.rowDragCells.has(`${row},${c}`)) {
+                allCovered = false;
+                break;
+            }
+        }
+
+        if (allCovered) {
+            // Complete the bonus!
+            this._completeRowDrag();
+        } else {
+            // Not complete — reset the drag so player can try again
+            this.rowDragRow = -1;
+            this.rowDragStartCol = -1;
+            this.rowDragCurrentCol = -1;
+            this.renderer.rowDragCells.clear();
+        }
+    }
+
+    _updateRowDragHighlight() {
+        this.renderer.rowDragCells.clear();
+        if (this.rowDragRow < 0) return;
+
+        const minCol = Math.min(this.rowDragStartCol, this.rowDragCurrentCol);
+        const maxCol = Math.max(this.rowDragStartCol, this.rowDragCurrentCol);
+        for (let c = minCol; c <= maxCol; c++) {
+            if (this.grid.get(this.rowDragRow, c) !== null) {
+                this.renderer.rowDragCells.add(`${this.rowDragRow},${c}`);
+            }
+        }
+    }
+
+    _completeRowDrag() {
+        const row = this.rowDragRow;
+        // End drag mode
+        this.rowDragActive = false;
+        this.rowDragRow = -1;
+        this.rowDragStartCol = -1;
+        this.rowDragCurrentCol = -1;
+        this.renderer.rowDragCells.clear();
+        this.els.rowDragIndicator.classList.add("hidden");
+
+        // Consume the bonus
+        this.availableBonusType = null;
+        this.nextBonusScore = this.score + BONUS_UNLOCK_SCORE_INTERVAL;
+        this._updateBonusButton();
+
+        // Execute the actual row clear at the selected row
+        this._executeRowClearAtRow(row);
     }
 
     _executeShuffle() {
@@ -3334,8 +3517,14 @@ class Game {
         this.freezeActive = false;
         this.freezeTimeRemaining = 0;
         this.scoreMultiplier = 1;
+        this.rowDragActive = false;
+        this.rowDragRow = -1;
+        this.rowDragStartCol = -1;
+        this.rowDragCurrentCol = -1;
+        this.renderer.rowDragCells.clear();
         this.els.freezeIndicator.classList.add("hidden");
         this.els.score2xIndicator.classList.add("hidden");
+        this.els.rowDragIndicator.classList.add("hidden");
 
         // Restore challenge-specific state
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
@@ -3433,8 +3622,14 @@ class Game {
         this.freezeActive = false;
         this.freezeTimeRemaining = 0;
         this.scoreMultiplier = 1;
+        this.rowDragActive = false;
+        this.rowDragRow = -1;
+        this.rowDragStartCol = -1;
+        this.rowDragCurrentCol = -1;
+        this.renderer.rowDragCells.clear();
         this.els.freezeIndicator.classList.add("hidden");
         this.els.score2xIndicator.classList.add("hidden");
+        this.els.rowDragIndicator.classList.add("hidden");
 
         // Reset challenge state (activeChallenge is set before calling this for challenges)
         this.targetWord = null;
@@ -3759,6 +3954,9 @@ class Game {
         this.audio.gameOver();
         this.renderer.hintCells = new Set();
         this.renderer.validatedCells = new Set();
+        this.renderer.rowDragCells.clear();
+        this.rowDragActive = false;
+        this.els.rowDragIndicator.classList.add("hidden");
         this._activeHintKey = null;
         this._validatedWordGroups = [];
         this._claimAnimating = false;
@@ -6059,6 +6257,7 @@ class Game {
     _handleCanvasTap(clientX, clientY) {
         if (this._validatedWordGroups.length === 0) return;
         if (this.state !== State.PLAYING) return;
+        if (this.rowDragActive) return;
 
         // Convert client coordinates to canvas-relative coordinates
         const rect = this.renderer.canvas.getBoundingClientRect();
@@ -6223,6 +6422,68 @@ class Game {
             }
             tapStart = null;
         }, { passive: true });
+    }
+
+    _bindRowDrag() {
+        const canvas = this.renderer.canvas;
+        let dragPointerId = null;
+
+        // ── Mouse (desktop) ──
+        canvas.addEventListener("mousedown", (e) => {
+            if (!this.rowDragActive || this.state !== State.PLAYING) return;
+            e.preventDefault();
+            this._handleRowDragStart(e.clientX, e.clientY);
+            dragPointerId = "mouse";
+        });
+        window.addEventListener("mousemove", (e) => {
+            if (dragPointerId !== "mouse") return;
+            this._handleRowDragMove(e.clientX, e.clientY);
+        });
+        window.addEventListener("mouseup", (e) => {
+            if (dragPointerId !== "mouse") return;
+            dragPointerId = null;
+            this._handleRowDragEnd();
+        });
+
+        // ── Touch (mobile) ──
+        canvas.addEventListener("touchstart", (e) => {
+            if (!this.rowDragActive || this.state !== State.PLAYING) return;
+            const touch = e.changedTouches[0];
+            if (!touch) return;
+            e.preventDefault();
+            dragPointerId = touch.identifier;
+            this._handleRowDragStart(touch.clientX, touch.clientY);
+        }, { passive: false });
+        window.addEventListener("touchmove", (e) => {
+            if (dragPointerId === null || dragPointerId === "mouse") return;
+            const touch = [...e.changedTouches].find(t => t.identifier === dragPointerId);
+            if (!touch) return;
+            this._handleRowDragMove(touch.clientX, touch.clientY);
+        }, { passive: true });
+        window.addEventListener("touchend", (e) => {
+            if (dragPointerId === null || dragPointerId === "mouse") return;
+            const touch = [...e.changedTouches].find(t => t.identifier === dragPointerId);
+            if (!touch) return;
+            dragPointerId = null;
+            this._handleRowDragEnd();
+        }, { passive: true });
+        window.addEventListener("touchcancel", (e) => {
+            if (dragPointerId === null || dragPointerId === "mouse") return;
+            dragPointerId = null;
+            this.rowDragRow = -1;
+            this.rowDragStartCol = -1;
+            this.rowDragCurrentCol = -1;
+            this.renderer.rowDragCells.clear();
+        }, { passive: true });
+
+        // Escape cancels row drag mode
+        document.addEventListener("keydown", (e) => {
+            if (!this.rowDragActive) return;
+            if (e.code === "Escape") {
+                e.preventDefault();
+                this._cancelRowDragMode();
+            }
+        });
     }
 
     // ── Challenge methods ──
@@ -6806,6 +7067,8 @@ class Game {
                     this.freezeTimeRemaining = 0;
                     this.els.freezeIndicator.classList.add("hidden");
                 }
+            } else if (this.rowDragActive) {
+                // Row drag mode: freeze block falling while player selects a row
             } else if (this.block) {
                 if (this.spawnFreezeTimer > 0) {
                     // Block sits at top for 2s before falling

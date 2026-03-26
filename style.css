@@ -3292,6 +3292,27 @@ body.touch-input #mobile-controls {
     50% { box-shadow: 0 0 14px rgba(255, 100, 50, 0.5); }
 }
 
+/* ---------- Row Drag Indicator ---------- */
+
+#row-drag-indicator {
+    text-align: center;
+    padding: 6px 16px;
+    background: rgba(0, 200, 80, 0.15);
+    border: 1px solid rgba(0, 200, 80, 0.4);
+    border-radius: 8px;
+    color: #4ade80;
+    font-weight: bold;
+    font-size: 0.85rem;
+    margin: 4px auto;
+    width: fit-content;
+    animation: rowDragPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes rowDragPulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(0, 200, 80, 0.2); }
+    50% { box-shadow: 0 0 14px rgba(0, 200, 80, 0.5); }
+}
+
 /* ---------- Challenge Tutorial Overlay ---------- */
 
 #challenge-tutorial-overlay {
