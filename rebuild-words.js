@@ -1179,6 +1179,27 @@ carrot cabbage cauliflower asparagus artichoke arugula beet turnip parsnip
 radish rutabaga leek shallot scallion endive fennel chard collard eggplant okra
 yam pea lentil chickpea soybean sprout watercress daikon jicama turmeric kohlrabi
 chestnut hazelnut pecan pistachio almond cashew macadamia
+alpaca anaconda anchovy anteater antelope armadillo barracuda beagle bobcat
+bumblebee bullfrog canine centipede chameleon chimpanzee chinchilla cicada
+collie condor copperhead corgi crayfish dachshund dalmatian gazelle gecko gnat
+greyhound grouse halibut husky ibis impala jackrabbit kestrel kingfisher koi
+lemming lemur mackerel mallard mandrill marlin marmot mastiff meerkat mink
+mockingbird mongoose narwhal ocelot orangutan peregrine plover python
+rattlesnake rhinoceros roadrunner rottweiler sable sandpiper spaniel sturgeon
+tabby tadpole tapir terrier viper vole wallaby warbler wombat woodchuck
+bobsled bunt caddie catcher cleats croquet deuce discus dugout epee homerun
+infield javelin karate luge lob midfield pushup raceway semifinal shutout
+slalom slugger somersault spike striker touchdown tracksuit warmup wicket
+acorn bamboo birch blizzard bog bulb clover cyclone dandelion dewdrop fjord
+flint geode geyser humus lichen magma mangrove monsoon mound opal pollen
+quarry quartz sapling savanna seashell seedling silt sleet spruce steppe
+sycamore tempest thistle twig willow cypress
+antivirus barcode bitmap captcha chatbot cipher codec crypto daemon defrag
+dongle emulate endpoint executable freeware frontend fullstack gpu hotfix
+hyperlink infrared inkjet intranet kernel keychain keystroke latency macro
+mainframe markup megapixel metadata middleware phishing pipeline sandbox
+snippet spam spyware subnet syntax taskbar trojan typeface uninstall unzip
+uptime voicemail vpn webinar webpage whitelist wizard
 `.split(/\s+/).filter(w => w.length >= 2);
 
 // ─── Contractions (apostrophe removed) ─────────────────────────────
@@ -1256,6 +1277,16 @@ seal shark sheep shrimp skunk slug snail snake sparrow spider squid squirrel sta
 stallion stingray stork swan tiger toad tortoise toucan trout tuna turkey turtle
 vulture walrus weasel whale whippet wildcat wildlife wolf wolverine woodpecker
 wren yak zebra
+alpaca anaconda anchovy anteater antelope armadillo barracuda beagle bobcat
+bumblebee bullfrog canine cardinal centipede chameleon chimpanzee chinchilla
+cicada collie condor copperhead corgi cougar crayfish dachshund dalmatian fawn
+gazelle gecko gnat greyhound grouse halibut hornet husky ibis impala jackrabbit
+kestrel kingfisher koi lemming lemur mackerel mallard mandrill mare marlin marmot
+mastiff meerkat mink mockingbird mongoose narwhal nightingale ocelot orangutan
+parakeet perch peregrine plover pony primate pug python rattlesnake reindeer
+retriever rhinoceros roadrunner rottweiler sable sandpiper spaniel starfish
+sturgeon tabby tadpole tapir terrier viper vole wallaby warbler wasp wombat
+woodchuck hatchling hermit shepherd pointer setter pinto thoroughbred
 `.split(/\s+/).filter(w => w.length >= 3);
 
 const CATEGORY_SPORTS = `
@@ -1270,6 +1301,14 @@ rugby run runner score scout serve shot skate skateboard ski skill slam soccer
 softball speed sprint squad stadium surf surfboard swim swimmer swimsuit table
 tackle team tennis tournament track trail trainer triathlon trophy tryout umpire
 volleyball walk weight whitewater win wrestler yoga
+archery arena bench block bout center corner crawl curling cushion diamond
+disc doubles draft fencing foul fumble halftime inning lineup outfield overtime
+paddle par pass penalty pole quarterback rebound relay roster rowing sailboat
+sailing sideline singles sled slugger sparring stance stretch stroke stumble
+substitute sweep timeout training trap tumble turnover vault wrestling
+bobsled bunt caddie catcher cleats croquet deuce discus dugout epee homerun
+infield javelin karate luge lob midfield pushup raceway semifinal shutout
+slalom somersault spike striker touchdown tracksuit warmup wicket
 `.split(/\s+/).filter(w => w.length >= 3);
 
 const CATEGORY_NATURE = `
@@ -1289,6 +1328,15 @@ star stellar stone storm stream summit sun sunburn sunlight sunrise sunset surf 
 terrain thicket thorn thunder tide timber topography trail trailhead trailside tree
 tropical tundra valley vine volcano wave wavelength weather wetland wilderness
 wildfire wildlife wind windmill winter wood woodland
+bark basin birch branch brush bud canopy cedar charcoal clay continent copper
+crop delta dirt elm ember flood fungi gale garden gem glen gravel gust harbor
+haze herb horizon ivy jade kelp log maple mist moor mud nest ore peninsula
+rapids reed ripple rose ruby sage shrub slate snow tornado tulip waterfall
+weed weeping
+acorn bamboo blizzard bog bulb clover cyclone dandelion dewdrop fjord flint
+geode geyser humus lichen magma mangrove monsoon mound opal pollen quarry
+quartz sapling savanna seashell seedling silt sleet spruce steppe sycamore
+tempest thistle twig willow cypress
 `.split(/\s+/).filter(w => w.length >= 3);
 
 const CATEGORY_TECHNOLOGY = `
@@ -1310,6 +1358,19 @@ software startup storage stream streamline subscribe sync tablet tech telecommut
 template terminal texture thumbnail timeline toggle toolbar touchscreen transmit
 troubleshoot tutorial tweet ultraviolet update upgrade upload url username virtual
 virus voltage webcam website widget wifi wireless
+adapter archive chip command compatible compress connect console cookie copyright
+crash default deploy developer device dial domain driver drone embed encode engine
+export fiber file folder gateway grid hack import index link load log memory
+navigate patch ping pipeline popup port print privacy process profile queue ram
+remote resolution restore robot satellite scan search security shortcut socket
+swipe token tracker traffic tunnel user utility validate version wallpaper window
+zip
+antivirus barcode bitmap captcha chatbot cipher codec crypto daemon defrag dongle
+emulate endpoint executable freeware frontend fullstack gpu hotfix hyperlink
+infrared inkjet intranet kernel keychain keystroke latency macro mainframe markup
+megapixel metadata middleware phishing sandbox snippet spam spyware subnet syntax
+taskbar trojan typeface uninstall unzip uptime voicemail vpn webinar webpage
+whitelist wizard
 `.split(/\s+/).filter(w => w.length >= 3);
 
 // ─── Main build process ────────────────────────────────────────────
