@@ -52,51 +52,70 @@
             </div>
         </div>
 
-        <!-- MENU SCREEN -->
-        <div id="menu-screen" class="screen">
-            <button id="tutorial-btn-menu" class="tutorial-btn tutorial-btn-small" title="Tutorial">📖</button>
-            <button id="switch-profile-btn" class="switch-profile-icon-btn" title="Switch Profile">👤</button>
-            <h1 class="title">PLUMMET</h1>
-            <p id="menu-profile-name" class="subtitle"></p>
-            <div id="grid-size-selector">
-                <span id="hard-mode-hint" class="hard-mode-hint hidden">Hard Mode: 4+ letters only</span>
-                <label>Grid Size:</label>
-                <div class="size-buttons">
-                    <button class="size-btn" data-size="3">3×3</button>
-                    <button class="size-btn" data-size="4">4×4</button>
-                    <button class="size-btn selected" data-size="5">5×5</button>
-                    <button class="size-btn" data-size="6">6×6</button>
-                    <button class="size-btn" data-size="7">7×7</button>
-                    <button class="size-btn" data-size="8">8×8</button>
+        <!-- MENU SCREEN (swipeable pages) -->
+        <div id="menu-screen" class="screen menu-swipe-screen">
+            <div id="menu-slide-view">
+                <div id="menu-slide-strip">
+                    <!-- Page 0: Main Menu (original) -->
+                    <div class="menu-page">
+                        <button id="tutorial-btn-menu" class="tutorial-btn tutorial-btn-small" title="Tutorial">📖</button>
+                        <button id="switch-profile-btn" class="switch-profile-icon-btn" title="Switch Profile">👤</button>
+                        <h1 class="title">PLUMMET</h1>
+                        <p id="menu-profile-name" class="subtitle"></p>
+                        <div id="grid-size-selector">
+                            <span id="hard-mode-hint" class="hard-mode-hint hidden">Hard Mode: 4+ letters only</span>
+                            <label>Grid Size:</label>
+                            <div class="size-buttons">
+                                <button class="size-btn" data-size="3">3×3</button>
+                                <button class="size-btn" data-size="4">4×4</button>
+                                <button class="size-btn selected" data-size="5">5×5</button>
+                                <button class="size-btn" data-size="6">6×6</button>
+                                <button class="size-btn" data-size="7">7×7</button>
+                                <button class="size-btn" data-size="8">8×8</button>
+                            </div>
+                        </div>
+                        <div id="game-mode-selector" class="hidden">
+                            <label>Game Mode:</label>
+                            <div class="game-mode-buttons">
+                                <button class="game-mode-btn selected" data-mode="sandbox">Sandbox</button>
+                                <button class="game-mode-btn" data-mode="timed">Timed</button>
+                            </div>
+                        </div>
+                        <div id="difficulty-selector" class="hidden">
+                            <label>Difficulty:</label>
+                            <div class="difficulty-buttons">
+                                <button class="difficulty-btn selected" data-difficulty="casual">Casual</button>
+                                <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+                            </div>
+                        </div>
+                        <button id="start-btn" class="primary-btn">START</button>
+                        <button id="resume-game-btn" class="primary-btn hidden">▶ Resume Game</button>
+                        <button id="challenges-btn" class="secondary-btn challenges-btn-glow">🏆 Challenges</button>
+                        <button id="music-menu-btn" class="secondary-btn">🎵 Music</button>
+                        <div id="menu-level-display">
+                            <div id="menu-level-badge">Lv. <span id="menu-level-num">1</span></div>
+                            <div id="menu-xp-bar-track"><div id="menu-xp-bar-fill"></div></div>
+                            <span id="menu-xp-text">0 / 100 XP</span>
+                        </div>
+                        <div id="menu-stats">
+                            <p class="high-score-text">High Score: <span id="menu-high-score">0</span></p>
+                            <p class="stat-text">Games Played: <span id="menu-games-played">0</span></p>
+                            <p class="stat-text">Unique Words: <span id="menu-total-words">0</span></p>
+                        </div>
+                    </div>
+                    <!-- Page 1: Extra (future features) -->
+                    <div class="menu-page">
+                        <p class="menu-page-placeholder">More coming soon…</p>
+                    </div>
                 </div>
             </div>
-            <div id="game-mode-selector" class="hidden">
-                <label>Game Mode:</label>
-                <div class="game-mode-buttons">
-                    <button class="game-mode-btn selected" data-mode="sandbox">Sandbox</button>
-                    <button class="game-mode-btn" data-mode="timed">Timed</button>
+            <div id="menu-nav-bar">
+                <button id="menu-prev-btn" class="menu-nav-arrow" disabled>‹</button>
+                <div id="menu-dots">
+                    <button class="menu-dot active" data-page="0"></button>
+                    <button class="menu-dot" data-page="1"></button>
                 </div>
-            </div>
-            <div id="difficulty-selector" class="hidden">
-                <label>Difficulty:</label>
-                <div class="difficulty-buttons">
-                    <button class="difficulty-btn selected" data-difficulty="casual">Casual</button>
-                    <button class="difficulty-btn" data-difficulty="hard">Hard</button>
-                </div>
-            </div>
-            <button id="start-btn" class="primary-btn">START</button>
-            <button id="resume-game-btn" class="primary-btn hidden">▶ Resume Game</button>
-            <button id="challenges-btn" class="secondary-btn challenges-btn-glow">🏆 Challenges</button>
-            <button id="music-menu-btn" class="secondary-btn">🎵 Music</button>
-            <div id="menu-level-display">
-                <div id="menu-level-badge">Lv. <span id="menu-level-num">1</span></div>
-                <div id="menu-xp-bar-track"><div id="menu-xp-bar-fill"></div></div>
-                <span id="menu-xp-text">0 / 100 XP</span>
-            </div>
-            <div id="menu-stats">
-                <p class="high-score-text">High Score: <span id="menu-high-score">0</span></p>
-                <p class="stat-text">Games Played: <span id="menu-games-played">0</span></p>
-                <p class="stat-text">Unique Words: <span id="menu-total-words">0</span></p>
+                <button id="menu-next-btn" class="menu-nav-arrow">›</button>
             </div>
         </div>
 

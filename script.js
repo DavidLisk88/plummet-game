@@ -2398,6 +2398,11 @@ class Game {
             wfDots:           document.getElementById("wf-dots"),
             wfSlideView:      document.getElementById("wf-slide-view"),
             wfSlideStrip:     document.getElementById("wf-slide-strip"),
+            menuDots:         document.getElementById("menu-dots"),
+            menuSlideView:    document.getElementById("menu-slide-view"),
+            menuSlideStrip:   document.getElementById("menu-slide-strip"),
+            menuPrevBtn:      document.getElementById("menu-prev-btn"),
+            menuNextBtn:      document.getElementById("menu-next-btn"),
             bonusWordsCount:  document.getElementById("bonus-words-count"),
             bonusWordsList:   document.getElementById("bonus-words-list"),
             gameModeSelector: document.getElementById("game-mode-selector"),
@@ -2548,6 +2553,8 @@ class Game {
         this._bindRowDrag();
         this._bindLevelUpUI();
         this._initMutePref();
+        this._menuPage = 0;
+        this._bindMenuSwipe();
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
         this._updateHintsBtn();
 
@@ -3510,6 +3517,91 @@ class Game {
             view.removeEventListener("mouseup", this._wfPointerUp);
             view.removeEventListener("mouseleave", this._wfPointerUp);
         }
+    }
+
+    // ── Menu page swipe ──
+
+    _getMenuPageCount() {
+        return this.els.menuSlideStrip.children.length;
+    }
+
+    _goToMenuPage(index) {
+        const total = this._getMenuPageCount();
+        this._menuPage = Math.max(0, Math.min(index, total - 1));
+        this.els.menuSlideStrip.classList.remove("swiping");
+        this.els.menuSlideStrip.style.transform = `translateX(-${this._menuPage * 100}%)`;
+        this.els.menuDots.querySelectorAll(".menu-dot").forEach((d, i) =>
+            d.classList.toggle("active", i === this._menuPage));
+        this.els.menuPrevBtn.disabled = this._menuPage === 0;
+        this.els.menuNextBtn.disabled = this._menuPage === total - 1;
+    }
+
+    _bindMenuSwipe() {
+        const view = this.els.menuSlideView;
+        const strip = this.els.menuSlideStrip;
+        let startX = 0, startY = 0, dragging = false, moved = false;
+
+        this._menuPointerDown = (e) => {
+            dragging = true; moved = false;
+            startX = e.touches ? e.touches[0].clientX : e.clientX;
+            startY = e.touches ? e.touches[0].clientY : e.clientY;
+            strip.classList.add("swiping");
+        };
+        this._menuPointerMove = (e) => {
+            if (!dragging) return;
+            const x = e.touches ? e.touches[0].clientX : e.clientX;
+            const y = e.touches ? e.touches[0].clientY : e.clientY;
+            const dx = x - startX, dy = y - startY;
+            if (!moved && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+                dragging = false;
+                strip.classList.remove("swiping");
+                strip.style.transform = `translateX(-${this._menuPage * 100}%)`;
+                return;
+            }
+            if (!moved && Math.abs(dx) > 10) moved = true;
+            if (moved && e.cancelable) e.preventDefault();
+            if (moved) {
+                const total = this._getMenuPageCount();
+                const viewW = view.offsetWidth || 300;
+                const base = -this._menuPage * viewW;
+                const atStart = this._menuPage === 0 && dx > 0;
+                const atEnd = this._menuPage === total - 1 && dx < 0;
+                const dampened = (atStart || atEnd) ? dx * 0.25 : dx;
+                strip.style.transform = `translateX(${base + dampened}px)`;
+            }
+        };
+        this._menuPointerUp = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            strip.classList.remove("swiping");
+            const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            const dx = x - startX;
+            const total = this._getMenuPageCount();
+            const viewW = view.offsetWidth || 300;
+            const threshold = viewW * 0.15;
+            if (Math.abs(dx) > threshold) {
+                if (dx < 0 && this._menuPage < total - 1) this._menuPage++;
+                else if (dx > 0 && this._menuPage > 0) this._menuPage--;
+            }
+            this._goToMenuPage(this._menuPage);
+        };
+
+        view.addEventListener("touchstart", this._menuPointerDown, { passive: true });
+        view.addEventListener("touchmove", this._menuPointerMove, { passive: false });
+        view.addEventListener("touchend", this._menuPointerUp);
+        view.addEventListener("mousedown", this._menuPointerDown);
+        view.addEventListener("mousemove", this._menuPointerMove);
+        view.addEventListener("mouseup", this._menuPointerUp);
+        view.addEventListener("mouseleave", this._menuPointerUp);
+
+        // Dot clicks
+        this.els.menuDots.querySelectorAll(".menu-dot").forEach(d => {
+            d.addEventListener("click", () => this._goToMenuPage(parseInt(d.dataset.page)));
+        });
+
+        // Arrow clicks
+        this.els.menuPrevBtn.addEventListener("click", () => this._goToMenuPage(this._menuPage - 1));
+        this.els.menuNextBtn.addEventListener("click", () => this._goToMenuPage(this._menuPage + 1));
     }
 
     _updateHighScoreDisplay() {
@@ -5916,7 +6008,7 @@ class Game {
                 slides: [
                     {
                         title: 'Sandbox & Timed',
-                        desc: 'Two main game modes to choose from! SANDBOX is relaxed with no time limit — play as long as you want until the grid fills up. Perfect for practicing and learning. TIMED mode gives you a countdown clock — score as many points as possible before time runs out! The game ends when either the timer hits zero or the grid fills up, whichever comes first.',
+                        desc: 'Two main game modes to choose from! SANDBOX is relaxed with no time limit — play as long as you want until the grid fills up. Perfect for practicing and learning, but Sandbox earns only 25% of normal points and XP. TIMED mode gives you a countdown clock — score as many points as possible before time runs out! The game ends when either the timer hits zero or the grid fills up, whichever comes first.',
                         draw(ctx, w, h, t) {
                             const mid = w / 2;
                             ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
@@ -6168,7 +6260,7 @@ class Game {
                     },
                     {
                         title: 'Reordering Tracks',
-                        desc: 'Want to change the play order? Each track has ▲ UP and ▼ DOWN arrow buttons on the right side. Tap them to move that song higher or lower in the list. The order you set is saved and used for auto-play — when one song finishes, the next one in your list starts automatically. Reorder the default "All Songs" list or any custom playlist you create!',
+                        desc: 'Want to change the play order? Each track has a ☰ drag handle on the right side. Press and hold the handle, then drag the track up or down to reposition it. The order you set is saved and used for auto-play — when one song finishes, the next one in your list starts automatically. Reorder the default "All Songs" list or any custom playlist you create!',
                         draw(ctx, w, h, t) {
                             const pad = 20, cw = w - pad * 2;
                             ctx.fillStyle = '#1a1a2e';
@@ -6194,21 +6286,17 @@ class Game {
                                 ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif';
                                 ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
                                 ctx.fillText(names[idx], pad + 22, ty + 23);
-                                const arX = pad + cw - 50;
-                                ctx.fillStyle = '#555'; ctx.font = '16px sans-serif';
+                                const hX = pad + cw - 36;
+                                ctx.fillStyle = moving ? '#ffd700' : '#555'; ctx.font = '18px sans-serif';
                                 ctx.textAlign = 'center';
-                                ctx.fillText('▲', arX, ty + 14);
-                                ctx.fillText('▼', arX + 24, ty + 14);
-                                ctx.fillStyle = '#444'; ctx.font = '10px sans-serif';
-                                ctx.fillText('▲', arX, ty + 34);
-                                ctx.fillText('▼', arX + 24, ty + 34);
+                                ctx.fillText('☰', hX, ty + 23);
                                 ctx.restore();
                             }
                             if (cyc > 0.5 && cyc < 2) {
-                                const arX = pad + cw - 50;
+                                const hX = pad + cw - 36;
                                 const ty = 85;
-                                gTap(ctx, arX, ty + 14, t);
-                                gT(ctx, w / 2, h - 50, '▲ Move up!', '#ffd700', 14);
+                                gTap(ctx, hX, ty + 23, t);
+                                gT(ctx, w / 2, h - 50, 'Hold & drag ☰', '#ffd700', 14);
                             } else if (cyc > 2.5) {
                                 gT(ctx, w / 2, h - 50, 'Track moved ✓', '#4caf50', 14);
                             }
@@ -6434,7 +6522,7 @@ class Game {
                 slides: [
                     {
                         title: 'How XP Works',
-                        desc: 'Every game earns XP based on multiple factors: your score, grid size (smaller grids give more XP!), word quality (longer words = bigger bonus), difficulty, game mode, time pressure, and how you perform against your personal best. Finding long words, beating your high score, surviving timed modes, and playing on small grids all boost your XP!',
+                        desc: 'Every game earns XP based on multiple factors: your score, grid size (smaller grids give more XP!), word quality (longer words = bigger bonus), difficulty, game mode, time pressure, and how you perform against your personal best. Finding long words, beating your high score, surviving timed modes, and playing on small grids all boost your XP! Note: Sandbox mode earns only 25% XP compared to Timed.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);

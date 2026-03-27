@@ -362,7 +362,7 @@ thought through tobacco tobacco tonight totally tourism towards trading traffic 
 transit trigger triumph trouble turning typical undergo unified uniform unknown unlikely
 upgrade venture version veteran veteran village violent virtual visible wanting warrant
 weather website weekend welcome welfare western whisper willing witness working workers
-worried worship wrapper writing younger acne cod doc cot rep rite whey lien ark bot soy balm
+worried worship wrapper writing younger acne cod doc cot rep rite whey lien ark bot soy balm lye
 accident action activity afternoon apartment approach attention
 background baseball basketball bathroom birthday border bottle boyfriend breakfast bullet
 camera campaign campus cancer candidate category chairman champion character charity
@@ -571,6 +571,7 @@ abet abase abut ache arch atop avow back bait bake band bang bare bark base bash
 bate bath bear beat bell beg bend best bias bike bill bind bite blot blow blur boar boat
 bolt bomb bond book boom boot bore boss bowl brag brew buck burn burp bury bust buzz
 cage calm came camp care cart cave char chat chip chop cite clad clam clap claw clip
+erect
 clog club clue coal coat coax cock code coil come cook cool cope copy cord core cost
 coup cram crew crop crow cube curb cure curl dash date dawn deal deck deem deny dine
 dock does dole dome done doom dose down doze drag draw drip drop drum duck duel dump
