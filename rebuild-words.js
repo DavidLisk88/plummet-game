@@ -362,7 +362,7 @@ thought through tobacco tobacco tonight totally tourism towards trading traffic 
 transit trigger triumph trouble turning typical undergo unified uniform unknown unlikely
 upgrade venture version veteran veteran village violent virtual visible wanting warrant
 weather website weekend welcome welfare western whisper willing witness working workers
-worried worship wrapper writing younger acne cod doc cot rep rite whey lien
+worried worship wrapper writing younger acne cod doc cot rep rite whey lien ark bot
 accident action activity afternoon apartment approach attention
 background baseball basketball bathroom birthday border bottle boyfriend breakfast bullet
 camera campaign campus cancer candidate category chairman champion character charity
@@ -568,7 +568,7 @@ sir sit six ski sky sly sob sod sow spy sty sue sum sun sup tag tan tap tar tax 
 toe ton too top tot tow toy try tub tug tun two use van vet vex vie vim vow wad wag
 war was wax wed wet who wig win wit woe wok won woo wow zap zip
 abet abase abut ache arch atop avow back bait bake band bang bare bark base bash bask
-bate bath bear beat bell bend best bias bike bill bind bite blot blow blur boar boat
+bate bath bear beat bell beg bend best bias bike bill bind bite blot blow blur boar boat
 bolt bomb bond book boom boot bore boss bowl brag brew buck burn burp bury bust buzz
 cage calm came camp care cart cave char chat chip chop cite clad clam clap claw clip
 clog club clue coal coat coax cock code coil come cook cool cope copy cord core cost

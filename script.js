@@ -178,6 +178,8 @@ const GAME_MODES = Object.freeze({
     TIMED: "timed",
 });
 
+const SANDBOX_SCORE_MULT = 0.25; // Sandbox earns 25% of normal points/XP
+
 const CHALLENGE_TYPES = Object.freeze({
     TARGET_WORD: "target-word",
     SPEED_ROUND: "speed-round",
@@ -208,12 +210,12 @@ const CHALLENGE_TIME_LIMIT = 7 * 60; // 7 minutes
 // Category difficulty tiers — higher tier = harder words = more reward
 // ptsMult applies to bonus-match scoring, xpMult applies to section 7 XP bonus
 const CATEGORY_TIERS = Object.freeze({
+    adjectives: { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
     animals:    { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
     sports:     { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
     food:       { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
     nature:     { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
     technology: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
-    adjectives: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
 });
 
 const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 8, 10, 15, 20];
@@ -311,6 +313,8 @@ function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
         xp = Math.floor(xp * (challengeType === CHALLENGE_TYPES.SPEED_ROUND ? 1.5 : 1.35));
     } else if (gameMode === GAME_MODES.TIMED) {
         xp = Math.floor(xp * 1.3);
+    } else if (gameMode === GAME_MODES.SANDBOX) {
+        xp = Math.floor(xp * SANDBOX_SCORE_MULT);
     }
 
     // ═══ 6. TIME PRESSURE BONUS (timed modes only) ═══
@@ -1528,7 +1532,7 @@ class MusicManager {
         this._shuffledQueue = [];
         this._shuffledIndex = -1;
         // repeatMode: "off" | "all" | "one"
-        this.repeatMode = localStorage.getItem("wf_music_repeat") || "off";
+        this.repeatMode = localStorage.getItem("wf_music_repeat") || "all";
 
         // Crossfade
         this._crossfadeDuration = 1.5; // seconds
@@ -3757,7 +3761,7 @@ class Game {
             this.els.freezeTimer.textContent = Math.ceil(this.freezeTimeRemaining);
             // Award base points for using freeze
             const prevScore = this.score;
-            this.score += 50;
+            this.score += (this.gameMode === GAME_MODES.SANDBOX) ? Math.floor(50 * SANDBOX_SCORE_MULT) : 50;
             this._checkBonusUnlock(prevScore, this.score);
             this._updateScoreDisplay();
             this._closeLetterChoiceModal(true);
@@ -3843,13 +3847,14 @@ class Game {
         if (!this.freezeActive) return;
         // Award bonus points based on remaining freeze time (more time left = more points)
         // Up to 10 pts per second remaining
-        const bonusPts = Math.floor(this.freezeTimeRemaining * 10);
+        let bonusPts = Math.floor(this.freezeTimeRemaining * 10);
+        if (this.gameMode === GAME_MODES.SANDBOX) bonusPts = Math.floor(bonusPts * SANDBOX_SCORE_MULT);
         if (bonusPts > 0) {
             const prevScore = this.score;
             this.score += bonusPts;
             this._checkBonusUnlock(prevScore, this.score);
             this._updateScoreDisplay();
-            this._showWordPopup([{ word: "❄️ UNFREEZE", pts: bonusPts }]);
+            this._showWordPopup([{ word: "❄️ UNFREEZE", pts: bonusPts, isBonus: true }]);
         }
         this.freezeActive = false;
         this.freezeTimeRemaining = 0;
@@ -3956,11 +3961,11 @@ class Game {
         // Award points (20 pts per letter cleared)
         if (cellCount > 0) {
             const prevScore = this.score;
-            const linePts = cellCount * 20;
+            const linePts = (this.gameMode === GAME_MODES.SANDBOX) ? Math.floor(cellCount * 20 * SANDBOX_SCORE_MULT) : cellCount * 20;
             this.score += linePts;
             this._checkBonusUnlock(prevScore, this.score);
             this._updateScoreDisplay();
-            this._showWordPopup([{ word: "🧹 LINE", pts: linePts }]);
+            this._showWordPopup([{ word: "🧹 LINE", pts: linePts, isBonus: true }]);
         }
 
         // Execute the clear animation
@@ -4419,11 +4424,11 @@ class Game {
         // Award points for bomb blast (15 pts per letter cleared)
         if (cellsToClear.size > 0) {
             const prevScore = this.score;
-            const bombPts = cellsToClear.size * 15;
+            const bombPts = (this.gameMode === GAME_MODES.SANDBOX) ? Math.floor(cellsToClear.size * 15 * SANDBOX_SCORE_MULT) : cellsToClear.size * 15;
             this.score += bombPts;
             this._checkBonusUnlock(prevScore, this.score);
             this._updateScoreDisplay();
-            this._showWordPopup([{ word: "💣 BOMB", pts: bombPts }]);
+            this._showWordPopup([{ word: "💣 BOMB", pts: bombPts, isBonus: true }]);
         }
 
         this.renderer.hintCells = new Set();
@@ -4468,7 +4473,8 @@ class Game {
             // No more words but grid still has space — apply chain bonus and continue.
             if (this.totalWordsInChain > 0) {
                 const prevScore = this.score;
-                this.score += this.totalWordsInChain * 50;
+                const chainPts = (this.gameMode === GAME_MODES.SANDBOX) ? Math.floor(this.totalWordsInChain * 50 * SANDBOX_SCORE_MULT) : this.totalWordsInChain * 50;
+                this.score += chainPts;
                 this._checkBonusUnlock(prevScore, this.score);
                 this._updateScoreDisplay();
             }
@@ -4582,24 +4588,42 @@ class Game {
         const container = this.els.wordPopup;
 
         const row = document.createElement("div");
-        row.className = "word-popup-row";
+        row.className = "word-popup-row" + (entry.isBonus ? " bonus-popup" : "");
 
-        const letters = entry.word.split("");
-        letters.forEach((ch, i) => {
-            const span = document.createElement("span");
-            span.className = "word-popup-letter";
-            span.textContent = ch;
-            const randomRot = Math.floor(Math.random() * 120) - 60;
-            span.style.setProperty("--r", randomRot);
-            span.style.setProperty("--d", i * 0.06 + "s");
-            row.appendChild(span);
-        });
+        let animDuration;
+        if (entry.isBonus) {
+            // Bonus popups: simple text, no letter blocks
+            const label = document.createElement("span");
+            label.className = "bonus-popup-label";
+            label.textContent = entry.word;
+            row.appendChild(label);
 
-        const pts = document.createElement("span");
-        pts.className = "word-popup-pts";
-        pts.textContent = "+" + entry.pts;
-        pts.style.setProperty("--d", letters.length * 0.06 + 0.1 + "s");
-        row.appendChild(pts);
+            const pts = document.createElement("span");
+            pts.className = "bonus-popup-pts";
+            pts.textContent = "+" + entry.pts;
+            row.appendChild(pts);
+
+            animDuration = 0.5;
+        } else {
+            const letters = entry.word.split("");
+            letters.forEach((ch, i) => {
+                const span = document.createElement("span");
+                span.className = "word-popup-letter";
+                span.textContent = ch;
+                const randomRot = Math.floor(Math.random() * 120) - 60;
+                span.style.setProperty("--r", randomRot);
+                span.style.setProperty("--d", i * 0.06 + "s");
+                row.appendChild(span);
+            });
+
+            const pts = document.createElement("span");
+            pts.className = "word-popup-pts";
+            pts.textContent = "+" + entry.pts;
+            pts.style.setProperty("--d", letters.length * 0.06 + 0.1 + "s");
+            row.appendChild(pts);
+
+            animDuration = letters.length * 0.06 + 0.1 + 0.3;
+        }
 
         container.appendChild(row);
 
@@ -4608,8 +4632,6 @@ class Game {
         if (!this._wordPopupCount) this._wordPopupCount = 0;
         this._wordPopupCount++;
 
-        // Hold time = animation duration + small buffer to read
-        const animDuration = letters.length * 0.06 + 0.1 + 0.3; // pts is last to finish
         const holdMs = (animDuration + 0.5) * 1000;
 
         // Each row exits on its own timer after its animation completes
@@ -6851,10 +6873,7 @@ class Game {
                 </div>
                 <span class="track-duration" data-track-id="${track.id}"></span>
                 <button class="track-fav-btn${isFav ? " active" : ""}" title="Favorite" aria-label="Toggle Favorite">${isFav ? "❤️" : "🤍"}</button>
-                ${!searchTerm ? `<div class="track-reorder">
-                    <button class="reorder-btn move-up" ${index === 0 ? "disabled" : ""}>▲</button>
-                    <button class="reorder-btn move-down" ${index === tracks.length - 1 ? "disabled" : ""}>▼</button>
-                </div>` : ""}
+                ${!searchTerm ? '<span class="track-drag-handle" title="Drag to reorder">☰</span>' : ""}
                 ${isCustom && !searchTerm ? '<button class="track-remove-btn" title="Remove from playlist">✕</button>' : ""}
             `;
 
@@ -6882,24 +6901,16 @@ class Game {
                 }
             });
 
-            // Reorder buttons (only when not searching)
+            // Drag handle for reorder (only when not searching)
             if (!searchTerm) {
-                item.querySelector(".move-up")?.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    if (index > 0) {
-                        this.plMgr.moveTrack(this.activePlaylistTab, index, index - 1);
-                        this.music.refreshQueue();
-                        this._renderTrackList();
-                    }
-                });
-                item.querySelector(".move-down")?.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    if (index < tracks.length - 1) {
-                        this.plMgr.moveTrack(this.activePlaylistTab, index, index + 1);
-                        this.music.refreshQueue();
-                        this._renderTrackList();
-                    }
-                });
+                const handle = item.querySelector(".track-drag-handle");
+                if (handle) {
+                    handle.addEventListener("pointerdown", (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this._startTrackDrag(e, item, index, container);
+                    });
+                }
             }
 
             // Remove from custom playlist
@@ -6924,6 +6935,105 @@ class Game {
             // Load duration for display
             this._loadTrackDuration(track, item.querySelector(".track-duration"));
         });
+    }
+
+    _startTrackDrag(e, dragItem, fromIndex, container) {
+        const items = [...container.querySelectorAll(".track-item")];
+        if (items.length <= 1) return;
+
+        const rect = dragItem.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const offsetY = e.clientY - rect.top;
+
+        // Create placeholder
+        const placeholder = document.createElement("div");
+        placeholder.className = "track-drag-placeholder";
+        placeholder.style.height = rect.height + "px";
+
+        // Style dragged item as floating
+        dragItem.classList.add("dragging");
+        dragItem.style.width = rect.width + "px";
+        dragItem.style.position = "fixed";
+        dragItem.style.left = rect.left + "px";
+        dragItem.style.top = rect.top + "px";
+        dragItem.style.zIndex = "9999";
+        dragItem.style.pointerEvents = "none";
+
+        // Insert placeholder where dragged item was
+        dragItem.parentNode.insertBefore(placeholder, dragItem);
+
+        let currentIndex = fromIndex;
+
+        const onMove = (ev) => {
+            const y = (ev.touches ? ev.touches[0].clientY : ev.clientY);
+            dragItem.style.top = (y - offsetY) + "px";
+
+            // Auto-scroll the container
+            const scrollMargin = 40;
+            const relY = y - containerRect.top;
+            if (relY < scrollMargin) {
+                container.scrollTop -= 8;
+            } else if (relY > containerRect.height - scrollMargin) {
+                container.scrollTop += 8;
+            }
+
+            // Find which item we're hovering over
+            const siblings = [...container.querySelectorAll(".track-item:not(.dragging)")];
+            for (let i = 0; i < siblings.length; i++) {
+                const sib = siblings[i];
+                const sibRect = sib.getBoundingClientRect();
+                const sibMid = sibRect.top + sibRect.height / 2;
+                if (y < sibMid) {
+                    if (sib !== placeholder.nextElementSibling) {
+                        container.insertBefore(placeholder, sib);
+                    }
+                    return;
+                }
+            }
+            // Past all items — move placeholder to end
+            const lastSib = siblings[siblings.length - 1];
+            if (lastSib && placeholder.nextElementSibling !== dragItem) {
+                container.insertBefore(placeholder, lastSib.nextSibling);
+            }
+        };
+
+        const onEnd = () => {
+            document.removeEventListener("pointermove", onMove);
+            document.removeEventListener("pointerup", onEnd);
+            document.removeEventListener("pointercancel", onEnd);
+
+            // Determine new index from placeholder position
+            const allChildren = [...container.children].filter(
+                el => el.classList.contains("track-item") || el.classList.contains("track-drag-placeholder")
+            );
+            let toIndex = allChildren.indexOf(placeholder);
+            // Adjust: items after the dragged one shift up
+            if (toIndex > fromIndex) toIndex--;
+            if (toIndex < 0) toIndex = fromIndex;
+
+            // Reset styles
+            dragItem.classList.remove("dragging");
+            dragItem.style.position = "";
+            dragItem.style.left = "";
+            dragItem.style.top = "";
+            dragItem.style.width = "";
+            dragItem.style.zIndex = "";
+            dragItem.style.pointerEvents = "";
+
+            // Remove placeholder
+            if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+
+            // Apply the move if changed
+            if (toIndex !== fromIndex) {
+                this.plMgr.moveTrack(this.activePlaylistTab, fromIndex, toIndex);
+                this.music.refreshQueue();
+            }
+            this._renderTrackList();
+        };
+
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onEnd);
+        document.addEventListener("pointercancel", onEnd);
     }
 
     _loadTrackDuration(track, el) {
@@ -7082,6 +7192,9 @@ class Game {
                     pts = Math.floor(pts * 0.25);
                 }
             }
+
+            // Sandbox mode penalty
+            if (this.gameMode === GAME_MODES.SANDBOX) pts = Math.floor(pts * SANDBOX_SCORE_MULT);
 
             this._validatedWordGroups.push({ word: wc.word, cells: newCells, pts, isReverse: !!wc.isReverse });
         }
@@ -7351,7 +7464,7 @@ class Game {
         sel.classList.remove("hidden");
         wrap.innerHTML = "";
 
-        const playable = ["food", "animals", "sports", "nature", "technology", "adjectives"];
+        const playable = ["adjectives", "animals", "sports", "food", "nature", "technology"];
         let first = true;
         for (const catKey of playable) {
             const cat = WORD_CATEGORIES[catKey];

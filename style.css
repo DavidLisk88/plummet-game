@@ -749,6 +749,33 @@ body.touch-input #canvas-wrapper {
     animation-delay: var(--d, 0.4s);
 }
 
+/* Bonus popup (BOMB, LINE, FREEZE) — clean pink text, no letter blocks */
+.word-popup-row.bonus-popup {
+    gap: 8px;
+    animation: bonusPopIn 0.4s ease-out forwards;
+}
+
+.bonus-popup-label {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #ff69b4;
+    text-shadow: 0 0 12px rgba(255, 105, 180, 0.6), 0 0 24px rgba(255, 105, 180, 0.3);
+    letter-spacing: 1px;
+}
+
+.bonus-popup-pts {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #ff69b4;
+    text-shadow: 0 0 10px rgba(255, 105, 180, 0.5);
+}
+
+@keyframes bonusPopIn {
+    0% { opacity: 0; transform: scale(0.5); }
+    60% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
 @keyframes letterAssemble {
     0% {
         opacity: 0;
@@ -1999,27 +2026,38 @@ body.touch-input #mobile-controls {
     color: #777;
 }
 
-.track-reorder {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+.track-drag-handle {
+    font-size: 1.1rem;
+    color: #555;
+    cursor: grab;
+    padding: 4px 6px;
     flex-shrink: 0;
+    user-select: none;
+    touch-action: none;
+    transition: color 0.15s;
 }
 
-.reorder-btn {
+.track-drag-handle:hover {
+    color: #aaa;
+}
+
+.track-drag-handle:active {
+    cursor: grabbing;
+}
+
+.track-item.dragging {
     background: #333;
-    border: none;
-    color: #888;
-    font-size: 0.7rem;
-    cursor: pointer;
-    padding: 3px 8px;
-    border-radius: 4px;
-    transition: background 0.1s, color 0.1s;
+    border-color: #ffd700;
+    opacity: 0.9;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
 }
 
-.reorder-btn:hover {
-    background: #444;
-    color: #fff;
+.track-drag-placeholder {
+    background: rgba(255, 215, 0, 0.08);
+    border: 2px dashed rgba(255, 215, 0, 0.3);
+    border-radius: 10px;
+    margin-bottom: 6px;
 }
 
 .track-remove-btn {
