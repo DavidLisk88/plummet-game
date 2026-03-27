@@ -5427,7 +5427,7 @@ class Game {
                     },
                     {
                         title: 'Chains & Scoring',
-                        desc: 'Scoring formula: word length² × 10 (so a 3-letter word = 90 pts, 5-letter word = 250 pts!). After you claim a word, letters above fall down — if they form a NEW valid word, that\'s a CHAIN REACTION worth +50 bonus points per chain! Chains can keep going as long as new words keep forming. Strategic letter placement is the key to triggering massive chain combos.',
+                        desc: 'Scoring formula: word length² × 10 (so a 3-letter word = 90 pts, 5-letter word = 250 pts!). Tough letters like Q, Z, X, and J earn EXTRA bonus points when used in words. If a word reads as a valid word in BOTH directions (e.g. DOG ↔ GOD), you score both — the primary word at full points and the reverse at half points! After claiming, letters fall down — if they form a NEW word, that\'s a CHAIN worth +50 bonus per chain!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -5553,7 +5553,7 @@ class Game {
                 slides: [
                     {
                         title: 'Earning Bonuses',
-                        desc: 'Every 1,000 points you score, you unlock a random bonus power-up! A glowing bonus button appears in the corner of the screen. Tap it whenever you\'re ready to activate it — you don\'t have to use it right away. There are 7 different bonus types: Letter Pick, Bomb, Wildcard, Row Clear, Freeze, Shuffle, and Score ×2. Each one is drawn randomly from a shuffled bag so you won\'t get the same bonus twice in a row.',
+                        desc: 'Every 1,000 points you score, you unlock a random bonus power-up! A glowing bonus button appears — tap it to activate. There are 7 types: Letter Pick, Bomb, Wildcard, Line Clear, Freeze, Shuffle, and Score ×2. Most bonuses also award bonus points when used! The randomizer is smart — it considers your play style, board state, and history to offer useful bonuses at the right time.',
                         draw(ctx, w, h, t) {
                             const cyc = t % 4;
                             const score = cyc < 2 ? Math.floor(lerp(800, 1000, ease(Math.min(cyc / 2, 1)))) : 1000;
@@ -5610,7 +5610,7 @@ class Game {
                     },
                     {
                         title: 'Bomb 💣',
-                        desc: 'The Bomb replaces your next block with a 💣 that falls just like a normal letter. When it lands, it EXPLODES — clearing every letter in its entire landing ROW and the entire COLUMN it\'s in, forming a cross-shaped blast! This is incredibly useful when your grid is getting full and you need to make space. Drop it in a crowded intersection for maximum destruction!',
+                        desc: 'The Bomb replaces your next block with a 💣 that falls just like a normal letter. When it lands, it EXPLODES — clearing every letter in its entire landing ROW and the entire COLUMN it\'s in, forming a cross-shaped blast! You earn 15 bonus points for each letter cleared by the explosion. Drop it in a crowded intersection for maximum destruction and points!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -5690,41 +5690,59 @@ class Game {
                         }
                     },
                     {
-                        title: 'Row Clear & Freeze',
-                        desc: 'ROW CLEAR (🧹) instantly sweeps away every letter in the bottom-most occupied row, and all letters above drop down to fill the gap. Great for clearing out junk letters stuck at the bottom! FREEZE (❄️) pauses block falling for 10 full seconds — no new blocks spawn, giving you time to carefully scan the grid, claim any words you see, and plan your next moves without pressure.',
+                        title: 'Line Clear & Freeze',
+                        desc: 'LINE CLEAR (🧹) lets you tap any two letters in a straight line — horizontal, vertical, or diagonal — and every letter between them gets selected! Press Clear to remove them (20 pts per letter) or Cancel to re-pick. Even a single letter works. FREEZE (❄️) pauses block falling for 10 seconds (+50 pts). Tap the freeze timer early to unfreeze and earn up to 100 bonus points based on time left!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, -10);
                             gBg(ctx, ox, oy, cs, gs);
                             const cyc = t % 8;
                             if (cyc < 4) {
-                                for (let r = 2; r < gs; r++) for (let c = 0; c < gs; c++)
-                                    gC(ctx, ox, oy, cs, r, c, 'ABCDE'[c], '#2a2a3e');
-                                if (cyc < 1.5) {
-                                    gT(ctx, w / 2, oy - cs * 0.7, '🧹 Row Clear!', '#ff9800', Math.floor(cs * 0.35));
-                                    const sweep = ease(Math.min(cyc / 1.2, 1));
-                                    const sw = sweep * gs * cs;
-                                    ctx.fillStyle = 'rgba(255,165,0,0.4)';
-                                    ctx.fillRect(ox, oy + 4 * cs, sw, cs);
-                                } else if (cyc < 2.5) {
-                                    for (let c = 0; c < gs; c++)
-                                        gC(ctx, ox, oy, cs, 4, c, ' ', '#1e1e30');
-                                    gT(ctx, w / 2, oy - cs * 0.7, 'Bottom row gone!', '#ff9800', Math.floor(cs * 0.3));
+                                // Line Clear demo — diagonal selection
+                                const letters = [
+                                    [2,0,'P'],[2,1,'L'],[2,2,'A'],[2,3,'N'],[2,4,'K'],
+                                    [3,0,'R'],[3,1,'I'],[3,2,'D'],[3,3,'E'],[3,4,'S'],
+                                    [4,0,'T'],[4,1,'O'],[4,2,'W'],[4,3,'N'],[4,4,'X']
+                                ];
+                                // Diagonal selection: (2,0)->(4,2)
+                                const selected = [[2,0],[3,1],[4,2]];
+                                for (const [r,c,l] of letters) {
+                                    const isSel = cyc > 1 && selected.some(([sr,sc]) => sr === r && sc === c);
+                                    gC(ctx, ox, oy, cs, r, c, l, isSel ? '#1e4a1e' : '#2a2a3e', isSel ? '#00c853' : null);
+                                }
+                                if (cyc < 1) {
+                                    gT(ctx, w / 2, oy - cs * 0.7, '🧹 Line Clear!', '#ff9800', Math.floor(cs * 0.35));
+                                } else if (cyc < 2.2) {
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Tap start & end', '#4ade80', Math.floor(cs * 0.3));
+                                } else if (cyc < 3.2) {
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Press Clear!', '#22c55e', Math.floor(cs * 0.35));
                                 } else {
-                                    for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
-                                        gC(ctx, ox, oy, cs, r + 1 < gs ? r + 1 : r, c, 'ABCDE'[c], '#2a2a3e');
-                                    gT(ctx, w / 2, oy - cs * 0.7, 'Letters drop down', '#aaa', Math.floor(cs * 0.3));
+                                    // Show cleared
+                                    for (const [r,c,l] of letters) {
+                                        if (!selected.some(([sr,sc]) => sr === r && sc === c))
+                                            gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                    }
+                                    gT(ctx, w / 2, oy - cs * 0.7, '+60 pts!', '#ffd700', Math.floor(cs * 0.35));
                                 }
                             } else {
+                                // Freeze demo with tap-to-unfreeze
                                 for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
                                     gC(ctx, ox, oy, cs, r, c, 'FGHIJ'[c], '#2a2a3e');
-                                const remain = 10 - (cyc - 4) * 2.5;
-                                gT(ctx, w / 2, oy - cs * 0.9, '❄️ FREEZE', '#64b5f6', Math.floor(cs * 0.4));
-                                const barW = gs * cs * 0.8, barH = 8;
-                                const bx = (w - barW) / 2, by = oy - cs * 0.3;
-                                ctx.fillStyle = '#333'; ctx.fillRect(bx, by, barW, barH);
-                                ctx.fillStyle = '#64b5f6';
-                                ctx.fillRect(bx, by, barW * Math.max(0, remain / 10), barH);
-                                gT(ctx, w / 2, by - 14, remain.toFixed(1) + 's', '#64b5f6', Math.floor(cs * 0.25));
+                                const freezePhase = cyc - 4;
+                                if (freezePhase < 2.5) {
+                                    const remain = 10 - freezePhase * 2;
+                                    gT(ctx, w / 2, oy - cs * 0.9, '❄️ FREEZE +50', '#64b5f6', Math.floor(cs * 0.4));
+                                    const barW = gs * cs * 0.8, barH = 8;
+                                    const bx = (w - barW) / 2, by = oy - cs * 0.3;
+                                    ctx.fillStyle = '#333'; ctx.fillRect(bx, by, barW, barH);
+                                    ctx.fillStyle = '#64b5f6';
+                                    ctx.fillRect(bx, by, barW * Math.max(0, remain / 10), barH);
+                                    gT(ctx, w / 2, by - 14, remain.toFixed(1) + 's', '#64b5f6', Math.floor(cs * 0.25));
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.3, 'tap to unfreeze early!', '#64b5f6', Math.floor(cs * 0.22));
+                                } else {
+                                    const flash = Math.sin(t * 8) > 0;
+                                    gT(ctx, w / 2, oy - cs * 0.7, flash ? '👆 TAP!' : '❄️ Unfreeze!', '#64b5f6', Math.floor(cs * 0.4));
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.3, '+50 bonus pts!', '#ffd700', Math.floor(cs * 0.28));
+                                }
                                 const snowT = t * 2;
                                 for (let i = 0; i < 6; i++) {
                                     const sx = ox + (Math.sin(snowT + i * 1.5) * 0.5 + 0.5) * gs * cs;
