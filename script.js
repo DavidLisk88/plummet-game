@@ -1545,32 +1545,14 @@ class MusicManager {
         this.sleepTimerInterval = null;
         this.onSleepTimerTick = null; // (remainingMs) => void
 
-        // Auto-advance to next track (handle repeat-one and crossfade)
-        this._bindEndedListener(this.audio);
-
         // Callbacks for UI updates
         this.onStateChange = null;
         this.onTimeUpdate = null;
 
         this._lastSavedTime = 0;
-        this.audio.addEventListener("timeupdate", () => {
-            if (this.onTimeUpdate) {
-                this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
-            }
-            // Crossfade: start fading near end of track
-            if (!this._crossfading && this.playing && this.audio.duration > 0
-                && this.repeatMode !== "one"
-                && this.audio.duration - this.audio.currentTime <= this._crossfadeDuration
-                && this.audio.duration > this._crossfadeDuration * 2
-                && this._getEffectiveQueue().length > 1) {
-                this._startCrossfade();
-            }
-            const now = Date.now();
-            if (now - this._lastSavedTime > 3000) {
-                this._lastSavedTime = now;
-                this._saveMusicState();
-            }
-        });
+
+        // Attach ended + timeupdate listeners to initial audio element
+        this._bindAudioListeners(this.audio);
 
         this._buildQueue();
         this._restoreMusicState();
@@ -1673,9 +1655,17 @@ class MusicManager {
         }
         this.currentTrackId = trackId;
         this._cancelCrossfade();
-        this.audio.src = track.file;
+
+        // Stop and discard old audio element
+        this.audio.pause();
+        this.audio.src = "";
+
+        // Create a fresh Audio element for reliable playback
+        this.audio = new Audio(track.file);
+        this.audio.volume = 1;
         this.audio.muted = !!this.muted;
         this._ensureGainNode(this.audio);
+        this._bindAudioListeners(this.audio);
         this.audio.play().catch(() => {});
         this.playing = true;
         this._saveMusicState();
@@ -1808,13 +1798,30 @@ class MusicManager {
         return this.currentTrackId ? this.plMgr.getTrack(this.currentTrackId) : null;
     }
 
-    // ── Track ended handler ──
+    // ── Audio event listeners ──
 
-    _bindEndedListener(audioEl) {
+    _bindAudioListeners(audioEl) {
         audioEl.addEventListener("ended", () => {
-            // Ignore stale ended events from old audio elements after crossfade swap
             if (audioEl !== this.audio) return;
             this._onTrackEnded();
+        });
+        audioEl.addEventListener("timeupdate", () => {
+            if (audioEl !== this.audio) return;
+            if (this.onTimeUpdate) {
+                this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
+            }
+            if (!this._crossfading && this.playing && this.audio.duration > 0
+                && this.repeatMode !== "one"
+                && this.audio.duration - this.audio.currentTime <= this._crossfadeDuration
+                && this.audio.duration > this._crossfadeDuration * 2
+                && this._getEffectiveQueue().length > 1) {
+                this._startCrossfade();
+            }
+            const now = Date.now();
+            if (now - this._lastSavedTime > 3000) {
+                this._lastSavedTime = now;
+                this._saveMusicState();
+            }
         });
     }
 
@@ -1887,7 +1894,7 @@ class MusicManager {
             if (crossfadeGain) crossfadeGain.gain.value = newGain * m;
             // Fallback for non-WebAudio
             this.audio.volume = oldGain * m;
-            this._crossfadeAudio.volume = newGain * m;
+            if (this._crossfadeAudio) this._crossfadeAudio.volume = newGain * m;
 
             if (step >= steps) {
                 clearInterval(this._crossfadeTimer);
@@ -1921,24 +1928,7 @@ class MusicManager {
                 this.currentTrackId = q[nextIdx];
 
                 // Re-add event listeners to new audio
-                this._bindEndedListener(this.audio);
-                this.audio.addEventListener("timeupdate", () => {
-                    if (this.onTimeUpdate) {
-                        this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
-                    }
-                    if (!this._crossfading && this.playing && this.audio.duration > 0
-                        && this.repeatMode !== "one"
-                        && this.audio.duration - this.audio.currentTime <= this._crossfadeDuration
-                        && this.audio.duration > this._crossfadeDuration * 2
-                        && this._getEffectiveQueue().length > 1) {
-                        this._startCrossfade();
-                    }
-                    const now = Date.now();
-                    if (now - this._lastSavedTime > 3000) {
-                        this._lastSavedTime = now;
-                        this._saveMusicState();
-                    }
-                });
+                this._bindAudioListeners(this.audio);
 
                 this._saveMusicState();
                 this._notify();
@@ -1957,11 +1947,11 @@ class MusicManager {
             this._crossfadeAudio = null;
         }
         this._crossfading = false;
-        // Restore volume via gain node
+        // Restore volume via gain node (respect mute)
         if (this._gainNode) {
-            this._gainNode.gain.value = this._volume;
+            this._gainNode.gain.value = this.muted ? 0 : this._volume;
         }
-        this.audio.volume = 1;
+        this.audio.volume = this.muted ? 0 : 1;
     }
 
     // ── Sleep timer ──
