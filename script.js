@@ -135,6 +135,14 @@ function randomLetter() {
 
 const WILDCARD_SYMBOL = "★";
 
+// Letter difficulty values — harder letters earn bonus points per letter in a word
+// Based on inverse frequency / Scrabble-style difficulty
+const LETTER_VALUES = {
+    A:1, B:3, C:3, D:2, E:1, F:4, G:2, H:4, I:1, J:8,
+    K:5, L:1, M:3, N:1, O:1, P:3, Q:10, R:1, S:1, T:1,
+    U:1, V:4, W:4, X:8, Y:4, Z:10
+};
+
 function isWordLetter(value) {
     return typeof value === "string" && (/^[A-Z]$/.test(value) || value === WILDCARD_SYMBOL);
 }
@@ -387,11 +395,11 @@ const BONUS_METADATA = Object.freeze({
         previewSymbol: WILDCARD_SYMBOL,
     },
     [BONUS_TYPES.ROW_CLEAR]: {
-        buttonLabel: "Bonus: Row",
-        buttonTitle: "Drag across a row to clear it",
-        modalTitle: "Row Clear Bonus",
-        modalText: "Drag your finger or mouse across any row to clear it! Letters turn green as you drag. Swipe the entire row to complete the bonus.",
-        acceptLabel: "Start Dragging",
+        buttonLabel: "Bonus: Line",
+        buttonTitle: "Tap letters in a line to clear them",
+        modalTitle: "Line Clear Bonus",
+        modalText: "Tap any letter to start, then tap another letter in the same line — horizontal, vertical, or diagonal. All letters between them will be selected. Press Clear to remove them, or Cancel to re-select!",
+        acceptLabel: "Start Selecting",
         previewSymbol: "🧹",
     },
     [BONUS_TYPES.FREEZE]: {
@@ -426,6 +434,13 @@ function getMusicControlIcon(iconName) {
         pause: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>',
         prev: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5" width="2.2" height="14" rx="1"/><path d="M18.2 6v12l-8.1-6z"/><path d="M10.6 6v12l-8.1-6z"/></svg>',
         next: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="17.8" y="5" width="2.2" height="14" rx="1"/><path d="M5.8 6v12l8.1-6z"/><path d="M13.4 6v12l8.1-6z"/></svg>',
+        shuffle: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>',
+        repeatAll: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>',
+        repeatOne: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/><text x="12" y="15.5" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">1</text></svg>',
+        volumeHigh: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/><path d="M14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
+        volumeLow: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>',
+        volumeMute: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3z"/></svg>',
+        timer: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>',
     };
     return icons[iconName] || "";
 }
@@ -439,8 +454,8 @@ function shuffleList(items) {
     return shuffled;
 }
 
-function drawRandomBonusType(bonusBag, lastBonusType = null, recentHistory = []) {
-    // Base weights for each bonus type (higher = more likely)
+function drawRandomBonusType(bonusBag, lastBonusType = null, recentHistory = [], gameContext = {}) {
+    // ── Base weights ──
     const baseWeights = {
         [BONUS_TYPES.LETTER_PICK]: 18,
         [BONUS_TYPES.SCORE_2X]:    16,
@@ -451,29 +466,112 @@ function drawRandomBonusType(bonusBag, lastBonusType = null, recentHistory = [])
         [BONUS_TYPES.BOMB]:         7,
     };
 
-    // Build effective weights with recency penalty
+    // Categorize bonuses by role
+    const CLEARING = [BONUS_TYPES.BOMB, BONUS_TYPES.ROW_CLEAR, BONUS_TYPES.SHUFFLE];
+    const UTILITY = [BONUS_TYPES.FREEZE, BONUS_TYPES.LETTER_PICK, BONUS_TYPES.WILDCARD];
+    const SCORING = [BONUS_TYPES.SCORE_2X];
+
     const weights = {};
     for (const type of BONUS_TYPE_POOL) {
         weights[type] = baseWeights[type] || 10;
     }
 
-    // Penalize recently awarded types (heavier penalty for more recent)
+    // ── 1) Recency penalty (exponential decay) ──
     for (let i = 0; i < recentHistory.length; i++) {
         const recent = recentHistory[i];
         if (weights[recent] !== undefined) {
-            // Most recent gets heaviest penalty, older ones less
-            const penalty = i === 0 ? 0.15 : i === 1 ? 0.4 : 0.7;
+            const penalty = Math.pow(0.3, recentHistory.length - i); // most recent ≈ 0.008, older ≈ 0.3
             weights[recent] *= penalty;
         }
     }
 
-    // Never repeat the immediately previous bonus
+    // ── 2) Never repeat immediately ──
     if (lastBonusType && weights[lastBonusType] !== undefined) {
         weights[lastBonusType] = 0;
     }
 
-    // Weighted random selection
+    // ── 3) Category streak prevention ──
+    // If last 2 bonuses were same category (clearing/utility/scoring), dampen that category
+    if (recentHistory.length >= 2) {
+        const getCat = (t) => CLEARING.includes(t) ? "clear" : UTILITY.includes(t) ? "util" : "score";
+        const lastCats = recentHistory.slice(0, 2).map(getCat);
+        if (lastCats[0] === lastCats[1]) {
+            const streakCat = lastCats[0];
+            const catTypes = streakCat === "clear" ? CLEARING : streakCat === "util" ? UTILITY : SCORING;
+            for (const type of catTypes) {
+                weights[type] *= 0.35;
+            }
+        }
+    }
+
+    // ── 4) Board fullness pressure ──
+    // When board is filling up, strongly favor clearing bonuses
+    const { boardFillRatio = 0, freezeActive = false, score = 0 } = gameContext;
+    if (boardFillRatio > 0.3) {
+        const pressure = Math.pow(boardFillRatio, 2); // 0.5→0.25, 0.7→0.49, 0.9→0.81
+        for (const type of CLEARING) {
+            weights[type] *= 1 + pressure * 4; // up to 5× boost at full board
+        }
+    }
+
+    // ── 5) Contextual adjustments ──
+    // If freeze is already active, strongly reduce freeze weight
+    if (freezeActive) {
+        weights[BONUS_TYPES.FREEZE] *= 0.05;
+    }
+
+    // Very early game (score < 2000): favor utility to help players build
+    if (score < 2000) {
+        for (const type of UTILITY) weights[type] *= 1.4;
+        weights[BONUS_TYPES.BOMB] *= 0.5; // bomb not as useful early
+    }
+    // Late game (score > 10000): favor powerful bonuses
+    if (score > 10000) {
+        weights[BONUS_TYPES.BOMB] *= 1.6;
+        weights[BONUS_TYPES.ROW_CLEAR] *= 1.5;
+        weights[BONUS_TYPES.SCORE_2X] *= 1.8;
+    }
+
+    // ── 6) Pity timer — guarantee rare bonuses after long absence ──
+    // Track how many draws since each bonus was last seen
+    const fullHistory = gameContext.fullBonusHistory || [];
+    for (const type of BONUS_TYPE_POOL) {
+        const lastSeen = fullHistory.lastIndexOf(type);
+        const drawsSince = lastSeen === -1 ? fullHistory.length : (fullHistory.length - 1 - lastSeen);
+        // After 5+ draws without seeing a bonus, boost it progressively
+        if (drawsSince >= 5) {
+            const pityBoost = 1 + (drawsSince - 4) * 0.5; // +50% per extra draw
+            weights[type] *= Math.min(pityBoost, 4.0); // cap at 4×
+        }
+    }
+
+    // ── 7) Usage fatigue — bonuses used many times this game get slightly less likely ──
+    const usageCounts = gameContext.bonusUsageCounts || {};
+    for (const type of BONUS_TYPE_POOL) {
+        const uses = usageCounts[type] || 0;
+        if (uses >= 3) {
+            weights[type] *= Math.max(0.3, 1 - (uses - 2) * 0.12);
+        }
+    }
+
+    // ── 8) Lucky upgrade: 8% chance to roll a "rare" bonus ──
+    const rareTypes = [BONUS_TYPES.BOMB, BONUS_TYPES.ROW_CLEAR, BONUS_TYPES.WILDCARD];
+    if (Math.random() < 0.08) {
+        // Boost rare types significantly for this single draw
+        for (const type of rareTypes) {
+            weights[type] *= 3.0;
+        }
+    }
+
+    // ── Weighted random selection ──
     const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+    if (totalWeight <= 0) {
+        // Fallback: pick purely random
+        const idx = Math.floor(Math.random() * BONUS_TYPE_POOL.length);
+        const bonusType = BONUS_TYPE_POOL[idx];
+        return { bonusType, nextBag: bonusBag, nextHistory: [bonusType, ...recentHistory].slice(0, 5) };
+    }
+
     let roll = Math.random() * totalWeight;
     let bonusType = BONUS_TYPE_POOL[0];
     for (const type of BONUS_TYPE_POOL) {
@@ -481,8 +579,8 @@ function drawRandomBonusType(bonusBag, lastBonusType = null, recentHistory = [])
         if (roll <= 0) { bonusType = type; break; }
     }
 
-    // Update history (keep last 3)
-    const nextHistory = [bonusType, ...recentHistory].slice(0, 3);
+    // Update history (keep last 5 for deeper recency tracking)
+    const nextHistory = [bonusType, ...recentHistory].slice(0, 5);
 
     return { bonusType, nextBag: bonusBag, nextHistory };
 }
@@ -775,42 +873,84 @@ class Grid {
 
             if (segment.length < minWordLength) continue;
 
-            // Check all substrings of length ≥ 3 in both forward AND reverse order.
-            // Reverse is needed because letters stack bottom-up (e.g. CAT placed
-            // naturally in a column reads T-A-C top-to-bottom, but CAT bottom-to-top).
-            // Keep only the longest valid word per direction so that each direction
-            // contributes independently to scoring.
-            let bestWord = null;
-            let bestCells = null;
+            // Check all substrings in forward AND reverse separately.
+            // If both directions produce a valid word on overlapping cells,
+            // both count — the primary gets full points, reverse gets half.
             const reversed = [...segment].reverse();
-            for (const seq of [segment, reversed]) {
-                for (let start = 0; start < seq.length; start++) {
-                    for (let end = start + minWordLength; end <= seq.length; end++) {
-                        const sub = seq.slice(start, end);
-                        const raw = sub.map(s => s.letter).join("");
-                        const matches = _resolveWildcards(raw);
-                        for (const word of matches) {
-                            if (DICTIONARY.has(word)) {
-                                if (!bestWord || word.length > bestWord.length) {
-                                    bestWord = word;
-                                    bestCells = sub;
-                                }
-                                break; // first match is enough for this substring
+            let bestForward = null, bestForwardCells = null;
+            let bestReverse = null, bestReverseCells = null;
+
+            for (let start = 0; start < segment.length; start++) {
+                for (let end = start + minWordLength; end <= segment.length; end++) {
+                    const sub = segment.slice(start, end);
+                    const raw = sub.map(s => s.letter).join("");
+                    const matches = _resolveWildcards(raw);
+                    for (const word of matches) {
+                        if (DICTIONARY.has(word)) {
+                            if (!bestForward || word.length > bestForward.length) {
+                                bestForward = word;
+                                bestForwardCells = sub;
                             }
+                            break;
                         }
                     }
                 }
             }
 
-            if (bestWord) {
-                foundWords.push(bestWord);
+            for (let start = 0; start < reversed.length; start++) {
+                for (let end = start + minWordLength; end <= reversed.length; end++) {
+                    const sub = reversed.slice(start, end);
+                    const raw = sub.map(s => s.letter).join("");
+                    const matches = _resolveWildcards(raw);
+                    for (const word of matches) {
+                        if (DICTIONARY.has(word)) {
+                            if (!bestReverse || word.length > bestReverse.length) {
+                                bestReverse = word;
+                                bestReverseCells = sub;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Pick the primary word (longer wins, forward wins ties)
+            let primary, primaryCells, secondary, secondaryCells;
+            if (bestForward && bestReverse && bestForward !== bestReverse) {
+                if (bestForward.length >= bestReverse.length) {
+                    primary = bestForward; primaryCells = bestForwardCells;
+                    secondary = bestReverse; secondaryCells = bestReverseCells;
+                } else {
+                    primary = bestReverse; primaryCells = bestReverseCells;
+                    secondary = bestForward; secondaryCells = bestForwardCells;
+                }
+            } else {
+                primary = bestForward || bestReverse;
+                primaryCells = bestForwardCells || bestReverseCells;
+                secondary = null; secondaryCells = null;
+            }
+
+            if (primary) {
+                foundWords.push(primary);
                 const wordCells = new Set();
-                for (const s of bestCells) {
+                for (const s of primaryCells) {
                     const key = `${s.r},${s.c}`;
                     cellsToRemove.add(key);
                     wordCells.add(key);
                 }
-                wordCellMap.push({ word: bestWord, cells: wordCells });
+                wordCellMap.push({ word: primary, cells: wordCells });
+            }
+
+            // If reverse produced a different valid word sharing cells, add as bonus
+            if (secondary && primary) {
+                const secCells = new Set();
+                for (const s of secondaryCells) {
+                    const key = `${s.r},${s.c}`;
+                    cellsToRemove.add(key);
+                    secCells.add(key);
+                }
+                wordCellMap.push({ word: secondary, cells: secCells, isReverse: true });
+                foundWords.push(secondary);
             }
         }
 
@@ -850,10 +990,13 @@ class Grid {
         // Sort longest-first so the subset filter is order-independent
         dedupedMap.sort((a, b) => b.word.length - a.word.length);
         dedupedMap = dedupedMap.filter((wc, i) => {
+            // Never drop reverse bonus words via subset filter
+            if (wc.isReverse) return true;
             // Drop this word if a strictly longer word covers all its cells
             for (let j = 0; j < i; j++) {
                 const longer = dedupedMap[j];
                 if (longer.word.length > wc.word.length
+                    && !longer.isReverse
                     && [...wc.cells].every(k => longer.cells.has(k))) {
                     return false;
                 }
@@ -1231,6 +1374,7 @@ class PlaylistManager {
     constructor(defaultTracks) {
         this.allTracks = defaultTracks;
         this.trackMap = new Map(defaultTracks.map(t => [t.id, t]));
+        this.favorites = new Set();
         this._load();
     }
 
@@ -1240,6 +1384,7 @@ class PlaylistManager {
             if (data && data.version === 1) {
                 this.defaultOrder = data.defaultOrder || this.allTracks.map(t => t.id);
                 this.custom = data.custom || [];  // [{name, trackIds}]
+                if (Array.isArray(data.favorites)) this.favorites = new Set(data.favorites);
             } else {
                 this._reset();
             }
@@ -1252,6 +1397,7 @@ class PlaylistManager {
     _reset() {
         this.defaultOrder = this.allTracks.map(t => t.id);
         this.custom = [];
+        this.favorites = new Set();
     }
 
     // Remove any track IDs that no longer exist in allTracks
@@ -1265,6 +1411,10 @@ class PlaylistManager {
         for (const pl of this.custom) {
             pl.trackIds = pl.trackIds.filter(id => validIds.has(id));
         }
+        // Clean favorites
+        for (const id of this.favorites) {
+            if (!validIds.has(id)) this.favorites.delete(id);
+        }
     }
 
     _save() {
@@ -1272,10 +1422,28 @@ class PlaylistManager {
             version: 1,
             defaultOrder: this.defaultOrder,
             custom: this.custom,
+            favorites: [...this.favorites],
         }));
     }
 
     getTrack(id) { return this.trackMap.get(id) || null; }
+
+    isFavorite(id) { return this.favorites.has(id); }
+
+    toggleFavorite(id) {
+        if (this.favorites.has(id)) this.favorites.delete(id);
+        else this.favorites.add(id);
+        this._save();
+        return this.favorites.has(id);
+    }
+
+    getFavoriteTracks() {
+        return this.defaultOrder.filter(id => this.favorites.has(id)).map(id => this.trackMap.get(id)).filter(Boolean);
+    }
+
+    getFavoriteTrackIds() {
+        return this.defaultOrder.filter(id => this.favorites.has(id));
+    }
 
     getDefaultPlaylist() {
         return this.defaultOrder.map(id => this.trackMap.get(id)).filter(Boolean);
@@ -1285,12 +1453,14 @@ class PlaylistManager {
 
     getPlaylistTracks(playlist) {
         if (playlist === "__default") return this.getDefaultPlaylist();
+        if (playlist === "__favorites") return this.getFavoriteTracks();
         const pl = this.custom.find(p => p.name === playlist);
         return pl ? pl.trackIds.map(id => this.trackMap.get(id)).filter(Boolean) : [];
     }
 
     getPlaylistTrackIds(playlist) {
         if (playlist === "__default") return [...this.defaultOrder];
+        if (playlist === "__favorites") return this.getFavoriteTrackIds();
         const pl = this.custom.find(p => p.name === playlist);
         return pl ? [...pl.trackIds] : [];
     }
@@ -1340,26 +1510,50 @@ class MusicManager {
     constructor(playlistManager) {
         this.plMgr = playlistManager;
         this.audio = new Audio();
-        this.audio.volume = 0.5;
+        this.audio.volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
         this.playing = false;
         this.currentTrackId = null;
-        this.activePlaylist = "__default"; // name of active playlist
-        this.queue = [];       // ordered track IDs for current playlist
+        this.activePlaylist = "__default";
+        this.queue = [];
         this.queueIndex = -1;
 
-        // Auto-advance to next track
-        this.audio.addEventListener("ended", () => this.next());
+        // Shuffle & repeat
+        this.shuffleOn = localStorage.getItem("wf_music_shuffle") === "1";
+        this._shuffledQueue = [];
+        this._shuffledIndex = -1;
+        // repeatMode: "off" | "all" | "one"
+        this.repeatMode = localStorage.getItem("wf_music_repeat") || "off";
+
+        // Crossfade
+        this._crossfadeDuration = 1.5; // seconds
+        this._crossfadeAudio = null;
+        this._crossfading = false;
+
+        // Sleep timer
+        this.sleepTimerEnd = 0;     // timestamp (ms) when playback should auto-stop
+        this.sleepTimerInterval = null;
+        this.onSleepTimerTick = null; // (remainingMs) => void
+
+        // Auto-advance to next track (handle repeat-one and crossfade)
+        this.audio.addEventListener("ended", () => this._onTrackEnded());
 
         // Callbacks for UI updates
-        this.onStateChange = null;  // () => void
-        this.onTimeUpdate = null;   // (currentTime, duration) => void
+        this.onStateChange = null;
+        this.onTimeUpdate = null;
 
-        this._lastSavedTime = 0; // throttle position saves
+        this._lastSavedTime = 0;
         this.audio.addEventListener("timeupdate", () => {
             if (this.onTimeUpdate) {
                 this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
             }
-            // Save playback position every 3 seconds
+            // Crossfade: start fading near end of track
+            if (!this._crossfading && this.playing && this.audio.duration > 0
+                && this.repeatMode !== "one"
+                && this.audio.duration - this.audio.currentTime <= this._crossfadeDuration
+                && this.audio.duration > this._crossfadeDuration * 2
+                && this._getEffectiveQueue().length > 1) {
+                this._startCrossfade();
+            }
             const now = Date.now();
             if (now - this._lastSavedTime > 3000) {
                 this._lastSavedTime = now;
@@ -1367,48 +1561,107 @@ class MusicManager {
             }
         });
 
-        // Build initial queue
         this._buildQueue();
-
-        // Restore previous session's music state
         this._restoreMusicState();
     }
 
+    // ── Queue management ──
+
     _buildQueue() {
         this.queue = this.plMgr.getPlaylistTrackIds(this.activePlaylist);
+        if (this.shuffleOn) this._reshuffleQueue();
+    }
+
+    _reshuffleQueue() {
+        this._shuffledQueue = [...this.queue];
+        // Fisher-Yates
+        for (let i = this._shuffledQueue.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this._shuffledQueue[i], this._shuffledQueue[j]] = [this._shuffledQueue[j], this._shuffledQueue[i]];
+        }
+        // Keep current track at position 0 if playing
+        if (this.currentTrackId) {
+            const idx = this._shuffledQueue.indexOf(this.currentTrackId);
+            if (idx > 0) {
+                [this._shuffledQueue[0], this._shuffledQueue[idx]] = [this._shuffledQueue[idx], this._shuffledQueue[0]];
+            }
+            this._shuffledIndex = 0;
+        }
+    }
+
+    _getEffectiveQueue() {
+        return this.shuffleOn ? this._shuffledQueue : this.queue;
+    }
+
+    _getEffectiveIndex() {
+        return this.shuffleOn ? this._shuffledIndex : this.queueIndex;
+    }
+
+    _setEffectiveIndex(idx) {
+        if (this.shuffleOn) this._shuffledIndex = idx;
+        else this.queueIndex = idx;
     }
 
     setActivePlaylist(name) {
         this.activePlaylist = name;
         this._buildQueue();
-        // If a track is playing that's still in this playlist, keep playing it
         if (this.currentTrackId) {
-            const idx = this.queue.indexOf(this.currentTrackId);
-            if (idx >= 0) { this.queueIndex = idx; return; }
+            const q = this._getEffectiveQueue();
+            const idx = q.indexOf(this.currentTrackId);
+            if (idx >= 0) { this._setEffectiveIndex(idx); return; }
         }
-        // Otherwise reset
-        this.queueIndex = -1;
+        this._setEffectiveIndex(-1);
     }
 
     refreshQueue() {
         this._buildQueue();
         if (this.currentTrackId) {
-            const idx = this.queue.indexOf(this.currentTrackId);
-            if (idx >= 0) this.queueIndex = idx;
+            const q = this._getEffectiveQueue();
+            const idx = q.indexOf(this.currentTrackId);
+            if (idx >= 0) this._setEffectiveIndex(idx);
         }
     }
+
+    // ── Shuffle & Repeat ──
+
+    toggleShuffle() {
+        this.shuffleOn = !this.shuffleOn;
+        localStorage.setItem("wf_music_shuffle", this.shuffleOn ? "1" : "0");
+        if (this.shuffleOn) {
+            this._reshuffleQueue();
+        } else {
+            // Restore normal index
+            if (this.currentTrackId) {
+                this.queueIndex = this.queue.indexOf(this.currentTrackId);
+            }
+        }
+        this._notify();
+    }
+
+    cycleRepeat() {
+        if (this.repeatMode === "off") this.repeatMode = "all";
+        else if (this.repeatMode === "all") this.repeatMode = "one";
+        else this.repeatMode = "off";
+        localStorage.setItem("wf_music_repeat", this.repeatMode);
+        this._notify();
+    }
+
+    // ── Playback ──
 
     playTrackById(trackId) {
         const track = this.plMgr.getTrack(trackId);
         if (!track) return;
-        const idx = this.queue.indexOf(trackId);
-        if (idx >= 0) this.queueIndex = idx;
+        // Find in effective queue
+        const q = this._getEffectiveQueue();
+        const idx = q.indexOf(trackId);
+        if (idx >= 0) this._setEffectiveIndex(idx);
         else {
-            // Track not in current queue—switch to default and find it
             this.setActivePlaylist("__default");
-            this.queueIndex = this.queue.indexOf(trackId);
+            const q2 = this._getEffectiveQueue();
+            this._setEffectiveIndex(q2.indexOf(trackId));
         }
         this.currentTrackId = trackId;
+        this._cancelCrossfade();
         this.audio.src = track.file;
         this.audio.muted = !!this.muted;
         this.audio.play().catch(() => {});
@@ -1423,14 +1676,18 @@ class MusicManager {
             this.playing = true;
             localStorage.setItem("wf_music_paused", "0");
             this._notify();
-        } else if (this.queue.length > 0) {
-            this.queueIndex = 0;
-            this.playTrackById(this.queue[0]);
+        } else {
+            const q = this._getEffectiveQueue();
+            if (q.length > 0) {
+                this._setEffectiveIndex(0);
+                this.playTrackById(q[0]);
+            }
         }
     }
 
     pause() {
         this.audio.pause();
+        this._cancelCrossfade();
         this.playing = false;
         this._saveMusicState();
         localStorage.setItem("wf_music_paused", "1");
@@ -1442,20 +1699,29 @@ class MusicManager {
     }
 
     next() {
-        if (this.queue.length === 0) return;
-        this.queueIndex = (this.queueIndex + 1) % this.queue.length;
-        this.playTrackById(this.queue[this.queueIndex]);
+        const q = this._getEffectiveQueue();
+        if (q.length === 0) return;
+        let newIdx = this._getEffectiveIndex() + 1;
+        if (newIdx >= q.length) {
+            if (this.repeatMode === "off") { this.pause(); return; }
+            newIdx = 0;
+            if (this.shuffleOn) this._reshuffleQueue();
+        }
+        this._setEffectiveIndex(newIdx);
+        this.playTrackById(q[newIdx]);
     }
 
     prev() {
-        if (this.queue.length === 0) return;
-        // If more than 3 seconds in, restart current; otherwise go to previous
+        const q = this._getEffectiveQueue();
+        if (q.length === 0) return;
         if (this.audio.currentTime > 3) {
             this.audio.currentTime = 0;
             return;
         }
-        this.queueIndex = (this.queueIndex - 1 + this.queue.length) % this.queue.length;
-        this.playTrackById(this.queue[this.queueIndex]);
+        let newIdx = this._getEffectiveIndex() - 1;
+        if (newIdx < 0) newIdx = q.length - 1;
+        this._setEffectiveIndex(newIdx);
+        this.playTrackById(q[newIdx]);
     }
 
     seek(fraction) {
@@ -1464,14 +1730,161 @@ class MusicManager {
         }
     }
 
+    // ── Volume ──
+
+    setVolume(vol) {
+        this.audio.volume = Math.max(0, Math.min(1, vol));
+        if (this._crossfadeAudio) this._crossfadeAudio.volume = this.audio.volume;
+        localStorage.setItem("wf_music_volume", this.audio.volume.toFixed(2));
+        this._notify();
+    }
+
+    getVolume() {
+        return this.audio.volume;
+    }
+
     setMuted(muted) {
         this.muted = muted;
         this.audio.muted = muted;
+        if (this._crossfadeAudio) this._crossfadeAudio.muted = muted;
     }
 
     getCurrentTrack() {
         return this.currentTrackId ? this.plMgr.getTrack(this.currentTrackId) : null;
     }
+
+    // ── Track ended handler ──
+
+    _onTrackEnded() {
+        if (this.repeatMode === "one") {
+            this.audio.currentTime = 0;
+            this.audio.play().catch(() => {});
+            return;
+        }
+        // If crossfade already handled the transition, skip
+        if (this._crossfading) return;
+        this.next();
+    }
+
+    // ── Crossfade ──
+
+    _startCrossfade() {
+        const q = this._getEffectiveQueue();
+        if (q.length <= 1) return;
+        let nextIdx = this._getEffectiveIndex() + 1;
+        if (nextIdx >= q.length) {
+            if (this.repeatMode === "off") return;
+            nextIdx = 0;
+        }
+        const nextTrack = this.plMgr.getTrack(q[nextIdx]);
+        if (!nextTrack) return;
+
+        this._crossfading = true;
+        this._crossfadeAudio = new Audio(nextTrack.file);
+        this._crossfadeAudio.volume = 0;
+        this._crossfadeAudio.muted = !!this.muted;
+        this._crossfadeAudio.play().catch(() => {});
+
+        const fadeStep = 50; // ms
+        const steps = (this._crossfadeDuration * 1000) / fadeStep;
+        const volStep = this.audio.volume / steps;
+        let step = 0;
+
+        this._crossfadeTimer = setInterval(() => {
+            step++;
+            const oldVol = Math.max(0, this.audio.volume - volStep);
+            const newVol = Math.min(parseFloat(localStorage.getItem("wf_music_volume") || "0.5"), step * volStep);
+            this.audio.volume = oldVol;
+            this._crossfadeAudio.volume = newVol;
+
+            if (step >= steps) {
+                clearInterval(this._crossfadeTimer);
+                this.audio.pause();
+                // Swap audio elements
+                this.audio.removeEventListener("ended", this._boundOnEnded);
+                const oldAudio = this.audio;
+                this.audio = this._crossfadeAudio;
+                this._crossfadeAudio = null;
+                this._crossfading = false;
+
+                // Update track reference
+                this._setEffectiveIndex(nextIdx);
+                if (this.shuffleOn && nextIdx === 0) this._reshuffleQueue();
+                this.currentTrackId = q[nextIdx];
+                this.audio.volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
+
+                // Re-add event listeners to new audio
+                this.audio.addEventListener("ended", () => this._onTrackEnded());
+                this.audio.addEventListener("timeupdate", () => {
+                    if (this.onTimeUpdate) {
+                        this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
+                    }
+                    if (!this._crossfading && this.playing && this.audio.duration > 0
+                        && this.repeatMode !== "one"
+                        && this.audio.duration - this.audio.currentTime <= this._crossfadeDuration
+                        && this.audio.duration > this._crossfadeDuration * 2
+                        && this._getEffectiveQueue().length > 1) {
+                        this._startCrossfade();
+                    }
+                    const now = Date.now();
+                    if (now - this._lastSavedTime > 3000) {
+                        this._lastSavedTime = now;
+                        this._saveMusicState();
+                    }
+                });
+
+                this._saveMusicState();
+                this._notify();
+
+                // Clean up
+                oldAudio.src = "";
+            }
+        }, fadeStep);
+    }
+
+    _cancelCrossfade() {
+        if (this._crossfadeTimer) clearInterval(this._crossfadeTimer);
+        if (this._crossfadeAudio) {
+            this._crossfadeAudio.pause();
+            this._crossfadeAudio.src = "";
+            this._crossfadeAudio = null;
+        }
+        this._crossfading = false;
+        // Restore volume
+        this.audio.volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
+    }
+
+    // ── Sleep timer ──
+
+    startSleepTimer(minutes) {
+        this.clearSleepTimer();
+        this.sleepTimerEnd = Date.now() + minutes * 60 * 1000;
+        this.sleepTimerInterval = setInterval(() => {
+            const remaining = this.sleepTimerEnd - Date.now();
+            if (remaining <= 0) {
+                this.clearSleepTimer();
+                this.pause();
+                return;
+            }
+            if (this.onSleepTimerTick) this.onSleepTimerTick(remaining);
+        }, 1000);
+        this._notify();
+    }
+
+    clearSleepTimer() {
+        if (this.sleepTimerInterval) clearInterval(this.sleepTimerInterval);
+        this.sleepTimerInterval = null;
+        this.sleepTimerEnd = 0;
+        if (this.onSleepTimerTick) this.onSleepTimerTick(0);
+        this._notify();
+    }
+
+    getSleepTimerRemaining() {
+        if (!this.sleepTimerEnd) return 0;
+        return Math.max(0, this.sleepTimerEnd - Date.now());
+    }
+
+    // ── Persistence ──
 
     _saveMusicState() {
         if (!this.currentTrackId) return;
@@ -1490,20 +1903,18 @@ class MusicManager {
             const track = this.plMgr.getTrack(data.trackId);
             if (!track) return;
 
-            // Restore playlist context
             if (data.playlist) {
                 this.activePlaylist = data.playlist;
                 this._buildQueue();
             }
 
-            // Set up track without auto-playing
             this.currentTrackId = data.trackId;
-            const idx = this.queue.indexOf(data.trackId);
-            this.queueIndex = idx >= 0 ? idx : (data.queueIndex || 0);
+            const q = this._getEffectiveQueue();
+            const idx = q.indexOf(data.trackId);
+            this._setEffectiveIndex(idx >= 0 ? idx : 0);
             this.audio.src = track.file;
             this.audio.muted = !!this.muted;
 
-            // Seek to saved position once audio is ready
             if (data.position > 0) {
                 const seekOnce = () => {
                     this.audio.currentTime = data.position;
@@ -1512,7 +1923,6 @@ class MusicManager {
                 this.audio.addEventListener("canplay", seekOnce);
             }
 
-            // Don't auto-play here; _autoplayMusicFromUserAction will handle that
             this.playing = false;
             this._notify();
         } catch {}
@@ -1853,10 +2263,21 @@ class Game {
             npPrev:         document.getElementById("np-prev"),
             npPlay:         document.getElementById("np-play"),
             npNext:         document.getElementById("np-next"),
+            npShuffle:      document.getElementById("np-shuffle"),
+            npRepeat:       document.getElementById("np-repeat"),
             npProgressBar:  document.getElementById("np-progress-bar"),
             npProgressFill: document.getElementById("np-progress-fill"),
+            npProgressThumb: document.getElementById("np-progress-thumb"),
             npCurrentTime:  document.getElementById("np-current-time"),
             npDuration:     document.getElementById("np-duration"),
+            npVolumeIcon:   document.getElementById("np-volume-icon"),
+            npVolumeSlider: document.getElementById("np-volume-slider"),
+            npTimerBtn:     document.getElementById("np-timer-btn"),
+            npTimerDisplay: document.getElementById("np-timer-display"),
+            musicSearch:    document.getElementById("music-search"),
+            sleepTimerModal: document.getElementById("sleep-timer-modal"),
+            sleepTimerClear: document.getElementById("sleep-timer-clear"),
+            sleepTimerClose: document.getElementById("sleep-timer-close"),
             playlistTabs:   document.getElementById("playlist-tabs"),
             newPlaylistTab: document.getElementById("new-playlist-tab"),
             trackList:      document.getElementById("track-list"),
@@ -1873,6 +2294,7 @@ class Game {
             npMiniPrev:     document.getElementById("np-mini-prev"),
             npMiniToggle:   document.getElementById("np-mini-toggle"),
             npMiniNext:     document.getElementById("np-mini-next"),
+            npMiniProgressFill: document.getElementById("np-mini-progress-fill"),
             // Words Found
             wordsFoundScreen: document.getElementById("words-found-screen"),
             wordsFoundBtn:    document.getElementById("words-found-btn"),
@@ -1931,6 +2353,8 @@ class Game {
             freezeTimer: document.getElementById("freeze-timer"),
             score2xIndicator: document.getElementById("score-2x-indicator"),
             rowDragIndicator: document.getElementById("row-drag-indicator"),
+            lineClearBtn: document.getElementById("line-clear-btn"),
+            lineCancelBtn: document.getElementById("line-cancel-btn"),
             bgCanvas: document.getElementById("bg-canvas"),
             // Level / XP
             levelBar: document.getElementById("level-bar"),
@@ -1987,6 +2411,9 @@ class Game {
         this.bonusBag = [];
         this.lastAwardedBonusType = null;
         this.nextBonusScore = BONUS_UNLOCK_SCORE_INTERVAL;
+        this._bonusHistory = [];
+        this._fullBonusHistory = [];
+        this._bonusUsageCounts = {};
         this.letterChoiceActive = false;
         this.letterChoiceResumeState = null;
         this.wordsFoundBackTarget = "gameover";
@@ -1998,11 +2425,10 @@ class Game {
         this.freezeTimeRemaining = 0;
         this.scoreMultiplier = 1;
 
-        // Row drag state
+        // Line clear state (was row drag)
         this.rowDragActive = false;
-        this.rowDragRow = -1;
-        this.rowDragStartCol = -1;
-        this.rowDragCurrentCol = -1;
+        this._lineClearStart = null;   // {row, col} or null
+        this._lineClearEnd = null;     // {row, col} or null
 
         // Challenge state
         this.activeChallenge = null; // null or CHALLENGE_TYPES value
@@ -2234,6 +2660,13 @@ class Game {
             localStorage.setItem("wf_music_muted", nowMuted ? "1" : "0");
         });
 
+        // Freeze indicator tap → early unfreeze with time bonus
+        this.els.freezeIndicator.style.cursor = "pointer";
+        this.els.freezeIndicator.addEventListener("click", () => {
+            if (!this.freezeActive) return;
+            this._earlyUnfreeze();
+        });
+
         this.els.timeSelectCancelBtn.addEventListener("click", () => this._closeTimeSelectModal());
         document.querySelectorAll(".time-select-btn").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -2275,6 +2708,7 @@ class Game {
         this.music.setMuted(muted);
         this.els.globalMuteBtn.textContent = muted ? "🔇" : "🔊";
         this.els.globalMuteBtn.classList.toggle("muted", muted);
+        this._updateVolumeIcon();
     }
 
     // ── Hints ──
@@ -2399,16 +2833,121 @@ class Game {
         this._setMusicControlButton(this.els.npMiniPrev, "prev", "Previous Track");
         this._setMusicControlButton(this.els.npMiniNext, "next", "Next Track");
 
+        // Shuffle & Repeat buttons (set initial icons)
+        this._setMusicControlButton(this.els.npShuffle, "shuffle", "Shuffle");
+        this.els.npShuffle.classList.toggle("active", this.music.shuffleOn);
+        this._updateRepeatButton();
+
+        // Timer & volume icons
+        this._setMusicControlButton(this.els.npTimerBtn, "timer", "Sleep Timer");
+        this._updateVolumeIcon();
+
         // Now Playing controls (full bar on music screen)
         this.els.npPlay.addEventListener("click", () => this.music.toggle());
         this.els.npPrev.addEventListener("click", () => this.music.prev());
         this.els.npNext.addEventListener("click", () => this.music.next());
 
-        // Progress bar seek
-        this.els.npProgressBar.addEventListener("click", (e) => {
+        // Shuffle toggle
+        this.els.npShuffle.addEventListener("click", () => {
+            this.music.toggleShuffle();
+        });
+
+        // Repeat cycle
+        this.els.npRepeat.addEventListener("click", () => {
+            this.music.cycleRepeat();
+        });
+
+        // Volume slider
+        this.els.npVolumeSlider.value = Math.round(this.music.getVolume() * 100);
+        this.els.npVolumeSlider.addEventListener("input", (e) => {
+            const vol = parseInt(e.target.value, 10) / 100;
+            this.music.setVolume(vol);
+            this._updateVolumeIcon();
+        });
+
+        // Volume icon click → toggle mute
+        this.els.npVolumeIcon.addEventListener("click", () => {
+            const nowMuted = !this.musicMuted;
+            this._setMuted(nowMuted);
+            localStorage.setItem("wf_music_muted", nowMuted ? "1" : "0");
+        });
+
+        // Draggable seek bar
+        let seekDragging = false;
+        const seekTo = (e) => {
             const rect = this.els.npProgressBar.getBoundingClientRect();
-            const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             this.music.seek(frac);
+            this.els.npProgressFill.style.width = (frac * 100) + "%";
+            this.els.npProgressThumb.style.left = (frac * 100) + "%";
+        };
+        const onSeekStart = (e) => {
+            e.preventDefault();
+            seekDragging = true;
+            this.els.npProgressBar.classList.add("dragging");
+            seekTo(e);
+        };
+        const onSeekMove = (e) => {
+            if (!seekDragging) return;
+            e.preventDefault();
+            seekTo(e);
+        };
+        const onSeekEnd = () => {
+            if (!seekDragging) return;
+            seekDragging = false;
+            this.els.npProgressBar.classList.remove("dragging");
+        };
+        this.els.npProgressBar.addEventListener("mousedown", onSeekStart);
+        document.addEventListener("mousemove", onSeekMove);
+        document.addEventListener("mouseup", onSeekEnd);
+        this.els.npProgressBar.addEventListener("touchstart", onSeekStart, { passive: false });
+        document.addEventListener("touchmove", onSeekMove, { passive: false });
+        document.addEventListener("touchend", onSeekEnd);
+
+        // Sleep timer button → open modal
+        this.els.npTimerBtn.addEventListener("click", () => {
+            this._updateSleepTimerModal();
+            this.els.sleepTimerModal.classList.add("active");
+        });
+
+        // Sleep timer option buttons
+        this.els.sleepTimerModal.querySelectorAll(".sleep-timer-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const minutes = parseInt(btn.dataset.minutes, 10);
+                if (Number.isFinite(minutes)) {
+                    this.music.startSleepTimer(minutes);
+                    this.els.sleepTimerModal.classList.remove("active");
+                }
+            });
+        });
+
+        this.els.sleepTimerClear.addEventListener("click", () => {
+            this.music.clearSleepTimer();
+            this._updateSleepTimerModal();
+        });
+
+        this.els.sleepTimerClose.addEventListener("click", () => {
+            this.els.sleepTimerModal.classList.remove("active");
+        });
+
+        // Sleep timer tick callback
+        this.music.onSleepTimerTick = (remainingMs) => {
+            if (remainingMs > 0) {
+                const mins = Math.ceil(remainingMs / 60000);
+                this.els.npTimerDisplay.textContent = `${mins}m`;
+                this.els.npTimerDisplay.classList.remove("hidden");
+                this._setMusicControlButton(this.els.npTimerBtn, "timer", "Sleep Timer");
+                this.els.npTimerBtn.style.color = "#ffd700";
+            } else {
+                this.els.npTimerDisplay.classList.add("hidden");
+                this.els.npTimerBtn.style.color = "";
+            }
+        };
+
+        // Search input
+        this.els.musicSearch.addEventListener("input", () => {
+            this._renderTrackList();
         });
 
         // Mini now-playing toggle (in-game)
@@ -2898,8 +3437,8 @@ class Game {
     _updateBonusButton() {
         if (this.rowDragActive) {
             this.els.bonusBtn.classList.remove("hidden");
-            this.els.bonusBtn.textContent = "Cancel Row";
-            this.els.bonusBtn.title = "Cancel row clear bonus";
+            this.els.bonusBtn.textContent = "Cancel Line";
+            this.els.bonusBtn.title = "Cancel line clear bonus";
             this.els.bonusBtn.disabled = false;
             return;
         }
@@ -2939,6 +3478,9 @@ class Game {
             bonusBag: this.bonusBag,
             lastAwardedBonusType: this.lastAwardedBonusType,
             nextBonusScore: this.nextBonusScore,
+            bonusHistory: this._bonusHistory || [],
+            fullBonusHistory: this._fullBonusHistory || [],
+            bonusUsageCounts: this._bonusUsageCounts || {},
             block: this.block ? { letter: this.block.letter, col: this.block.col, row: this.block.row, kind: this.block.kind } : null,
             fallInterval: this.fallInterval,
             activeChallenge: this.activeChallenge || null,
@@ -2983,10 +3525,31 @@ class Game {
         if (this.availableBonusType) return;
         if (prevScore < this.nextBonusScore && newScore >= this.nextBonusScore) {
             if (!this._bonusHistory) this._bonusHistory = [];
-            const draw = drawRandomBonusType(this.bonusBag, this.lastAwardedBonusType, this._bonusHistory);
+            if (!this._fullBonusHistory) this._fullBonusHistory = [];
+            if (!this._bonusUsageCounts) this._bonusUsageCounts = {};
+
+            // Calculate board fill ratio for context-aware randomization
+            let filledCells = 0;
+            const totalCells = this.grid.rows * this.grid.cols;
+            for (let r = 0; r < this.grid.rows; r++) {
+                for (let c = 0; c < this.grid.cols; c++) {
+                    if (this.grid.get(r, c) !== null) filledCells++;
+                }
+            }
+
+            const gameContext = {
+                boardFillRatio: totalCells > 0 ? filledCells / totalCells : 0,
+                freezeActive: this.freezeActive,
+                score: this.score,
+                fullBonusHistory: this._fullBonusHistory,
+                bonusUsageCounts: this._bonusUsageCounts,
+            };
+
+            const draw = drawRandomBonusType(this.bonusBag, this.lastAwardedBonusType, this._bonusHistory, gameContext);
             this.availableBonusType = draw.bonusType;
             this.bonusBag = draw.nextBag;
             this._bonusHistory = draw.nextHistory;
+            this._fullBonusHistory.push(draw.bonusType);
             this.lastAwardedBonusType = draw.bonusType;
             this._updateBonusButton();
             const bonusMeta = BONUS_METADATA[this.availableBonusType];
@@ -3095,6 +3658,9 @@ class Game {
     _acceptActiveBonus() {
         if (!this.block || !this.letterChoiceActive) return;
         const type = this.availableBonusType;
+        // Track usage counts for advanced randomizer
+        if (!this._bonusUsageCounts) this._bonusUsageCounts = {};
+        this._bonusUsageCounts[type] = (this._bonusUsageCounts[type] || 0) + 1;
         if (type === BONUS_TYPES.BOMB) {
             this.block.kind = "bomb";
             this.block.letter = BOMB_SYMBOL;
@@ -3111,6 +3677,11 @@ class Game {
             this.freezeTimeRemaining = FREEZE_DURATION;
             this.els.freezeIndicator.classList.remove("hidden");
             this.els.freezeTimer.textContent = Math.ceil(this.freezeTimeRemaining);
+            // Award base points for using freeze
+            const prevScore = this.score;
+            this.score += 50;
+            this._checkBonusUnlock(prevScore, this.score);
+            this._updateScoreDisplay();
             this._closeLetterChoiceModal(true);
         } else if (type === BONUS_TYPES.SHUFFLE) {
             this._executeShuffle();
@@ -3163,13 +3734,162 @@ class Game {
         this._pendingClearCells = cellsToClear;
     }
 
-    _executeRowClearAtRow(targetRow) {
-        const cellsToClear = new Set();
-        for (let c = 0; c < this.grid.cols; c++) {
-            if (this.grid.get(targetRow, c) !== null) {
-                cellsToClear.add(`${targetRow},${c}`);
+    _startRowDragMode() {
+        this.rowDragActive = true;
+        this._lineClearStart = null;
+        this._lineClearEnd = null;
+        this.renderer.rowDragCells.clear();
+        this.els.rowDragIndicator.classList.remove("hidden");
+        this.els.lineClearBtn.disabled = true;
+        this._updateBonusButton();
+    }
+
+    _cancelRowDragMode() {
+        this.rowDragActive = false;
+        this._lineClearStart = null;
+        this._lineClearEnd = null;
+        this.renderer.rowDragCells.clear();
+        this.els.rowDragIndicator.classList.add("hidden");
+        this._updateBonusButton();
+    }
+
+    /** Reset selection only (Cancel button) — stays in line clear mode */
+    _resetLineClearSelection() {
+        this._lineClearStart = null;
+        this._lineClearEnd = null;
+        this.renderer.rowDragCells.clear();
+        this.els.lineClearBtn.disabled = true;
+    }
+
+    _earlyUnfreeze() {
+        if (!this.freezeActive) return;
+        // Award bonus points based on remaining freeze time (more time left = more points)
+        // Up to 10 pts per second remaining
+        const bonusPts = Math.floor(this.freezeTimeRemaining * 10);
+        if (bonusPts > 0) {
+            const prevScore = this.score;
+            this.score += bonusPts;
+            this._checkBonusUnlock(prevScore, this.score);
+            this._updateScoreDisplay();
+            this._showWordPopup([{ word: "❄️ UNFREEZE", pts: bonusPts }]);
+        }
+        this.freezeActive = false;
+        this.freezeTimeRemaining = 0;
+        this.els.freezeIndicator.classList.add("hidden");
+    }
+
+    _clientToGridCell(clientX, clientY) {
+        const rect = this.renderer.canvas.getBoundingClientRect();
+        const scaleX = this.renderer.canvas.width / (window.devicePixelRatio || 1) / rect.width;
+        const scaleY = this.renderer.canvas.height / (window.devicePixelRatio || 1) / rect.height;
+        const px = (clientX - rect.left) * scaleX;
+        const py = (clientY - rect.top) * scaleY;
+        return this.renderer.pixelToCell(px, py);
+    }
+
+    _handleLineClearTap(clientX, clientY) {
+        if (!this.rowDragActive || !this.grid) return;
+        const { row, col } = this._clientToGridCell(clientX, clientY);
+        if (row < 0 || row >= this.grid.rows || col < 0 || col >= this.grid.cols) return;
+        if (this.grid.get(row, col) === null) return; // must tap a letter
+
+        if (!this._lineClearStart) {
+            // First tap — set start
+            this._lineClearStart = { row, col };
+            this._lineClearEnd = null;
+            this._updateLineClearHighlight();
+            return;
+        }
+
+        // Second+ tap — check if it forms a valid line with start
+        const s = this._lineClearStart;
+        const dr = row - s.row;
+        const dc = col - s.col;
+
+        // Same cell as start — toggle off (reset to just start)
+        if (dr === 0 && dc === 0) {
+            this._lineClearEnd = null;
+            this._updateLineClearHighlight();
+            return;
+        }
+
+        // Check valid direction: horizontal (dr==0), vertical (dc==0), diagonal (|dr|==|dc|)
+        const isHorizontal = dr === 0;
+        const isVertical = dc === 0;
+        const isDiagonal = Math.abs(dr) === Math.abs(dc);
+
+        if (!isHorizontal && !isVertical && !isDiagonal) return; // invalid direction, ignore
+
+        this._lineClearEnd = { row, col };
+        this._updateLineClearHighlight();
+    }
+
+    _updateLineClearHighlight() {
+        this.renderer.rowDragCells.clear();
+
+        if (!this._lineClearStart) {
+            this.els.lineClearBtn.disabled = true;
+            return;
+        }
+
+        const s = this._lineClearStart;
+
+        if (!this._lineClearEnd) {
+            // Only start selected
+            this.renderer.rowDragCells.add(`${s.row},${s.col}`);
+            this.els.lineClearBtn.disabled = false; // can clear even 1 letter
+            return;
+        }
+
+        const e = this._lineClearEnd;
+        const dr = Math.sign(e.row - s.row);
+        const dc = Math.sign(e.col - s.col);
+        const steps = Math.max(Math.abs(e.row - s.row), Math.abs(e.col - s.col));
+
+        for (let i = 0; i <= steps; i++) {
+            const r = s.row + dr * i;
+            const c = s.col + dc * i;
+            if (this.grid.get(r, c) !== null) {
+                this.renderer.rowDragCells.add(`${r},${c}`);
             }
         }
+
+        this.els.lineClearBtn.disabled = false;
+    }
+
+    _completeLineClear() {
+        if (!this.rowDragActive || this.renderer.rowDragCells.size === 0) return;
+
+        const cellsToClear = new Set(this.renderer.rowDragCells);
+        const cellCount = cellsToClear.size;
+
+        // End line clear mode
+        this.rowDragActive = false;
+        this._lineClearStart = null;
+        this._lineClearEnd = null;
+        this.renderer.rowDragCells.clear();
+        this.els.rowDragIndicator.classList.add("hidden");
+
+        // Consume the bonus
+        this.availableBonusType = null;
+        this.nextBonusScore = this.score + BONUS_UNLOCK_SCORE_INTERVAL;
+        this._updateBonusButton();
+
+        // Award points (20 pts per letter cleared)
+        if (cellCount > 0) {
+            const prevScore = this.score;
+            const linePts = cellCount * 20;
+            this.score += linePts;
+            this._checkBonusUnlock(prevScore, this.score);
+            this._updateScoreDisplay();
+            this._showWordPopup([{ word: "🧹 LINE", pts: linePts }]);
+        }
+
+        // Execute the clear animation
+        this._executeLineClear(cellsToClear);
+    }
+
+    _executeLineClear(cellsToClear) {
         if (cellsToClear.size === 0) return;
 
         this.clearing = true;
@@ -3183,135 +3903,6 @@ class Game {
         this.renderer.blastProgress = 0;
         this.renderer.spawnParticles(cellsToClear);
         this._pendingClearCells = cellsToClear;
-    }
-
-    _startRowDragMode() {
-        this.rowDragActive = true;
-        this.rowDragRow = -1;
-        this.rowDragStartCol = -1;
-        this.rowDragCurrentCol = -1;
-        this.renderer.rowDragCells.clear();
-        this.els.rowDragIndicator.classList.remove("hidden");
-        this._updateBonusButton();
-    }
-
-    _cancelRowDragMode() {
-        this.rowDragActive = false;
-        this.rowDragRow = -1;
-        this.rowDragStartCol = -1;
-        this.rowDragCurrentCol = -1;
-        this.renderer.rowDragCells.clear();
-        this.els.rowDragIndicator.classList.add("hidden");
-        this._updateBonusButton();
-    }
-
-    _clientToGridCell(clientX, clientY) {
-        const rect = this.renderer.canvas.getBoundingClientRect();
-        const scaleX = this.renderer.canvas.width / (window.devicePixelRatio || 1) / rect.width;
-        const scaleY = this.renderer.canvas.height / (window.devicePixelRatio || 1) / rect.height;
-        const px = (clientX - rect.left) * scaleX;
-        const py = (clientY - rect.top) * scaleY;
-        return this.renderer.pixelToCell(px, py);
-    }
-
-    _handleRowDragStart(clientX, clientY) {
-        if (!this.rowDragActive || !this.grid) return;
-        const { row, col } = this._clientToGridCell(clientX, clientY);
-        if (row < 0 || row >= this.grid.rows || col < 0 || col >= this.grid.cols) return;
-        // Must start on a cell that has a letter
-        if (this.grid.get(row, col) === null) return;
-
-        this.rowDragRow = row;
-        this.rowDragStartCol = col;
-        this.rowDragCurrentCol = col;
-        this._updateRowDragHighlight();
-    }
-
-    _handleRowDragMove(clientX, clientY) {
-        if (!this.rowDragActive || this.rowDragRow < 0 || !this.grid) return;
-        const { row, col } = this._clientToGridCell(clientX, clientY);
-        // Clamp col to grid bounds
-        const clampedCol = Math.max(0, Math.min(this.grid.cols - 1, col));
-
-        // If dragged to a different row, reset to that row if it has letters
-        if (row !== this.rowDragRow && row >= 0 && row < this.grid.rows) {
-            // Check if the new row has any letters
-            let hasLetters = false;
-            for (let c = 0; c < this.grid.cols; c++) {
-                if (this.grid.get(row, c) !== null) { hasLetters = true; break; }
-            }
-            if (hasLetters) {
-                this.rowDragRow = row;
-                this.rowDragStartCol = clampedCol;
-            }
-        }
-
-        this.rowDragCurrentCol = clampedCol;
-        this._updateRowDragHighlight();
-    }
-
-    _handleRowDragEnd() {
-        if (!this.rowDragActive || this.rowDragRow < 0 || !this.grid) {
-            // Reset partial state
-            this.rowDragRow = -1;
-            this.rowDragStartCol = -1;
-            this.rowDragCurrentCol = -1;
-            this.renderer.rowDragCells.clear();
-            return;
-        }
-
-        // Check if all non-empty cells in the row are highlighted
-        const row = this.rowDragRow;
-        let allCovered = true;
-        for (let c = 0; c < this.grid.cols; c++) {
-            if (this.grid.get(row, c) !== null && !this.renderer.rowDragCells.has(`${row},${c}`)) {
-                allCovered = false;
-                break;
-            }
-        }
-
-        if (allCovered) {
-            // Complete the bonus!
-            this._completeRowDrag();
-        } else {
-            // Not complete — reset the drag so player can try again
-            this.rowDragRow = -1;
-            this.rowDragStartCol = -1;
-            this.rowDragCurrentCol = -1;
-            this.renderer.rowDragCells.clear();
-        }
-    }
-
-    _updateRowDragHighlight() {
-        this.renderer.rowDragCells.clear();
-        if (this.rowDragRow < 0) return;
-
-        const minCol = Math.min(this.rowDragStartCol, this.rowDragCurrentCol);
-        const maxCol = Math.max(this.rowDragStartCol, this.rowDragCurrentCol);
-        for (let c = minCol; c <= maxCol; c++) {
-            if (this.grid.get(this.rowDragRow, c) !== null) {
-                this.renderer.rowDragCells.add(`${this.rowDragRow},${c}`);
-            }
-        }
-    }
-
-    _completeRowDrag() {
-        const row = this.rowDragRow;
-        // End drag mode
-        this.rowDragActive = false;
-        this.rowDragRow = -1;
-        this.rowDragStartCol = -1;
-        this.rowDragCurrentCol = -1;
-        this.renderer.rowDragCells.clear();
-        this.els.rowDragIndicator.classList.add("hidden");
-
-        // Consume the bonus
-        this.availableBonusType = null;
-        this.nextBonusScore = this.score + BONUS_UNLOCK_SCORE_INTERVAL;
-        this._updateBonusButton();
-
-        // Execute the actual row clear at the selected row
-        this._executeRowClearAtRow(row);
     }
 
     _executeShuffle() {
@@ -3425,6 +4016,9 @@ class Game {
         this.bonusBag = Array.isArray(saved.bonusBag) ? saved.bonusBag.filter(type => BONUS_TYPE_POOL.includes(type)) : [];
         this.lastAwardedBonusType = BONUS_TYPE_POOL.includes(saved.lastAwardedBonusType) ? saved.lastAwardedBonusType : this.availableBonusType;
         this.nextBonusScore = saved.nextBonusScore || BONUS_UNLOCK_SCORE_INTERVAL;
+        this._bonusHistory = saved.bonusHistory || [];
+        this._fullBonusHistory = saved.fullBonusHistory || [];
+        this._bonusUsageCounts = saved.bonusUsageCounts || {};
         this.letterChoiceActive = false;
         this.letterChoiceResumeState = null;
         this.fallInterval = saved.fallInterval || (this.difficulty === "casual" ? 1.5 : 0.9);
@@ -3493,6 +4087,9 @@ class Game {
         this.bonusBag = Array.isArray(saved.bonusBag) ? saved.bonusBag.filter(type => BONUS_TYPE_POOL.includes(type)) : [];
         this.lastAwardedBonusType = BONUS_TYPE_POOL.includes(saved.lastAwardedBonusType) ? saved.lastAwardedBonusType : this.availableBonusType;
         this.nextBonusScore = saved.nextBonusScore || BONUS_UNLOCK_SCORE_INTERVAL;
+        this._bonusHistory = saved.bonusHistory || [];
+        this._fullBonusHistory = saved.fullBonusHistory || [];
+        this._bonusUsageCounts = saved.bonusUsageCounts || {};
         this.letterChoiceActive = false;
         this.letterChoiceResumeState = null;
         this.fallInterval = saved.fallInterval || (this.difficulty === "casual" ? 1.5 : 0.9);
@@ -3518,9 +4115,8 @@ class Game {
         this.freezeTimeRemaining = 0;
         this.scoreMultiplier = 1;
         this.rowDragActive = false;
-        this.rowDragRow = -1;
-        this.rowDragStartCol = -1;
-        this.rowDragCurrentCol = -1;
+        this._lineClearStart = null;
+        this._lineClearEnd = null;
         this.renderer.rowDragCells.clear();
         this.els.freezeIndicator.classList.add("hidden");
         this.els.score2xIndicator.classList.add("hidden");
@@ -3615,6 +4211,9 @@ class Game {
         this.bonusBag = [];
         this.lastAwardedBonusType = null;
         this.nextBonusScore = BONUS_UNLOCK_SCORE_INTERVAL;
+        this._bonusHistory = [];
+        this._fullBonusHistory = [];
+        this._bonusUsageCounts = {};
         this.letterChoiceActive = false;
         this.letterChoiceResumeState = null;
 
@@ -3623,9 +4222,8 @@ class Game {
         this.freezeTimeRemaining = 0;
         this.scoreMultiplier = 1;
         this.rowDragActive = false;
-        this.rowDragRow = -1;
-        this.rowDragStartCol = -1;
-        this.rowDragCurrentCol = -1;
+        this._lineClearStart = null;
+        this._lineClearEnd = null;
         this.renderer.rowDragCells.clear();
         this.els.freezeIndicator.classList.add("hidden");
         this.els.score2xIndicator.classList.add("hidden");
@@ -3738,6 +4336,16 @@ class Game {
             if (this.grid.get(currentRow, col) !== null) {
                 cellsToClear.add(`${currentRow},${col}`);
             }
+        }
+
+        // Award points for bomb blast (15 pts per letter cleared)
+        if (cellsToClear.size > 0) {
+            const prevScore = this.score;
+            const bombPts = cellsToClear.size * 15;
+            this.score += bombPts;
+            this._checkBonusUnlock(prevScore, this.score);
+            this._updateScoreDisplay();
+            this._showWordPopup([{ word: "💣 BOMB", pts: bombPts }]);
         }
 
         this.renderer.hintCells = new Set();
@@ -3956,6 +4564,8 @@ class Game {
         this.renderer.validatedCells = new Set();
         this.renderer.rowDragCells.clear();
         this.rowDragActive = false;
+        this._lineClearStart = null;
+        this._lineClearEnd = null;
         this.els.rowDragIndicator.classList.add("hidden");
         this._activeHintKey = null;
         this._validatedWordGroups = [];
@@ -4457,22 +5067,76 @@ class Game {
         this.els.npArtist.textContent = track ? track.artist : "";
         this._setMusicControlButton(this.els.npPlay, playing ? "pause" : "play", playing ? "Pause" : "Play");
 
+        // Shuffle button active state
+        this.els.npShuffle.classList.toggle("active", this.music.shuffleOn);
+
+        // Repeat button icon & active state
+        this._updateRepeatButton();
+
+        // Volume icon
+        this._updateVolumeIcon();
+
+        // Volume slider sync
+        this.els.npVolumeSlider.value = Math.round(this.music.getVolume() * 100);
+
         // Highlight playing track in list
         this.els.trackList.querySelectorAll(".track-item").forEach(el => {
-            el.classList.toggle("playing", el.dataset.trackId === this.music.currentTrackId);
+            const isCurrent = el.dataset.trackId === this.music.currentTrackId;
+            el.classList.toggle("playing", isCurrent);
+            el.classList.toggle("paused", isCurrent && !playing);
             const btn = el.querySelector(".track-play-btn");
-            if (btn) btn.textContent = (el.dataset.trackId === this.music.currentTrackId && playing) ? "⏸" : "▶";
+            if (btn) {
+                // Keep EQ bars, just swap the text node
+                const textNode = btn.childNodes[0];
+                if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                    textNode.textContent = (isCurrent && playing) ? "⏸" : "▶";
+                }
+            }
         });
 
         // Mini bar
         this._updateMiniNowPlaying();
     }
 
+    _updateRepeatButton() {
+        const mode = this.music.repeatMode;
+        if (mode === "off") {
+            this._setMusicControlButton(this.els.npRepeat, "repeatAll", "Repeat");
+            this.els.npRepeat.classList.remove("active");
+        } else if (mode === "all") {
+            this._setMusicControlButton(this.els.npRepeat, "repeatAll", "Repeat All");
+            this.els.npRepeat.classList.add("active");
+        } else {
+            this._setMusicControlButton(this.els.npRepeat, "repeatOne", "Repeat One");
+            this.els.npRepeat.classList.add("active");
+        }
+    }
+
+    _updateVolumeIcon() {
+        const vol = this.music.getVolume();
+        const muted = this.musicMuted;
+        let icon;
+        if (muted || vol === 0) icon = "volumeMute";
+        else if (vol < 0.5) icon = "volumeLow";
+        else icon = "volumeHigh";
+        this._setMusicControlButton(this.els.npVolumeIcon, icon, "Volume");
+    }
+
+    _updateSleepTimerModal() {
+        const remaining = this.music.getSleepTimerRemaining();
+        this.els.sleepTimerClear.classList.toggle("hidden", remaining <= 0);
+    }
+
     _updateMusicProgress(currentTime, duration) {
         const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
         this.els.npProgressFill.style.width = pct + "%";
+        this.els.npProgressThumb.style.left = pct + "%";
         this.els.npCurrentTime.textContent = this._formatTrackTime(currentTime);
         this.els.npDuration.textContent = this._formatTrackTime(duration);
+        // Mini progress bar
+        if (this.els.npMiniProgressFill) {
+            this.els.npMiniProgressFill.style.width = pct + "%";
+        }
     }
 
     _updateMiniNowPlaying() {
@@ -6004,18 +6668,29 @@ class Game {
         this._renderPlaylistTabs();
         this._renderTrackList();
         this._updateMusicUI();
-        // Show/hide playlist actions for custom playlists
-        this.els.playlistActions.classList.toggle("hidden", this.activePlaylistTab === "__default");
+        // Show/hide playlist actions for custom playlists only
+        const isCustom = this.activePlaylistTab !== "__default" && this.activePlaylistTab !== "__favorites";
+        this.els.playlistActions.classList.toggle("hidden", !isCustom);
     }
 
     _renderPlaylistTabs() {
-        // Remove old custom tabs
+        // Remove old custom tabs (keep __default, __favorites, and add-tab)
         this.els.playlistTabs.querySelectorAll(".playlist-tab:not(.add-tab)").forEach(el => {
-            if (el.dataset.playlist !== "__default") el.remove();
+            if (el.dataset.playlist !== "__default" && el.dataset.playlist !== "__favorites") el.remove();
         });
-        // Remove default tab's active class and re-query
+        // Update default tab active state
         const defaultTab = this.els.playlistTabs.querySelector('[data-playlist="__default"]');
         if (defaultTab) defaultTab.classList.toggle("active", this.activePlaylistTab === "__default");
+
+        // Update favorites tab active state
+        const favTab = this.els.playlistTabs.querySelector('[data-playlist="__favorites"]');
+        if (favTab) {
+            favTab.classList.toggle("active", this.activePlaylistTab === "__favorites");
+            favTab.onclick = () => {
+                this.activePlaylistTab = "__favorites";
+                this._renderMusicScreen();
+            };
+        }
 
         // Add custom playlist tabs before the "+ New" button
         for (const pl of this.plMgr.getCustomPlaylists()) {
@@ -6042,33 +6717,49 @@ class Game {
     _renderTrackList() {
         const container = this.els.trackList;
         container.innerHTML = "";
-        const isCustom = this.activePlaylistTab !== "__default";
-        const tracks = this.plMgr.getPlaylistTracks(this.activePlaylistTab);
-        const trackIds = this.plMgr.getPlaylistTrackIds(this.activePlaylistTab);
+        const isCustom = this.activePlaylistTab !== "__default" && this.activePlaylistTab !== "__favorites";
+        let tracks = this.plMgr.getPlaylistTracks(this.activePlaylistTab);
+
+        // Search filtering
+        const searchTerm = (this.els.musicSearch.value || "").trim().toLowerCase();
+        if (searchTerm) {
+            tracks = tracks.filter(t =>
+                t.title.toLowerCase().includes(searchTerm) ||
+                t.artist.toLowerCase().includes(searchTerm)
+            );
+        }
 
         if (tracks.length === 0) {
-            container.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">No tracks in this playlist.</p>';
+            const msg = searchTerm ? "No matching tracks." : "No tracks in this playlist.";
+            container.innerHTML = `<p style="color:#666;text-align:center;padding:20px;">${msg}</p>`;
             return;
         }
 
         tracks.forEach((track, index) => {
             const item = document.createElement("div");
-            item.className = "track-item" + (track.id === this.music.currentTrackId ? " playing" : "");
+            const isCurrentTrack = track.id === this.music.currentTrackId;
+            const isPlaying = isCurrentTrack && this.music.playing;
+            item.className = "track-item" + (isCurrentTrack ? " playing" : "") + (isCurrentTrack && !this.music.playing ? " paused" : "");
             item.dataset.trackId = track.id;
 
-            const isPlaying = track.id === this.music.currentTrackId && this.music.playing;
+            const isFav = this.plMgr.isFavorite(track.id);
 
             item.innerHTML = `
-                <button class="track-play-btn">${isPlaying ? "⏸" : "▶"}</button>
+                <button class="track-play-btn">
+                    ${isPlaying ? "⏸" : "▶"}
+                    <span class="track-eq-bars"><span class="eq-bar"></span><span class="eq-bar"></span><span class="eq-bar"></span><span class="eq-bar"></span></span>
+                </button>
                 <div class="track-info">
                     <div class="track-name">${track.title}</div>
                     <div class="track-artist">${track.artist}</div>
                 </div>
-                <div class="track-reorder">
+                <span class="track-duration" data-track-id="${track.id}"></span>
+                <button class="track-fav-btn${isFav ? " active" : ""}" title="Favorite" aria-label="Toggle Favorite">${isFav ? "❤️" : "🤍"}</button>
+                ${!searchTerm ? `<div class="track-reorder">
                     <button class="reorder-btn move-up" ${index === 0 ? "disabled" : ""}>▲</button>
                     <button class="reorder-btn move-down" ${index === tracks.length - 1 ? "disabled" : ""}>▼</button>
-                </div>
-                ${isCustom ? '<button class="track-remove-btn" title="Remove from playlist">✕</button>' : ""}
+                </div>` : ""}
+                ${isCustom && !searchTerm ? '<button class="track-remove-btn" title="Remove from playlist">✕</button>' : ""}
             `;
 
             // Play button
@@ -6082,23 +6773,38 @@ class Game {
                 }
             });
 
-            // Reorder buttons
-            item.querySelector(".move-up")?.addEventListener("click", (e) => {
+            // Favorite button
+            item.querySelector(".track-fav-btn").addEventListener("click", (e) => {
                 e.stopPropagation();
-                if (index > 0) {
-                    this.plMgr.moveTrack(this.activePlaylistTab, index, index - 1);
-                    this.music.refreshQueue();
+                const nowFav = this.plMgr.toggleFavorite(track.id);
+                const btn = e.currentTarget;
+                btn.classList.toggle("active", nowFav);
+                btn.textContent = nowFav ? "❤️" : "🤍";
+                // If on favorites tab and un-favorited, re-render
+                if (this.activePlaylistTab === "__favorites" && !nowFav) {
                     this._renderTrackList();
                 }
             });
-            item.querySelector(".move-down")?.addEventListener("click", (e) => {
-                e.stopPropagation();
-                if (index < tracks.length - 1) {
-                    this.plMgr.moveTrack(this.activePlaylistTab, index, index + 1);
-                    this.music.refreshQueue();
-                    this._renderTrackList();
-                }
-            });
+
+            // Reorder buttons (only when not searching)
+            if (!searchTerm) {
+                item.querySelector(".move-up")?.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (index > 0) {
+                        this.plMgr.moveTrack(this.activePlaylistTab, index, index - 1);
+                        this.music.refreshQueue();
+                        this._renderTrackList();
+                    }
+                });
+                item.querySelector(".move-down")?.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (index < tracks.length - 1) {
+                        this.plMgr.moveTrack(this.activePlaylistTab, index, index + 1);
+                        this.music.refreshQueue();
+                        this._renderTrackList();
+                    }
+                });
+            }
 
             // Remove from custom playlist
             const removeBtn = item.querySelector(".track-remove-btn");
@@ -6118,7 +6824,29 @@ class Game {
             });
 
             container.appendChild(item);
+
+            // Load duration for display
+            this._loadTrackDuration(track, item.querySelector(".track-duration"));
         });
+    }
+
+    _loadTrackDuration(track, el) {
+        if (!el) return;
+        // Cache durations
+        if (!this._trackDurations) this._trackDurations = {};
+        if (this._trackDurations[track.id]) {
+            el.textContent = this._trackDurations[track.id];
+            return;
+        }
+        const audio = new Audio();
+        audio.preload = "metadata";
+        audio.src = track.file;
+        audio.addEventListener("loadedmetadata", () => {
+            const dur = this._formatTrackTime(audio.duration);
+            this._trackDurations[track.id] = dur;
+            el.textContent = dur;
+            audio.src = "";
+        }, { once: true });
     }
 
     _openPlaylistModal(editName) {
@@ -6194,8 +6922,9 @@ class Game {
         for (const wc of incoming) {
             const newCells = new Set(wc.cells);
 
-            // Skip if these exact cells are already validated
+            // Skip if these exact cells + word are already validated
             const alreadyValidated = this._validatedWordGroups.some(g => {
+                if (g.word !== wc.word) return false;
                 if (g.cells.size !== newCells.size) return false;
                 for (const k of g.cells) if (!newCells.has(k)) return false;
                 return true;
@@ -6203,13 +6932,16 @@ class Game {
             if (alreadyValidated) continue;
 
             // If a longer (or equal-length) existing word already covers all these cells, skip
-            const coveredByLonger = this._validatedWordGroups.some(g =>
+            // But allow reverse-direction bonus words on the same cells
+            const coveredByLonger = !wc.isReverse && this._validatedWordGroups.some(g =>
                 g.word.length >= wc.word.length && [...newCells].every(k => g.cells.has(k))
             );
             if (coveredByLonger) continue;
 
             // Remove any existing shorter words whose cells are entirely within this new longer word
+            // But don't remove reverse bonus words
             this._validatedWordGroups = this._validatedWordGroups.filter(g => {
+                if (g.isReverse || wc.isReverse) return true;
                 if (g.word.length >= wc.word.length) return true;
                 return ![...g.cells].every(k => newCells.has(k));
             });
@@ -6222,6 +6954,20 @@ class Game {
             if (len >= 4) {
                 const complexityMult = 1 + 0.15 * Math.pow(len - 3, 1.4);
                 pts = Math.floor(pts * complexityMult);
+            }
+
+            // Tough letter bonus: sum letter difficulty values for all letters
+            // Only letters worth >1 contribute bonus (common letters don't add extra)
+            let letterBonus = 0;
+            for (const ch of wc.word) {
+                const val = LETTER_VALUES[ch] || 1;
+                if (val > 1) letterBonus += val * 3;
+            }
+            pts += letterBonus;
+
+            // Reverse-direction bonus word gets half points
+            if (wc.isReverse) {
+                pts = Math.floor(pts / 2);
             }
 
             // In Target Word / Category challenges, reduce base pts for non-matching words
@@ -6241,7 +6987,7 @@ class Game {
                 }
             }
 
-            this._validatedWordGroups.push({ word: wc.word, cells: newCells, pts });
+            this._validatedWordGroups.push({ word: wc.word, cells: newCells, pts, isReverse: !!wc.isReverse });
         }
         this._rebuildValidatedCells();
     }
@@ -6426,57 +7172,33 @@ class Game {
 
     _bindRowDrag() {
         const canvas = this.renderer.canvas;
-        let dragPointerId = null;
 
-        // ── Mouse (desktop) ──
+        // ── Tap/click to select cells ──
         canvas.addEventListener("mousedown", (e) => {
             if (!this.rowDragActive || this.state !== State.PLAYING) return;
             e.preventDefault();
-            this._handleRowDragStart(e.clientX, e.clientY);
-            dragPointerId = "mouse";
-        });
-        window.addEventListener("mousemove", (e) => {
-            if (dragPointerId !== "mouse") return;
-            this._handleRowDragMove(e.clientX, e.clientY);
-        });
-        window.addEventListener("mouseup", (e) => {
-            if (dragPointerId !== "mouse") return;
-            dragPointerId = null;
-            this._handleRowDragEnd();
+            this._handleLineClearTap(e.clientX, e.clientY);
         });
 
-        // ── Touch (mobile) ──
         canvas.addEventListener("touchstart", (e) => {
             if (!this.rowDragActive || this.state !== State.PLAYING) return;
             const touch = e.changedTouches[0];
             if (!touch) return;
             e.preventDefault();
-            dragPointerId = touch.identifier;
-            this._handleRowDragStart(touch.clientX, touch.clientY);
+            this._handleLineClearTap(touch.clientX, touch.clientY);
         }, { passive: false });
-        window.addEventListener("touchmove", (e) => {
-            if (dragPointerId === null || dragPointerId === "mouse") return;
-            const touch = [...e.changedTouches].find(t => t.identifier === dragPointerId);
-            if (!touch) return;
-            this._handleRowDragMove(touch.clientX, touch.clientY);
-        }, { passive: true });
-        window.addEventListener("touchend", (e) => {
-            if (dragPointerId === null || dragPointerId === "mouse") return;
-            const touch = [...e.changedTouches].find(t => t.identifier === dragPointerId);
-            if (!touch) return;
-            dragPointerId = null;
-            this._handleRowDragEnd();
-        }, { passive: true });
-        window.addEventListener("touchcancel", (e) => {
-            if (dragPointerId === null || dragPointerId === "mouse") return;
-            dragPointerId = null;
-            this.rowDragRow = -1;
-            this.rowDragStartCol = -1;
-            this.rowDragCurrentCol = -1;
-            this.renderer.rowDragCells.clear();
-        }, { passive: true });
 
-        // Escape cancels row drag mode
+        // ── Clear button ──
+        this.els.lineClearBtn.addEventListener("click", () => {
+            this._completeLineClear();
+        });
+
+        // ── Cancel button (resets selection, stays in mode) ──
+        this.els.lineCancelBtn.addEventListener("click", () => {
+            this._resetLineClearSelection();
+        });
+
+        // Escape cancels line clear mode entirely
         document.addEventListener("keydown", (e) => {
             if (!this.rowDragActive) return;
             if (e.code === "Escape") {

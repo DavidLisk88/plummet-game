@@ -1,27 +1,27 @@
 [
   {
     "id": "track01",
-    "title": "Cascade",
+    "title": "TUMBLE",
     "artist": "Freddy River",
-    "file": "Music/Cascade.wav"
+    "file": "Music/TUMBLE.wav"
   },
   {
     "id": "track02",
-    "title": "Line it up",
+    "title": "CANDY",
     "artist": "Freddy River",
-    "file": "Music/Line it up.wav"
+    "file": "Music/CANDY.wav"
   },
   {
     "id": "track03",
-    "title": "Everything Ends At Some Point",
+    "title": "GALAXY",
     "artist": "Freddy River",
-    "file": "Music/everything ends at some point.wav"
+    "file": "Music/GALAXY.wav"
   },
   {
     "id": "track04",
-    "title": "Soul Energy",
+    "title": "SOUL",
     "artist": "Freddy River",
-    "file": "Music/Soul Energy.wav"
+    "file": "Music/SOUL.wav"
   },
   {
     "id": "track05",
@@ -31,44 +31,20 @@
   },
   {
     "id": "track06",
-    "title": "Don't talk to me",
+    "title": "LEXICON",
     "artist": "Freddy River",
-    "file": "Music/Don't talk to me.wav"
+    "file": "Music/LEXICON.wav"
   },
   {
     "id": "track07",
-    "title": "Monk Fruit Candy",
+    "title": "POINTS",
     "artist": "Freddy River",
-    "file": "Music/Monk Fruit Candy.wav"
+    "file": "Music/POINTS.wav"
   },
   {
     "id": "track08",
-    "title": "Night Fall",
+    "title": "LINES",
     "artist": "Freddy River",
-    "file": "Music/Night Fall.wav"
-  },
-  {
-    "id": "track09",
-    "title": "Cinnamon Maple",
-    "artist": "Freddy River",
-    "file": "Music/Cinnamon Maple.wav"
-  },
-  {
-    "id": "track10",
-    "title": "City Life",
-    "artist": "Freddy River",
-    "file": "Music/City Life.wav"
-  },
-  {
-    "id": "track11",
-    "title": "Night Life",
-    "artist": "Freddy River",
-    "file": "Music/Night Life.wav"
-  },
-  {
-    "id": "track12",
-    "title": "Against the world",
-    "artist": "Freddy River",
-    "file": "Music/Against the world.wav"
+    "file": "Music/LINES.wav"
   }
 ]

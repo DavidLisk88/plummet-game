@@ -115,19 +115,37 @@
                     <span id="np-artist"></span>
                 </div>
                 <div id="np-controls">
+                    <button id="np-shuffle" class="np-btn np-mode-btn" aria-label="Shuffle" title="Shuffle"></button>
                     <button id="np-prev" class="np-btn" aria-label="Previous Track"></button>
                     <button id="np-play" class="np-btn np-play-btn" aria-label="Play"></button>
                     <button id="np-next" class="np-btn" aria-label="Next Track"></button>
+                    <button id="np-repeat" class="np-btn np-mode-btn" aria-label="Repeat" title="Repeat"></button>
                 </div>
                 <div id="np-progress-wrap">
-                    <div id="np-progress-bar"><div id="np-progress-fill"></div></div>
+                    <div id="np-progress-bar"><div id="np-progress-fill"></div><div id="np-progress-thumb"></div></div>
                     <div id="np-time"><span id="np-current-time">0:00</span> / <span id="np-duration">0:00</span></div>
                 </div>
+                <div id="np-extras">
+                    <div id="np-volume-wrap">
+                        <button id="np-volume-icon" class="np-icon-btn" aria-label="Mute"></button>
+                        <input type="range" id="np-volume-slider" min="0" max="100" value="50" class="np-slider">
+                    </div>
+                    <div id="np-right-controls">
+                        <button id="np-timer-btn" class="np-icon-btn" aria-label="Sleep Timer" title="Sleep Timer"></button>
+                        <span id="np-timer-display" class="hidden"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search bar -->
+            <div id="music-search-wrap">
+                <input type="text" id="music-search" class="text-input" placeholder="Search songs..." autocomplete="off">
             </div>
 
             <!-- Playlist Tabs -->
             <div id="playlist-tabs">
                 <button class="playlist-tab active" data-playlist="__default">All Songs</button>
+                <button class="playlist-tab" data-playlist="__favorites">❤️ Favorites</button>
                 <!-- Custom playlist tabs inserted here dynamically -->
                 <button id="new-playlist-tab" class="playlist-tab add-tab">+ New</button>
             </div>
@@ -140,6 +158,24 @@
                 <button id="edit-songs-btn" class="small-btn">Edit Songs</button>
                 <button id="rename-playlist-btn" class="small-btn">Rename</button>
                 <button id="delete-playlist-btn" class="small-btn danger-btn">Delete Playlist</button>
+            </div>
+        </div>
+
+        <!-- Sleep Timer Modal -->
+        <div id="sleep-timer-modal" class="overlay">
+            <div class="overlay-content">
+                <h2>Sleep Timer</h2>
+                <p class="subtitle">Music will stop after:</p>
+                <div class="sleep-timer-options">
+                    <button class="sleep-timer-btn" data-minutes="15">15 min</button>
+                    <button class="sleep-timer-btn" data-minutes="30">30 min</button>
+                    <button class="sleep-timer-btn" data-minutes="45">45 min</button>
+                    <button class="sleep-timer-btn" data-minutes="60">60 min</button>
+                </div>
+                <div class="modal-buttons">
+                    <button id="sleep-timer-clear" class="secondary-btn hidden">Cancel Timer</button>
+                    <button id="sleep-timer-close" class="secondary-btn">Close</button>
+                </div>
             </div>
         </div>
 
@@ -230,6 +266,7 @@
                 <span id="target-word-text"></span>
             </div>
             <div id="now-playing-mini">
+                <div id="np-mini-progress"><div id="np-mini-progress-fill"></div></div>
                 <span id="np-mini-title">♪ ---</span>
                 <div id="np-mini-controls">
                     <button id="np-mini-prev" class="icon-btn np-mini-btn" title="Previous Track" aria-label="Previous Track"></button>
@@ -243,9 +280,15 @@
             <div id="next-letter-display">
                 Next: <span id="next-letter">?</span>
             </div>
-            <div id="freeze-indicator" class="hidden">❄️ FROZEN <span id="freeze-timer">10</span>s</div>
+            <div id="freeze-indicator" class="hidden" title="Tap to unfreeze early for bonus points">❄️ FROZEN <span id="freeze-timer">10</span>s · <small>tap to unfreeze</small></div>
             <div id="score-2x-indicator" class="hidden">2× NEXT WORD</div>
-            <div id="row-drag-indicator" class="hidden">🧹 Drag across a row to clear it</div>
+            <div id="row-drag-indicator" class="hidden">
+                <span class="line-clear-label">🧹 Tap letters in a line to clear</span>
+                <div class="line-clear-actions">
+                    <button id="line-clear-btn" class="line-clear-action-btn clear-btn">Clear</button>
+                    <button id="line-cancel-btn" class="line-clear-action-btn cancel-btn">Cancel</button>
+                </div>
+            </div>
             <button id="play-words-found-btn" class="secondary-btn in-game-words-btn">📝 Words So Far</button>
             <div id="mobile-controls">
                 <button id="btn-left" class="control-btn" aria-label="Move Left">◀</button>

@@ -1622,6 +1622,49 @@ body.touch-input #mobile-controls {
     border-color: #f4d664;
 }
 
+/* Mode buttons (Shuffle / Repeat) */
+.np-mode-btn {
+    width: 36px;
+    height: 36px;
+    opacity: 0.45;
+}
+
+.np-mode-btn.active {
+    opacity: 1;
+    color: #ffd700;
+    border-color: #ffd700;
+    background: rgba(255, 215, 0, 0.12);
+}
+
+.np-mode-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Small icon buttons (volume icon, timer btn) */
+.np-icon-btn {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s;
+}
+
+.np-icon-btn:hover {
+    color: #fff;
+}
+
+.np-icon-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+/* ---------- Progress Bar ---------- */
 #np-progress-wrap {
     width: 100%;
 }
@@ -1631,9 +1674,9 @@ body.touch-input #mobile-controls {
     height: 6px;
     background: #444;
     border-radius: 3px;
-    overflow: hidden;
     cursor: pointer;
     margin-bottom: 4px;
+    position: relative;
 }
 
 #np-progress-fill {
@@ -1642,6 +1685,31 @@ body.touch-input #mobile-controls {
     background: #ffd700;
     border-radius: 3px;
     transition: width 0.3s linear;
+    pointer-events: none;
+}
+
+#np-progress-thumb {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+}
+
+#np-progress-bar:hover #np-progress-thumb,
+#np-progress-bar.dragging #np-progress-thumb {
+    opacity: 1;
+}
+
+#np-progress-bar.dragging #np-progress-fill {
+    transition: none;
 }
 
 #np-time {
@@ -1649,6 +1717,101 @@ body.touch-input #mobile-controls {
     justify-content: space-between;
     font-size: 0.7rem;
     color: #666;
+}
+
+/* ---------- Extras Row (Volume + Timer) ---------- */
+#np-extras {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    gap: 12px;
+}
+
+#np-volume-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+
+#np-volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    max-width: 120px;
+    height: 4px;
+    background: #444;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+#np-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #ffd700;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 3px rgba(0,0,0,0.4);
+}
+
+#np-volume-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #ffd700;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 0 3px rgba(0,0,0,0.4);
+}
+
+#np-right-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+#np-timer-display {
+    font-size: 0.72rem;
+    color: #ffd700;
+    font-variant-numeric: tabular-nums;
+}
+
+#np-timer-display.hidden {
+    display: none;
+}
+
+/* ---------- Search Bar ---------- */
+#music-search-wrap {
+    width: 100%;
+    max-width: 500px;
+    padding: 6px 0 4px;
+    flex-shrink: 0;
+}
+
+#music-search {
+    width: 100%;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+#music-search:focus {
+    border-color: #ffd700;
+}
+
+#music-search::placeholder {
+    color: #555;
 }
 
 /* ---------- Playlist Tabs ---------- */
@@ -1742,11 +1905,80 @@ body.touch-input #mobile-controls {
     justify-content: center;
     flex-shrink: 0;
     transition: background 0.15s;
+    position: relative;
+    overflow: hidden;
 }
 
 .track-item.playing .track-play-btn {
     background: #ffd700;
     color: #111;
+}
+
+/* EQ Bars (animated on playing track) */
+.track-eq-bars {
+    display: none;
+    align-items: flex-end;
+    gap: 2px;
+    height: 16px;
+    position: absolute;
+    bottom: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.track-item.playing .track-play-btn .track-eq-bars {
+    display: flex;
+}
+
+.track-item.playing.paused .track-play-btn .track-eq-bars {
+    display: none;
+}
+
+.eq-bar {
+    width: 3px;
+    background: #111;
+    border-radius: 1px;
+    animation: eqBounce 0.8s ease-in-out infinite alternate;
+}
+
+.eq-bar:nth-child(1) { height: 6px; animation-delay: 0s; }
+.eq-bar:nth-child(2) { height: 12px; animation-delay: 0.15s; }
+.eq-bar:nth-child(3) { height: 8px; animation-delay: 0.3s; }
+.eq-bar:nth-child(4) { height: 14px; animation-delay: 0.1s; }
+
+@keyframes eqBounce {
+    0%   { height: 4px; }
+    100% { height: 16px; }
+}
+
+/* Favorite button */
+.track-fav-btn {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px;
+    flex-shrink: 0;
+    transition: color 0.15s, transform 0.15s;
+    line-height: 1;
+}
+
+.track-fav-btn:hover {
+    color: #f44;
+    transform: scale(1.15);
+}
+
+.track-fav-btn.active {
+    color: #f44;
+}
+
+/* Track duration */
+.track-duration {
+    font-size: 0.7rem;
+    color: #555;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
 }
 
 .track-info {
@@ -1917,6 +2149,38 @@ body.touch-input #mobile-controls {
     max-width: 260px;
 }
 
+/* ---------- Sleep Timer Modal ---------- */
+.sleep-timer-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    padding: 8px 0;
+}
+
+.sleep-timer-btn {
+    background: #2a2a2a;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    min-width: 80px;
+}
+
+.sleep-timer-btn:hover {
+    background: #333;
+    border-color: #ffd700;
+    color: #fff;
+}
+
+.sleep-timer-btn:active {
+    background: #ffd700;
+    color: #111;
+}
+
 /* ---------- Now Playing Mini (in-game) ---------- */
 #now-playing-mini {
     display: flex;
@@ -1927,6 +2191,26 @@ body.touch-input #mobile-controls {
     max-width: 500px;
     padding: 4px 12px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+    position: relative;
+}
+
+/* Mini progress bar */
+#np-mini-progress {
+    width: 100%;
+    height: 2px;
+    background: #333;
+    border-radius: 1px;
+    overflow: hidden;
+    order: -1;
+}
+
+#np-mini-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #ffd700;
+    border-radius: 1px;
+    transition: width 1s linear;
 }
 
 #np-mini-title {
@@ -3264,6 +3548,24 @@ body.touch-input #mobile-controls {
     margin: 4px auto;
     width: fit-content;
     animation: freezePulse 1s ease-in-out infinite;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.15s, transform 0.1s;
+}
+
+#freeze-indicator:hover {
+    background: rgba(100, 200, 255, 0.25);
+}
+
+#freeze-indicator:active {
+    transform: scale(0.96);
+}
+
+#freeze-indicator small {
+    font-weight: normal;
+    font-size: 0.72rem;
+    opacity: 0.7;
 }
 
 @keyframes freezePulse {
@@ -3292,11 +3594,11 @@ body.touch-input #mobile-controls {
     50% { box-shadow: 0 0 14px rgba(255, 100, 50, 0.5); }
 }
 
-/* ---------- Row Drag Indicator ---------- */
+/* ---------- Row Drag / Line Clear Indicator ---------- */
 
 #row-drag-indicator {
     text-align: center;
-    padding: 6px 16px;
+    padding: 8px 16px;
     background: rgba(0, 200, 80, 0.15);
     border: 1px solid rgba(0, 200, 80, 0.4);
     border-radius: 8px;
@@ -3305,7 +3607,57 @@ body.touch-input #mobile-controls {
     font-size: 0.85rem;
     margin: 4px auto;
     width: fit-content;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     animation: rowDragPulse 1.2s ease-in-out infinite;
+}
+
+.line-clear-label {
+    white-space: nowrap;
+}
+
+.line-clear-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.line-clear-action-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 4px 14px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.line-clear-action-btn:active {
+    transform: scale(0.95);
+}
+
+.line-clear-action-btn.clear-btn {
+    background: #22c55e;
+    color: #fff;
+}
+
+.line-clear-action-btn.clear-btn:hover {
+    background: #16a34a;
+}
+
+.line-clear-action-btn.clear-btn:disabled {
+    background: #555;
+    color: #999;
+    cursor: default;
+}
+
+.line-clear-action-btn.cancel-btn {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ccc;
+}
+
+.line-clear-action-btn.cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
 }
 
 @keyframes rowDragPulse {
