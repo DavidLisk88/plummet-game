@@ -1769,13 +1769,13 @@ class MusicManager {
             this._gainNode.connect(this._audioCtx.destination);
         }
         this._sourceNode.connect(this._gainNode);
-        this._gainNode.gain.value = this._volume;
+        this._gainNode.gain.value = this.muted ? 0 : this._volume;
     }
 
     setVolume(vol) {
         this._volume = Math.max(0, Math.min(1, vol));
         if (this._gainNode) {
-            this._gainNode.gain.value = this._volume;
+            this._gainNode.gain.value = this.muted ? 0 : this._volume;
         }
         // Also set audio.volume as fallback for non-WebAudio environments
         this.audio.volume = this._volume;
@@ -1792,6 +1792,11 @@ class MusicManager {
         this.muted = muted;
         this.audio.muted = muted;
         if (this._crossfadeAudio) this._crossfadeAudio.muted = muted;
+        // GainNode must also reflect mute (audio.muted alone doesn't
+        // suppress signal routed through Web Audio API).
+        if (this._gainNode) {
+            this._gainNode.gain.value = muted ? 0 : this._volume;
+        }
     }
 
     getCurrentTrack() {
@@ -1855,11 +1860,12 @@ class MusicManager {
             const newGain = Math.min(targetVol, step * volStep);
 
             // Fade via gain nodes (cross-platform)
-            if (this._gainNode) this._gainNode.gain.value = oldGain;
-            if (crossfadeGain) crossfadeGain.gain.value = newGain;
+            const m = this.muted ? 0 : 1;
+            if (this._gainNode) this._gainNode.gain.value = oldGain * m;
+            if (crossfadeGain) crossfadeGain.gain.value = newGain * m;
             // Fallback for non-WebAudio
-            this.audio.volume = oldGain;
-            this._crossfadeAudio.volume = newGain;
+            this.audio.volume = oldGain * m;
+            this._crossfadeAudio.volume = newGain * m;
 
             if (step >= steps) {
                 clearInterval(this._crossfadeTimer);
@@ -1882,7 +1888,7 @@ class MusicManager {
                     this._gainNode = crossfadeGain;
                     this._sourceNode = crossfadeSource;
                     this._sourceNodeEl = this.audio;
-                    this._gainNode.gain.value = this._volume;
+                    this._gainNode.gain.value = this.muted ? 0 : this._volume;
                 }
 
                 this.audio.volume = 1;
