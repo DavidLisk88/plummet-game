@@ -1510,12 +1510,18 @@ class MusicManager {
     constructor(playlistManager) {
         this.plMgr = playlistManager;
         this.audio = new Audio();
-        this.audio.volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
+        this._volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
+        this.audio.volume = 1; // keep at 1; real volume via GainNode
         this.playing = false;
         this.currentTrackId = null;
         this.activePlaylist = "__default";
         this.queue = [];
         this.queueIndex = -1;
+
+        // Web Audio API gain node for cross-platform volume control (iOS ignores audio.volume)
+        this._audioCtx = null;
+        this._gainNode = null;
+        this._sourceNode = null;
 
         // Shuffle & repeat
         this.shuffleOn = localStorage.getItem("wf_music_shuffle") === "1";
@@ -1664,6 +1670,7 @@ class MusicManager {
         this._cancelCrossfade();
         this.audio.src = track.file;
         this.audio.muted = !!this.muted;
+        this._ensureGainNode(this.audio);
         this.audio.play().catch(() => {});
         this.playing = true;
         this._saveMusicState();
@@ -1672,6 +1679,7 @@ class MusicManager {
 
     play() {
         if (this.currentTrackId) {
+            this._ensureGainNode(this.audio);
             this.audio.play().catch(() => {});
             this.playing = true;
             localStorage.setItem("wf_music_paused", "0");
@@ -1730,17 +1738,50 @@ class MusicManager {
         }
     }
 
-    // ── Volume ──
+    // ── Volume (via Web Audio GainNode for iOS compatibility) ──
+
+    _ensureGainNode(audioEl) {
+        if (!this._audioCtx) {
+            this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this._audioCtx.state === "suspended") {
+            this._audioCtx.resume().catch(() => {});
+        }
+        // Only create source node once per audio element
+        if (this._sourceNode && this._sourceNodeEl === audioEl) return;
+        // Disconnect old source if switching elements
+        if (this._sourceNode) {
+            try { this._sourceNode.disconnect(); } catch {}
+        }
+        try {
+            this._sourceNode = this._audioCtx.createMediaElementSource(audioEl);
+            this._sourceNodeEl = audioEl;
+        } catch {
+            // Already connected (can't create two sources for same element)
+            return;
+        }
+        if (!this._gainNode) {
+            this._gainNode = this._audioCtx.createGain();
+            this._gainNode.connect(this._audioCtx.destination);
+        }
+        this._sourceNode.connect(this._gainNode);
+        this._gainNode.gain.value = this._volume;
+    }
 
     setVolume(vol) {
-        this.audio.volume = Math.max(0, Math.min(1, vol));
-        if (this._crossfadeAudio) this._crossfadeAudio.volume = this.audio.volume;
-        localStorage.setItem("wf_music_volume", this.audio.volume.toFixed(2));
+        this._volume = Math.max(0, Math.min(1, vol));
+        if (this._gainNode) {
+            this._gainNode.gain.value = this._volume;
+        }
+        // Also set audio.volume as fallback for non-WebAudio environments
+        this.audio.volume = this._volume;
+        if (this._crossfadeAudio) this._crossfadeAudio.volume = this._volume;
+        localStorage.setItem("wf_music_volume", this._volume.toFixed(2));
         this._notify();
     }
 
     getVolume() {
-        return this.audio.volume;
+        return this._volume;
     }
 
     setMuted(muted) {
@@ -1781,37 +1822,71 @@ class MusicManager {
 
         this._crossfading = true;
         this._crossfadeAudio = new Audio(nextTrack.file);
-        this._crossfadeAudio.volume = 0;
+        this._crossfadeAudio.volume = 1; // volume controlled via gain
         this._crossfadeAudio.muted = !!this.muted;
         this._crossfadeAudio.play().catch(() => {});
 
+        // Create a separate gain node for the crossfade audio
+        let crossfadeGain = null;
+        let crossfadeSource = null;
+        if (this._audioCtx) {
+            try {
+                crossfadeSource = this._audioCtx.createMediaElementSource(this._crossfadeAudio);
+                crossfadeGain = this._audioCtx.createGain();
+                crossfadeGain.gain.value = 0;
+                crossfadeGain.connect(this._audioCtx.destination);
+                crossfadeSource.connect(crossfadeGain);
+            } catch { crossfadeGain = null; crossfadeSource = null; }
+        }
+
         const fadeStep = 50; // ms
         const steps = (this._crossfadeDuration * 1000) / fadeStep;
-        const volStep = this.audio.volume / steps;
+        const targetVol = this._volume;
+        const volStep = targetVol / steps;
         let step = 0;
 
         this._crossfadeTimer = setInterval(() => {
             step++;
-            const oldVol = Math.max(0, this.audio.volume - volStep);
-            const newVol = Math.min(parseFloat(localStorage.getItem("wf_music_volume") || "0.5"), step * volStep);
-            this.audio.volume = oldVol;
-            this._crossfadeAudio.volume = newVol;
+            const oldGain = Math.max(0, targetVol - step * volStep);
+            const newGain = Math.min(targetVol, step * volStep);
+
+            // Fade via gain nodes (cross-platform)
+            if (this._gainNode) this._gainNode.gain.value = oldGain;
+            if (crossfadeGain) crossfadeGain.gain.value = newGain;
+            // Fallback for non-WebAudio
+            this.audio.volume = oldGain;
+            this._crossfadeAudio.volume = newGain;
 
             if (step >= steps) {
                 clearInterval(this._crossfadeTimer);
                 this.audio.pause();
+                // Disconnect old source from gain
+                if (this._sourceNode) {
+                    try { this._sourceNode.disconnect(); } catch {}
+                }
                 // Swap audio elements
-                this.audio.removeEventListener("ended", this._boundOnEnded);
                 const oldAudio = this.audio;
                 this.audio = this._crossfadeAudio;
                 this._crossfadeAudio = null;
                 this._crossfading = false;
 
+                // Swap gain nodes: crossfade gain becomes the main gain
+                if (crossfadeGain && crossfadeSource) {
+                    if (this._gainNode) {
+                        try { this._gainNode.disconnect(); } catch {}
+                    }
+                    this._gainNode = crossfadeGain;
+                    this._sourceNode = crossfadeSource;
+                    this._sourceNodeEl = this.audio;
+                    this._gainNode.gain.value = this._volume;
+                }
+
+                this.audio.volume = 1;
+
                 // Update track reference
                 this._setEffectiveIndex(nextIdx);
                 if (this.shuffleOn && nextIdx === 0) this._reshuffleQueue();
                 this.currentTrackId = q[nextIdx];
-                this.audio.volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
 
                 // Re-add event listeners to new audio
                 this.audio.addEventListener("ended", () => this._onTrackEnded());
@@ -1850,8 +1925,11 @@ class MusicManager {
             this._crossfadeAudio = null;
         }
         this._crossfading = false;
-        // Restore volume
-        this.audio.volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
+        // Restore volume via gain node
+        if (this._gainNode) {
+            this._gainNode.gain.value = this._volume;
+        }
+        this.audio.volume = 1;
     }
 
     // ── Sleep timer ──
