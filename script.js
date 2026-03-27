@@ -1516,6 +1516,7 @@ class MusicManager {
         this.audio = new Audio();
         this._volume = parseFloat(localStorage.getItem("wf_music_volume") || "0.5");
         this.audio.volume = 1; // keep at 1; real volume via GainNode
+        this.muted = false;
         this.playing = false;
         this.currentTrackId = null;
         this.activePlaylist = "__default";
@@ -1778,8 +1779,8 @@ class MusicManager {
             this._gainNode.gain.value = this.muted ? 0 : this._volume;
         }
         // Also set audio.volume as fallback for non-WebAudio environments
-        this.audio.volume = this._volume;
-        if (this._crossfadeAudio) this._crossfadeAudio.volume = this._volume;
+        this.audio.volume = this.muted ? 0 : this._volume;
+        if (this._crossfadeAudio) this._crossfadeAudio.volume = this.muted ? 0 : this._volume;
         localStorage.setItem("wf_music_volume", this._volume.toFixed(2));
         this._notify();
     }
@@ -1797,6 +1798,10 @@ class MusicManager {
         if (this._gainNode) {
             this._gainNode.gain.value = muted ? 0 : this._volume;
         }
+        // Fallback: also zero out audio.volume so sound is fully suppressed
+        // even on browsers where audio.muted doesn't affect createMediaElementSource.
+        this.audio.volume = muted ? 0 : 1;
+        if (this._crossfadeAudio) this._crossfadeAudio.volume = muted ? 0 : 1;
     }
 
     getCurrentTrack() {
@@ -1831,7 +1836,7 @@ class MusicManager {
 
         this._crossfading = true;
         this._crossfadeAudio = new Audio(nextTrack.file);
-        this._crossfadeAudio.volume = 1; // volume controlled via gain
+        this._crossfadeAudio.volume = this.muted ? 0 : 1;
         this._crossfadeAudio.muted = !!this.muted;
         this._crossfadeAudio.play().catch(() => {});
 
@@ -1891,7 +1896,7 @@ class MusicManager {
                     this._gainNode.gain.value = this.muted ? 0 : this._volume;
                 }
 
-                this.audio.volume = 1;
+                this.audio.volume = this.muted ? 0 : 1;
 
                 // Update track reference
                 this._setEffectiveIndex(nextIdx);
