@@ -2017,6 +2017,13 @@ class MusicManager {
             }
 
             this.playing = false;
+            // Auto-resume if the user hadn't manually paused before reload
+            if (localStorage.getItem("wf_music_paused") !== "1") {
+                this.audio.play().then(() => {
+                    this.playing = true;
+                    this._notify();
+                }).catch(() => {});
+            }
             this._notify();
         } catch {}
     }
@@ -3698,6 +3705,8 @@ class Game {
 
     _autoplayMusicFromUserAction() {
         if (this.music.playing) return;
+        // Respect the user's manual pause — don't auto-start if they paused
+        if (localStorage.getItem("wf_music_paused") === "1") return;
         if (this.music.queue.length === 0) {
             this.music.refreshQueue();
         }
