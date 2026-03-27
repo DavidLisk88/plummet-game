@@ -1546,7 +1546,7 @@ class MusicManager {
         this.onSleepTimerTick = null; // (remainingMs) => void
 
         // Auto-advance to next track (handle repeat-one and crossfade)
-        this.audio.addEventListener("ended", () => this._onTrackEnded());
+        this._bindEndedListener(this.audio);
 
         // Callbacks for UI updates
         this.onStateChange = null;
@@ -1810,6 +1810,14 @@ class MusicManager {
 
     // ── Track ended handler ──
 
+    _bindEndedListener(audioEl) {
+        audioEl.addEventListener("ended", () => {
+            // Ignore stale ended events from old audio elements after crossfade swap
+            if (audioEl !== this.audio) return;
+            this._onTrackEnded();
+        });
+    }
+
     _onTrackEnded() {
         if (this.repeatMode === "one") {
             this.audio.currentTime = 0;
@@ -1838,7 +1846,16 @@ class MusicManager {
         this._crossfadeAudio = new Audio(nextTrack.file);
         this._crossfadeAudio.volume = this.muted ? 0 : 1;
         this._crossfadeAudio.muted = !!this.muted;
-        this._crossfadeAudio.play().catch(() => {});
+        this._crossfadeAudio.play().catch(() => {
+            // Crossfade audio failed to start — abort crossfade so
+            // the normal ended → next() path can handle advancement
+            this._crossfading = false;
+            if (this._crossfadeTimer) clearInterval(this._crossfadeTimer);
+            if (this._crossfadeAudio) {
+                this._crossfadeAudio.src = "";
+                this._crossfadeAudio = null;
+            }
+        });
 
         // Create a separate gain node for the crossfade audio
         let crossfadeGain = null;
@@ -1904,7 +1921,7 @@ class MusicManager {
                 this.currentTrackId = q[nextIdx];
 
                 // Re-add event listeners to new audio
-                this.audio.addEventListener("ended", () => this._onTrackEnded());
+                this._bindEndedListener(this.audio);
                 this.audio.addEventListener("timeupdate", () => {
                     if (this.onTimeUpdate) {
                         this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
@@ -2017,13 +2034,6 @@ class MusicManager {
             }
 
             this.playing = false;
-            // Auto-resume if the user hadn't manually paused before reload
-            if (localStorage.getItem("wf_music_paused") !== "1") {
-                this.audio.play().then(() => {
-                    this.playing = true;
-                    this._notify();
-                }).catch(() => {});
-            }
             this._notify();
         } catch {}
     }
@@ -2565,13 +2575,11 @@ class Game {
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
         this._updateHintsBtn();
 
-        // Show profiles screen or menu depending on whether a profile is active
-        if (this.profileMgr.getActive()) {
-            this._loadActiveProfile();
-            this._showScreen("menu");
-        } else {
-            this._showScreen("profiles");
-        }
+        // Always start on profiles screen on fresh page load;
+        // music starts once a profile is selected.
+        localStorage.setItem("wf_music_paused", "0");
+        this._loadActiveProfile();
+        this._showScreen("profiles");
         this._highlightSizeButton();
         this._highlightDifficultyButton();
         this._updateDifficultySelector();
