@@ -208,12 +208,12 @@ const CHALLENGE_TIME_LIMIT = 7 * 60; // 7 minutes
 // Category difficulty tiers — higher tier = harder words = more reward
 // ptsMult applies to bonus-match scoring, xpMult applies to section 7 XP bonus
 const CATEGORY_TIERS = Object.freeze({
-    food:       { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
-    animals:    { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
-    sports:     { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
-    nature:     { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "Hard" },
-    technology: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "Hard" },
-    adjectives: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "Hard" },
+    animals:    { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
+    sports:     { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
+    food:       { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
+    nature:     { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
+    technology: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
+    adjectives: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
 });
 
 const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 8, 10, 15, 20];
@@ -7351,8 +7351,7 @@ class Game {
         sel.classList.remove("hidden");
         wrap.innerHTML = "";
 
-        // Exclude adjectives from the selectable UI (it's internal-only)
-        const playable = ["food", "animals", "sports", "nature", "technology"];
+        const playable = ["food", "animals", "sports", "nature", "technology", "adjectives"];
         let first = true;
         for (const catKey of playable) {
             const cat = WORD_CATEGORIES[catKey];
