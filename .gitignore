@@ -7,6 +7,11 @@ dist/
 build/
 www/
 
+# Capacitor iOS build artifacts (keep ios/ in git, but not build outputs)
+ios/App/Pods/
+ios/App/App/public/
+ios/App/output/
+
 coverage/
 .cache/
 
