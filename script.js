@@ -2560,8 +2560,9 @@ class Game {
         this._bindRowDrag();
         this._bindLevelUpUI();
         this._initMutePref();
-        this._menuPage = 0;
+        this._menuPage = 1;
         this._bindMenuSwipe();
+        this._goToMenuPage(1);
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
         this._updateHintsBtn();
 

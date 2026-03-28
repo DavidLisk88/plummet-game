@@ -1481,6 +1481,168 @@ body.touch-input #mobile-controls {
     margin-top: 40px;
 }
 
+/* ─── Links Page (Community & Music) ─── */
+.menu-page-links {
+    justify-content: center;
+    padding-top: calc(40px + var(--safe-top)) !important;
+    padding-bottom: 20px !important;
+}
+
+.links-page-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+    max-width: 340px;
+}
+
+.links-page-title {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0;
+    background: linear-gradient(135deg, #ffd700, #ff9800);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.links-page-subtitle {
+    color: #888;
+    font-size: 0.85rem;
+    margin: -12px 0 8px;
+    letter-spacing: 0.04em;
+}
+
+/* Link cards */
+.link-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 16px 18px;
+    border-radius: 16px;
+    text-decoration: none;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.link-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    padding: 1.5px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.03));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
+.link-card:active {
+    transform: scale(0.97);
+}
+
+/* Discord card */
+.link-card-discord {
+    background: linear-gradient(135deg, rgba(88, 101, 242, 0.25), rgba(88, 101, 242, 0.08));
+    box-shadow: 0 4px 24px rgba(88, 101, 242, 0.15), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.link-card-discord:hover {
+    box-shadow: 0 6px 32px rgba(88, 101, 242, 0.3), inset 0 1px 0 rgba(255,255,255,0.08);
+    transform: translateY(-2px);
+}
+
+.link-card-discord .link-card-icon-wrap {
+    background: linear-gradient(135deg, #5865F2, #7289DA);
+    box-shadow: 0 2px 12px rgba(88, 101, 242, 0.4);
+}
+
+/* Music card */
+.link-card-music {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 152, 0, 0.08));
+    box-shadow: 0 4px 24px rgba(255, 215, 0, 0.1), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.link-card-music:hover {
+    box-shadow: 0 6px 32px rgba(255, 215, 0, 0.25), inset 0 1px 0 rgba(255,255,255,0.08);
+    transform: translateY(-2px);
+}
+
+.link-card-music .link-card-icon-wrap {
+    background: linear-gradient(135deg, #ffd700, #ff9800);
+    box-shadow: 0 2px 12px rgba(255, 215, 0, 0.4);
+}
+
+/* Card icon */
+.link-card-icon-wrap {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: box-shadow 0.2s;
+}
+
+.link-card-icon {
+    width: 24px;
+    height: 24px;
+    color: #fff;
+}
+
+/* Card text */
+.link-card-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.link-card-label {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.02em;
+}
+
+.link-card-desc {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.01em;
+}
+
+/* Card arrow */
+.link-card-arrow {
+    flex-shrink: 0;
+    font-size: 1.2rem;
+    color: rgba(255,255,255,0.25);
+    transition: color 0.2s, transform 0.2s;
+}
+
+.link-card:hover .link-card-arrow {
+    color: rgba(255,255,255,0.6);
+    transform: translateX(3px);
+}
+
+/* Footer */
+.links-page-footer {
+    color: #444;
+    font-size: 0.75rem;
+    margin-top: 16px;
+    letter-spacing: 0.06em;
+}
+
 #menu-stats {
     display: flex;
     flex-direction: column;
