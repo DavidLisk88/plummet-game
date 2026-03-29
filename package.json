@@ -8,9 +8,13 @@
     "build": "node build-web.js",
     "cap:sync": "npx cap sync",
     "cap:open:ios": "npx cap open ios",
-    "ios": "npm run build && npx cap sync ios && npx cap open ios"
+    "cap:open:android": "npx cap open android",
+    "ios": "npm run build && npx cap sync ios && npx cap open ios",
+    "android": "npm run build && npx cap sync android && npx cap open android",
+    "icons": "node generate-icons.js"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
     "@capacitor/core": "^8.3.0",
     "@capacitor/ios": "^8.3.0",
     "@capacitor/splash-screen": "^8.0.1",

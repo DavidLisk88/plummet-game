@@ -12,6 +12,11 @@ ios/App/Pods/
 ios/App/App/public/
 ios/App/output/
 
+# Capacitor Android build artifacts
+android/app/src/main/assets/public/
+android/app/build/
+android/.gradle/
+
 coverage/
 .cache/
 

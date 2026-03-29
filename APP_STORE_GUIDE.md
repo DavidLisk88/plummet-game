@@ -149,19 +149,115 @@ Go to [App Store Connect](https://appstoreconnect.apple.com):
 
 ---
 
-## Optional: Google Play Store (Android)
+## Google Play Store (Android)
 
-When you're ready to also publish on Android:
+### Prerequisites
+- [Google Play Developer account](https://play.google.com/console) — **$25 one-time fee**
+- **Android Studio** installed (free from [developer.android.com/studio](https://developer.android.com/studio))
+- The Android platform is already set up in this project
+
+### NPM Commands
+
+| Command | What it does |
+|---------|-------------|
+| `npm run android` | Build + sync + open Android Studio |
+| `npx cap sync android` | Sync web assets to Android project |
+| `npx cap open android` | Open Android Studio |
+
+### 1. Open in Android Studio
 
 ```bash
-npm install @capacitor/android
-npx cap add android
 npm run build
 npx cap sync android
-npx cap open android   # opens Android Studio
+npx cap open android
 ```
 
-You'll need a [Google Play Developer account](https://play.google.com/console) ($25 one-time fee).
+### 2. Test on Emulator
+
+1. In Android Studio, click the **device dropdown** → **Device Manager** → create a **Pixel 8 Pro** emulator
+2. Click the green **Run** button (▶) to build and launch
+3. Test the game on the emulator
+
+### 3. Generate Signed APK / AAB
+
+Google Play requires a signed **Android App Bundle (.aab)**:
+
+1. In Android Studio: **Build → Generate Signed Bundle / APK**
+2. Choose **Android App Bundle**
+3. **Create new keystore** (first time only):
+   - Click **Create new...** 
+   - Choose a location to save it (e.g., `plummet-release.jks`)
+   - Set a **keystore password** (SAVE THIS — you need it for every update)
+   - Fill in the key alias (e.g., `plummet`), key password, and your name
+   - Click **OK**
+4. Select **release** build variant
+5. Click **Finish** — the `.aab` file is generated in `android/app/release/`
+
+⚠️ **IMPORTANT**: Back up your keystore file and passwords! If you lose them, you can never update your app.
+
+### 4. Google Play Console Setup
+
+Go to [play.google.com/console](https://play.google.com/console):
+
+1. **Create app**
+   - App name: **Plummet**
+   - Default language: English
+   - App type: Game
+   - Free or paid: Free (or set your price)
+
+2. **Store listing**
+   - Short description (80 chars): `A fast-paced falling letter word puzzle — spell words to clear the board!`
+   - Full description:
+     > Plummet is a fast-paced word puzzle game where letter blocks fall into a grid. Slide them into position and spell words horizontally, vertically, or diagonally to clear the board and score big!
+     >
+     > Features:
+     > • Multiple grid sizes (3×3 to 8×8)
+     > • Sandbox, Timed, and Challenge modes
+     > • Bonus powers: Wildcard, Bomb, Freeze, Shuffle, Row Clear, Score 2×
+     > • Chain reactions for massive combos
+     > • XP leveling system with 500 levels
+     > • Multiple player profiles
+     > • Built-in music player
+     > • Dark theme with gold accents
+   - Category: **Game → Word**
+   - Tags: Word game, Puzzle, Brain game
+
+3. **Graphics**
+   - **App icon**: Upload `android/app/src/main/res/../playstore-icon.png` (512×512) — already generated
+   - **Feature graphic**: 1024×500 banner (create one showing the game logo + gameplay)
+   - **Screenshots**: Take from Android emulator (at least 2, recommended 4-8)
+     - In the emulator, press the **camera icon** in the toolbar to screenshot
+
+4. **Content rating**
+   - Fill out the IARC questionnaire
+   - No violence, no user-generated content, no purchases → likely rated **Everyone / PEGI 3**
+
+5. **Privacy policy**
+   - Google Play requires a privacy policy URL for all apps
+   - Since the game is offline with no data collection, you can host a simple one on GitHub Pages or any free site
+   - Should state: "Plummet does not collect, store, or transmit any personal data. All game data is stored locally on your device."
+
+6. **App content declarations**
+   - Ads: No
+   - Target audience: All ages
+   - News app: No
+   - Data safety: No data collected, no data shared
+
+7. **Release**
+   - Go to **Production → Create new release**
+   - Upload the `.aab` file
+   - Add release notes: "Initial release of Plummet — a falling letter word puzzle game"
+   - **Review and roll out**
+
+### Android Gotchas
+
+| Issue | Fix |
+|-------|-----|
+| "SDK location not found" | Open Android Studio → SDK Manager → install SDK 34+ |
+| Gradle build fails | In Android Studio: File → Sync Project with Gradle Files |
+| App crashes on launch | Check Logcat in Android Studio for errors |
+| Play Store rejects for "Broken functionality" | Test thoroughly on emulator first |
+| "You need a privacy policy" | Required even for offline apps — host a simple page |
 
 ---
 
@@ -171,7 +267,8 @@ You'll need a [Google Play Developer account](https://play.google.com/console) (
 # Edit index.html / script.js / style.css as usual
 npm run build          # copy to www/
 npx cap sync ios       # push to Xcode project
-# Then build/run in Xcode
+npx cap sync android   # push to Android Studio project
+# Then build/run in Xcode or Android Studio
 ```
 
 Or the shortcut: `npm run ios` (does all three).
