@@ -1,0 +1,171 @@
+/* ═══════════════════════════════════════════
+   Preact Component Styles
+   Styles for Preact-managed UI components.
+   Uses the same CSS variables from the main style.css.
+   ═══════════════════════════════════════════ */
+
+/* ── Mount point ── */
+#preact-mount {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.preact-overlay {
+  pointer-events: none;
+}
+
+/* ── Score Bar (Preact version) ──
+   Mirrors the original #score-bar styles exactly,
+   with the addition of the multiplier badge. */
+.score-bar-preact {
+  display: none; /* hidden by default, shown when .active-preact-score is on play-screen */
+}
+
+/* ── Score Multiplier Badge ── */
+.score-multiplier-badge {
+  position: absolute;
+  right: 8px;
+  top: -6px;
+  background: var(--bonus, #d4a060);
+  color: var(--bg, #2f3029);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  animation: multiplierPop 0.3s var(--ease-out-3, ease) both;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.3));
+}
+
+@keyframes multiplierPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Combo Streak ── */
+.combo-streak {
+  position: fixed;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(47, 48, 41, 0.92);
+  border: 1px solid var(--border, #4a493e);
+  backdrop-filter: blur(8px);
+  z-index: 60;
+  transition: all 0.3s var(--ease-out-3, ease);
+  box-shadow: var(--shadow-md, 0 2px 8px rgba(0,0,0,0.4));
+}
+
+.combo-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.combo-number {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--text, #e2d8a6);
+  transition: color 0.2s ease;
+}
+
+.combo-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-muted, #b8b098);
+  text-transform: uppercase;
+}
+
+.combo-multiplier {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--bonus, #d4a060);
+}
+
+/* Combo tiers */
+.combo-warm { border-color: var(--accent, #e2d8a6); }
+.combo-warm .combo-number { color: var(--accent, #e2d8a6); }
+
+.combo-hot { border-color: var(--bonus, #d4a060); }
+.combo-hot .combo-number { color: var(--bonus, #d4a060); }
+
+.combo-epic { border-color: var(--success, #8cb860); }
+.combo-epic .combo-number { color: var(--success, #8cb860); }
+.combo-epic .combo-multiplier { color: var(--success, #8cb860); }
+
+.combo-legendary {
+  border-color: var(--danger, #c45c4a);
+  box-shadow: 0 0 16px rgba(196, 92, 74, 0.3), var(--shadow-md, 0 2px 8px rgba(0,0,0,0.4));
+}
+.combo-legendary .combo-number { color: var(--danger, #c45c4a); }
+.combo-legendary .combo-multiplier { color: var(--danger, #c45c4a); }
+
+/* Pop animation */
+.combo-pop {
+  animation: comboPop 0.4s var(--ease-out-3, ease);
+}
+
+@keyframes comboPop {
+  0% { transform: translateY(-50%) scale(1); }
+  30% { transform: translateY(-50%) scale(1.25); }
+  100% { transform: translateY(-50%) scale(1); }
+}
+
+/* ── Game Over Stats ── */
+.gameover-stats {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.5s var(--ease-out-3, ease), transform 0.5s var(--ease-out-3, ease);
+  pointer-events: none;
+}
+
+.gameover-stats.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.gameover-stats-grid {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 0 16px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-surface, #363630);
+  border: 1px solid var(--border, #4a493e);
+  border-radius: 10px;
+  padding: 10px 18px;
+  min-width: 80px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.3));
+}
+
+.stat-card-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--accent, #e2d8a6);
+}
+
+.stat-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted, #b8b098);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

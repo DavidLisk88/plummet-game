@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "A falling-letter word puzzle game",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build && node build-web.js",
+    "preview": "vite preview",
     "dedupe:words": "node dedupe-words.js",
     "export:distinct-words": "node dedupe-words.js --output distinct-words.js",
-    "build": "node build-web.js",
     "cap:sync": "npx cap sync",
     "cap:open:ios": "npx cap open ios",
     "cap:open:android": "npx cap open android",
@@ -22,11 +24,14 @@
     "an-array-of-english-words": "^2.0.0",
     "english-word-list": "^1.0.5",
     "popular-english-words": "^1.0.2",
+    "preact": "^10.29.0",
     "word-list-json": "^0.2.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.3.0",
+    "@preact/preset-vite": "^2.10.5",
     "sharp": "^0.34.5",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3"
   }
 }

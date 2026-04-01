@@ -16,6 +16,8 @@ ios/App/output/
 android/app/src/main/assets/public/
 android/app/build/
 android/.gradle/
+android/all-builds/
+android/build-artifacts/
 
 coverage/
 .cache/

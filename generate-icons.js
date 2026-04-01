@@ -101,12 +101,16 @@ async function generateIcons() {
       console.log(`✓  Android: ${folder}/ic_launcher_foreground.png (${size}×${size})`);
     }
 
-    // Play Store icon (512x512)
-    await sharp(svgBuffer)
-      .resize(512, 512)
+    // Play Store icon (512x512) — full square, no rounded corners, no transparency
+    const logoRendered = await sharp(svgBuffer).resize(512, 512).png().toBuffer();
+    // Flatten onto solid background matching the SVG bg color (#2f3029)
+    await sharp({
+      create: { width: 512, height: 512, channels: 4, background: { r: 47, g: 48, b: 41, alpha: 1 } }
+    })
+      .composite([{ input: logoRendered, top: 0, left: 0 }])
       .png()
       .toFile(path.join(ANDROID_RES_DIR, "..", "playstore-icon.png"));
-    console.log(`✓  Android: playstore-icon.png (512×512)`);
+    console.log(`✓  Android: playstore-icon.png (512×512, full square)`);
   }
 
   console.log("\n✅ All icons generated successfully");

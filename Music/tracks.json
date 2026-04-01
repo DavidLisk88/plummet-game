@@ -1,50 +1,68 @@
 [
   {
     "id": "track01",
+    "title": "LIQUID",
+    "artist": "Freddy River",
+    "file": "Music/LIQUID.wav"
+  },
+  {
+    "id": "track02",
     "title": "TUMBLE",
     "artist": "Freddy River",
     "file": "Music/TUMBLE.wav"
   },
   {
-    "id": "track02",
+    "id": "track03",
     "title": "LEXICON",
     "artist": "Freddy River",
     "file": "Music/LEXICON.wav"
   },
   {
-    "id": "track03",
-    "title": "GALAXY",
-    "artist": "Freddy River",
-    "file": "Music/GALAXY.wav"
-  },
-  {
     "id": "track04",
-    "title": "SOUL",
+    "title": "LINES",
     "artist": "Freddy River",
-    "file": "Music/SOUL.wav"
+    "file": "Music/LINES.wav"
   },
   {
     "id": "track05",
-    "title": "It Never Stops, It Never Ends",
-    "artist": "Freddy River",
-    "file": "Music/It Never Stops, It Never Ends.wav"
-  },
-  {
-    "id": "track06",
-    "title": "CANDY",
-    "artist": "Freddy River",
-    "file": "Music/CANDY.wav"
-  },
-  {
-    "id": "track07",
     "title": "POINTS",
     "artist": "Freddy River",
     "file": "Music/POINTS.wav"
   },
   {
-    "id": "track08",
-    "title": "LINES",
+    "id": "track06",
+    "title": "GALAXY",
     "artist": "Freddy River",
-    "file": "Music/LINES.wav"
+    "file": "Music/GALAXY.wav"
+  },
+  {
+    "id": "track07",
+    "title": "CANDY",
+    "artist": "Freddy River",
+    "file": "Music/CANDY.wav"
+  },
+  {
+    "id": "track08",
+    "title": "DREMAS",
+    "artist": "Freddy River",
+    "file": "Music/DREMAS.wav"
+  },
+  {
+    "id": "track09",
+    "title": "It Never Stops, It Never Ends",
+    "artist": "Freddy River",
+    "file": "Music/It Never Stops, It Never Ends.wav"
+  },
+  {
+    "id": "track10",
+    "title": "SOUL",
+    "artist": "Freddy River",
+    "file": "Music/SOUL.wav"
+  },
+  {
+    "id": "track11",
+    "title": "It's always something",
+    "artist": "Freddy River",
+    "file": "Music/It's always something.wav"
   }
 ]

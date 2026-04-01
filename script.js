@@ -1,7 +1,10 @@
 /* ========================================
    PLUMMET - Game Logic
-   Pure vanilla JS, no dependencies.
+   Vanilla JS core + Preact UI layer.
    ======================================== */
+import { gameStore } from './src/gameStore.js';
+import { mountPreactUI } from './src/app.jsx';
+import './src/preact.css';
 
 // ────────────────────────────────────────
 // DICTIONARY
@@ -178,7 +181,8 @@ const GAME_MODES = Object.freeze({
     TIMED: "timed",
 });
 
-const SANDBOX_SCORE_MULT = 0.25; // Sandbox earns 25% of normal points/XP
+const SANDBOX_SCORE_MULT = 0.25; // Sandbox earns 25% of normal points
+const SANDBOX_XP_MULT   = 0.75; // Sandbox XP is moderated (score already reduced)
 
 const CHALLENGE_TYPES = Object.freeze({
     TARGET_WORD: "target-word",
@@ -190,17 +194,17 @@ const CHALLENGE_META = Object.freeze({
     [CHALLENGE_TYPES.TARGET_WORD]: {
         title: "Target Word",
         description: "Spell target words for bonus points! Spelling the target word earns 200 bonus points.",
-        icon: "🎯",
+        icon: "◎",
     },
     [CHALLENGE_TYPES.SPEED_ROUND]: {
         title: "Speed Round",
         description: "Blocks fall faster and faster as your score climbs. How long can you survive?",
-        icon: "⚡",
+        icon: "▲",
     },
     [CHALLENGE_TYPES.WORD_CATEGORY]: {
         title: "Word Category",
         description: "Choose a category and find matching words for bonus points! Harder categories earn more.",
-        icon: "📂",
+        icon: "▦",
     },
 });
 
@@ -236,6 +240,209 @@ const FREEZE_DURATION = 10; // seconds
 const STANDARD_CLEAR_FLASH_DURATION = 1.2;
 const BOMB_CLEAR_FLASH_DURATION = 1.8;
 
+// ── Combo / Streak constants (Preact-driven) ──
+const COMBO_WINDOW_SECONDS = 8;       // time window to keep combo alive between words
+const COMBO_MULTIPLIER_STEP = 0.2;    // each combo step adds 0.2× multiplier
+const COMBO_MAX_MULTIPLIER = 3.0;     // cap at 3×
+
+// ── Difficulty Progression constants ──
+const DIFFICULTY_WORDS_PER_LEVEL = 5;  // words found to increase difficulty
+const DIFFICULTY_SPEED_STEP = 0.08;    // fall speed decrease per difficulty level
+const DIFFICULTY_MAX_LEVEL = 10;
+
+// ────────────────────────────────────────
+// COIN / CURRENCY SYSTEM
+// ────────────────────────────────────────
+
+// ── Coin earning rates ──
+const COIN_PER_WORD_LENGTH = { 3: 1, 4: 2, 5: 4, 6: 5, 7: 7 }; // 7+ = 7
+const COIN_COMBO_BONUS = 2;             // +2 per combo tier active
+const COIN_GAME_COMPLETE_BASE = 15;     // minimum per game
+const COIN_GAME_COMPLETE_PER_500 = 10;  // +10 per 500 pts (up to 50 max)
+const COIN_HIGH_SCORE_BEATEN = 30;      // personal best in any mode
+const COIN_LEVEL_UP_BASE = 25;          // base coins per level-up
+const COIN_LEVEL_UP_PER_LEVEL = 3;      // + level × 3
+const COIN_DAILY_FIRST_GAME = 20;       // first game of the day
+const COIN_CHALLENGE_COMPLETE_BASE = 30; // base challenge reward
+const COIN_CHALLENGE_TIER_MULT = 15;    // +15 per tier above 1
+const COIN_STREAK_PER_DAY = 5;          // 5 × consecutive days (capped)
+const COIN_STREAK_MAX = 50;             // cap on streak bonus
+
+// ── Milestone achievements (one-time coin payouts) ──
+const MILESTONES = [
+    { id: "words_50",       label: "Wordsmith",          desc: "Find 50 unique words",          check: p => (p.uniqueWordsFound || []).length >= 50,    coins: 30 },
+    { id: "words_200",      label: "Lexicon Builder",    desc: "Find 200 unique words",         check: p => (p.uniqueWordsFound || []).length >= 200,   coins: 75 },
+    { id: "words_500",      label: "Dictionary Diver",   desc: "Find 500 unique words",         check: p => (p.uniqueWordsFound || []).length >= 500,   coins: 100 },
+    { id: "words_1000",     label: "Word Hoarder",       desc: "Find 1,000 unique words",       check: p => (p.uniqueWordsFound || []).length >= 1000,  coins: 200 },
+    { id: "games_10",       label: "Getting Started",    desc: "Play 10 games",                 check: p => p.gamesPlayed >= 10,                       coins: 25 },
+    { id: "games_50",       label: "Dedicated",          desc: "Play 50 games",                 check: p => p.gamesPlayed >= 50,                       coins: 75 },
+    { id: "games_100",      label: "Committed",          desc: "Play 100 games",                check: p => p.gamesPlayed >= 100,                      coins: 150 },
+    { id: "level_5",        label: "Rising Star",        desc: "Reach Level 5",                 check: p => p.level >= 5,                              coins: 30 },
+    { id: "level_10",       label: "Seasoned",           desc: "Reach Level 10",                check: p => p.level >= 10,                             coins: 60 },
+    { id: "level_25",       label: "Veteran",            desc: "Reach Level 25",                check: p => p.level >= 25,                             coins: 120 },
+    { id: "level_50",       label: "Master",             desc: "Reach Level 50",                check: p => p.level >= 50,                             coins: 200 },
+    { id: "score_1000",     label: "Four Digits",        desc: "Score 1,000+ in a game",        check: p => p.highScore >= 1000,                       coins: 25 },
+    { id: "score_5000",     label: "High Roller",        desc: "Score 5,000+ in a game",        check: p => p.highScore >= 5000,                       coins: 75 },
+    { id: "score_10000",    label: "Ten Grand",          desc: "Score 10,000+ in a game",       check: p => p.highScore >= 10000,                      coins: 150 },
+    { id: "streak_3",       label: "On a Roll",          desc: "3-day play streak",             check: p => (p.playStreak || 0) >= 3,                  coins: 30 },
+    { id: "streak_7",       label: "Weekly Warrior",     desc: "7-day play streak",             check: p => (p.playStreak || 0) >= 7,                  coins: 75 },
+    { id: "streak_14",      label: "Fortnight Force",    desc: "14-day play streak",            check: p => (p.playStreak || 0) >= 14,                 coins: 150 },
+];
+
+// ── Shop catalog ──
+const SHOP_CATEGORIES = {
+    GRID_THEMES: "grid_themes",
+    BLOCK_STYLES: "block_styles",
+    BONUS_SLOTS: "bonus_slots",
+    STARTING_PERKS: "starting_perks",
+};
+
+const SHOP_ITEMS = {
+    // ── Grid Themes (cosmetic) ──
+    theme_default:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Classic",    price: 0,   preview: "Default olive tones",     owned: true },
+    theme_obsidian:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Obsidian",   price: 150, preview: "Dark glass, subtle glow" },
+    theme_charcoal:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Charcoal",   price: 125, preview: "Smoky graphite, amber ink" },
+    theme_neon:      { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Neon",       price: 200, preview: "Bright outlines, dark bg" },
+    theme_ocean:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ocean",      price: 175, preview: "Blue tones, wave clears" },
+    theme_ember:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ember",      price: 200, preview: "Warm reds, fire particles" },
+    theme_amethyst:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Amethyst",   price: 175, preview: "Deep crystal violet glow" },
+    theme_darkoak:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Dark Oak",   price: 175, preview: "Rich dark wood grain" },
+
+    // ── Letter Block Styles (cosmetic) ──
+    block_default:   { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Standard",   price: 0,   preview: "Default clean letters",    owned: true },
+    block_scrabble:  { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Scrabble",   price: 100, preview: "Wooden tiles with points" },
+    block_bubble:    { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Bubble",     price: 75,  preview: "Rounded, bouncy feel" },
+    block_typewriter:{ category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Typewriter",  price: 125, preview: "Monospace, inked look" },
+    block_pixel:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Pixel",      price: 150, preview: "Retro 8-bit blocks" },
+    block_glass:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Glass",      price: 175, preview: "Translucent refractions" },
+
+    // ── Bonus Slots (permanent, sequential unlock) ──
+    bonus_slot_1:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 1",     price: 1000, preview: "First bonus slot",  unique: true },
+    bonus_slot_2:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 2",     price: 2000, preview: "Second bonus slot", unique: true },
+    bonus_slot_3:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 3",     price: 3000, preview: "Third bonus slot",  unique: true },
+
+    // ── Starting Perks (consumable, bought individually) ──
+    perk_headstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Head Start",     price: 100, preview: "+200 bonus points at start",       stackSize: 1 },
+    perk_slowstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Slow Start",     price: 150, preview: "0.5× fall speed for 30s",          stackSize: 1 },
+    perk_bonusboost: { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Bonus Boost",    price: 175, preview: "First bonus at 500 pts",           stackSize: 1 },
+    perk_comboext:   { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Combo Extender", price: 150, preview: "+4s combo window this game",       stackSize: 1 },
+    perk_luckydraw:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Lucky Draw",     price: 200, preview: "First bonus = bomb/wild/2×",      stackSize: 1 },
+};
+
+// ── Grid size gating (level + coin cost to unlock) ──
+const GRID_UNLOCK_REQUIREMENTS = {
+    3: { level: 10, coins: 200, label: "3×3 Extreme" },
+    4: { level: 5,  coins: 100, label: "4×4 Compact" },
+    5: { level: 0,  coins: 0,   label: "5×5 Standard" },
+    6: { level: 0,  coins: 0,   label: "6×6 Standard" },
+    7: { level: 0,  coins: 0,   label: "7×7 Wide" },
+    8: { level: 3,  coins: 0,   label: "8×8 Grand" },
+};
+
+// ── Theme color palettes for the renderer ──
+const GRID_THEMES = {
+    theme_default: {
+        bg: "#2f3029", cell: "#3a3933", buffer: "#282822",
+        gridLine: "#4a493e", text: "#fff", textFalling: "#e2d8a6",
+        ghost: "rgba(226, 216, 166, 0.08)", ghostBorder: "rgba(226, 216, 166, 0.45)",
+        border: "#e2d8a6", separator: "#e2d8a655",
+    },
+    theme_obsidian: {
+        bg: "#121218", cell: "#1c1c26", buffer: "#0d0d14",
+        gridLine: "#2a2a3a", text: "#d0d0e8", textFalling: "#a0a0d0",
+        ghost: "rgba(160, 160, 208, 0.08)", ghostBorder: "rgba(160, 160, 208, 0.4)",
+        border: "#8080c0", separator: "#404066",
+        glow: "rgba(100, 100, 200, 0.15)",
+    },
+    theme_charcoal: {
+        bg: "#1a1a1e", cell: "#252528", buffer: "#131315",
+        gridLine: "#333338", text: "#d4c8a8", textFalling: "#e8b84c",
+        ghost: "rgba(232, 184, 76, 0.08)", ghostBorder: "rgba(232, 184, 76, 0.35)",
+        border: "#c8a44c", separator: "#44444855",
+        glow: "rgba(232, 184, 76, 0.1)",
+    },
+    theme_neon: {
+        bg: "#0a0a14", cell: "#0f0f1e", buffer: "#060610",
+        gridLine: "#1a1a30", text: "#00ffaa", textFalling: "#ff00ff",
+        ghost: "rgba(0, 255, 170, 0.08)", ghostBorder: "rgba(0, 255, 170, 0.4)",
+        border: "#ff00ff", separator: "#00ffaa44",
+        glow: "rgba(0, 255, 170, 0.2)",
+    },
+    theme_ocean: {
+        bg: "#0a1a2e", cell: "#122640", buffer: "#081420",
+        gridLine: "#1a3658", text: "#b0d8f0", textFalling: "#60b0e0",
+        ghost: "rgba(96, 176, 224, 0.08)", ghostBorder: "rgba(96, 176, 224, 0.4)",
+        border: "#60b0e0", separator: "#3060a055",
+    },
+    theme_ember: {
+        bg: "#1a0a0a", cell: "#2a1210", buffer: "#120808",
+        gridLine: "#3a1a18", text: "#f0c0a0", textFalling: "#ff6644",
+        ghost: "rgba(255, 102, 68, 0.08)", ghostBorder: "rgba(255, 102, 68, 0.4)",
+        border: "#ff6644", separator: "#ff442244",
+        glow: "rgba(255, 80, 40, 0.15)",
+    },
+    theme_amethyst: {
+        bg: "#120a1e", cell: "#1c1230", buffer: "#0c0616",
+        gridLine: "#2a1c44", text: "#d4b8f0", textFalling: "#b070e8",
+        ghost: "rgba(176, 112, 232, 0.08)", ghostBorder: "rgba(176, 112, 232, 0.4)",
+        border: "#9050d0", separator: "#6030a055",
+        glow: "rgba(144, 80, 208, 0.18)",
+    },
+    theme_darkoak: {
+        bg: "#1e1408", cell: "#2a1c0e", buffer: "#160e04",
+        gridLine: "#3a2a16", text: "#e8d8b8", textFalling: "#d4b87a",
+        ghost: "rgba(212, 184, 122, 0.08)", ghostBorder: "rgba(212, 184, 122, 0.4)",
+        border: "#a08040", separator: "#6a502855",
+    },
+};
+
+// ── Block style definitions for the renderer ──
+const BLOCK_STYLES = {
+    block_default:    { type: "flat" },
+    block_scrabble:   { type: "scrabble",   tileColor: "#d4b87a", tileBorder: "#a08848", showPoints: true },
+    block_bubble:     { type: "bubble",     radius: 0.42 },
+    block_typewriter: { type: "typewriter", fontFamily: "'Courier New', monospace", inkColor: "#222" },
+    block_pixel:      { type: "pixel",      pixelScale: 0.12 },
+    block_glass:      { type: "glass",      opacity: 0.7 },
+};
+
+// ── Clear effect definitions ──
+const CLEAR_EFFECTS = {
+    clear_default:   { type: "particles" },
+    clear_confetti:  { type: "confetti",   colors: ["#ff6b6b","#ffd93d","#6bcb77","#4d96ff","#ff6bb5"] },
+    clear_shatter:   { type: "shatter",    fragments: 8 },
+    clear_dissolve:  { type: "dissolve",   fadeTime: 0.8 },
+    clear_lightning: { type: "lightning",   boltWidth: 3 },
+    clear_bloom:     { type: "bloom",      petalCount: 12 },
+};
+
+/** Calculate coins earned for a single word based on its length. */
+function coinsForWord(wordLength) {
+    if (wordLength >= 7) return 7;
+    return COIN_PER_WORD_LENGTH[wordLength] || 1;
+}
+
+/** Calculate coins earned at game end. */
+function calculateGameCoins({ score, wordsFound, isNewHighScore, isChallenge, challengeType,
+                              comboMax, playerLevel, isFirstGameToday, playStreak }) {
+    let coins = 0;
+    // Per-word coins (already counted during gameplay for combo bonuses)
+    // Game completion bonus (10 base + 10 per 500 pts, max 50)
+    coins += COIN_GAME_COMPLETE_BASE + Math.min(40, Math.floor(score / 500) * COIN_GAME_COMPLETE_PER_500);
+    // High score bonus
+    if (isNewHighScore && score > 0) coins += COIN_HIGH_SCORE_BEATEN;
+    // Challenge bonus
+    if (isChallenge) {
+        const tier = challengeType === "speed_round" ? 3 : challengeType === "word_category" ? 2 : 1;
+        coins += COIN_CHALLENGE_COMPLETE_BASE + (tier - 1) * COIN_CHALLENGE_TIER_MULT;
+    }
+    // Daily first game
+    if (isFirstGameToday) coins += COIN_DAILY_FIRST_GAME;
+    // Play streak
+    if (playStreak > 0) coins += Math.min(COIN_STREAK_MAX, playStreak * COIN_STREAK_PER_DAY);
+    return coins;
+}
+
 // ────────────────────────────────────────
 // LEVELING / XP SYSTEM
 // ────────────────────────────────────────
@@ -254,17 +461,19 @@ function xpRequiredForLevel(level) {
  *   2. Grid difficulty   – 6/gridSize ratio (smaller grid = harder = more XP)
  *   3. Word quality      – average word length (sigmoid), longest word (log),
  *                          total words found (square root)
- *   4. Difficulty mode   – hard ×1.5
- *   5. Game mode         – timed ×1.3, challenge speed ×1.5, challenge target ×1.35
+ *   4. Difficulty mode   – hard ×2.0
+ *   5. Game mode         – timed ×1.3–1.6 (shorter timer = more),
+ *                          challenge speed ×1.75, target ×1.5, category ×1.4
  *   6. Time pressure     – quadratic curve rewarding surviving longer in timed modes
  *   7. Target words      – logarithmic stacking bonus per target completed
  *   8. Performance vs PB – sigmoid curve (smooth bonus/penalty vs personal best)
  *   9. Level scaling     – log₁₀ progression to keep pace with rising thresholds
+ *  10. Combo chain       – sustained combos add bonus XP (log₂ scaling)
  */
 function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
                             isChallenge, challengeType, previousBest, playerLevel,
                             timeLimitSeconds, timeRemainingSeconds, targetWordsCompleted,
-                            bonusWordsCompleted, categoryKey }) {
+                            bonusWordsCompleted, categoryKey, comboMax }) {
     if (score <= 0) return 1;
 
     // ═══ 1. BASE XP (power-curve diminishing returns) ═══
@@ -299,22 +508,40 @@ function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
         const longBonus = Math.min(0.2, Math.log2(Math.max(1, longestLen - 2)) * 0.07);
 
         // c) Word count bonus — sqrt diminishing returns (additive)
-        //    5 words→+11xp, 10→+16, 20→+22, 50→+35
-        const wordCountXP = Math.floor(5 * Math.sqrt(totalWords));
+        //    5 words→+18xp, 10→+25, 20→+36, 50→+57
+        const wordCountXP = Math.floor(8 * Math.sqrt(totalWords));
 
         xp = Math.floor(xp * (1 + avgBonus + longBonus)) + wordCountXP;
     }
 
     // ═══ 4. DIFFICULTY MULTIPLIER ═══
-    if (difficulty === "hard") xp = Math.floor(xp * 1.5);
+    // Hard mode is punishing — reward proportionally (Pokemon-style).
+    // normal→1.0×, hard→2.0×
+    if (difficulty === "hard") xp = Math.floor(xp * 2.0);
 
     // ═══ 5. GAME MODE MULTIPLIER ═══
+    // Each mode has a distinct reward tier to encourage variety.
     if (isChallenge) {
-        xp = Math.floor(xp * (challengeType === CHALLENGE_TYPES.SPEED_ROUND ? 1.5 : 1.35));
+        // Speed round = highest pressure, most rewarding.
+        // Target word = focused skill test.
+        // Word category = knowledge-based, tier bonus handled in §7 additive.
+        if (challengeType === CHALLENGE_TYPES.SPEED_ROUND) {
+            xp = Math.floor(xp * 1.75);
+        } else if (challengeType === CHALLENGE_TYPES.TARGET_WORD) {
+            xp = Math.floor(xp * 1.5);
+        } else {
+            // Word category base — tier differentiation via §7 additive
+            xp = Math.floor(xp * 1.4);
+        }
     } else if (gameMode === GAME_MODES.TIMED) {
-        xp = Math.floor(xp * 1.3);
+        // Shorter timer = more pressure = more reward.
+        // 1min→1.6×, 3min→1.42×, 5min→1.3×, 10min+→1.3×
+        const timerBonus = (timeLimitSeconds > 0 && timeLimitSeconds < 300)
+            ? 0.3 * Math.max(0, 1 - timeLimitSeconds / 300)
+            : 0;
+        xp = Math.floor(xp * (1.3 + timerBonus));
     } else if (gameMode === GAME_MODES.SANDBOX) {
-        xp = Math.floor(xp * SANDBOX_SCORE_MULT);
+        xp = Math.floor(xp * SANDBOX_XP_MULT);
     }
 
     // ═══ 6. TIME PRESSURE BONUS (timed modes only) ═══
@@ -357,9 +584,9 @@ function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
             const pbBonus = 1 + 0.7 / (1 + Math.exp(-4 * (improv - 0.25)));
             xp = Math.floor(xp * pbBonus) + 50;
         } else {
-            // Below PB: sigmoid penalty centered at 65% of best.
-            // ratio 0.9→0.93×, 0.7→0.65×, 0.5→0.42×, 0.3→0.33×
-            const penaltyMult = 0.3 + 0.7 / (1 + Math.exp(-7 * (ratio - 0.65)));
+            // Below PB: softened sigmoid centered at 50% of best.
+            // ratio 0.9→0.96×, 0.7→0.82×, 0.5→0.71×, 0.3→0.66×
+            const penaltyMult = 0.65 + 0.35 / (1 + Math.exp(-5 * (ratio - 0.5)));
             xp = Math.floor(xp * penaltyMult);
         }
     }
@@ -370,7 +597,17 @@ function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
     const lvl = Math.max(1, playerLevel || 1);
     xp = Math.floor(xp * (1 + Math.log10(lvl) * 0.27));
 
-    return Math.max(1, xp);
+    // ═══ 10. COMBO CHAIN BONUS ═══
+    // Sustained combos (claiming words back-to-back) show skill.
+    // comboMax 2→+6xp, 3→+15, 5→+30, 8→+52, 10+→+66
+    const combo = comboMax || 0;
+    if (combo >= 2) {
+        xp += Math.floor(combo * 3 * Math.log2(combo));
+    }
+
+    // Minimum XP floor: every word found guarantees some progression
+    const minXP = totalWords > 0 ? totalWords * 2 : 1;
+    return Math.max(minXP, xp);
 }
 
 const BONUS_METADATA = Object.freeze({
@@ -404,7 +641,7 @@ const BONUS_METADATA = Object.freeze({
         modalTitle: "Line Clear Bonus",
         modalText: "Tap any letter to start, then tap another letter in the same line — horizontal, vertical, or diagonal. All letters between them will be selected. Press Clear to remove them, or Cancel to re-select!",
         acceptLabel: "Start Selecting",
-        previewSymbol: "🧹",
+        previewSymbol: "─",
     },
     [BONUS_TYPES.FREEZE]: {
         buttonLabel: "Bonus: Freeze",
@@ -420,7 +657,7 @@ const BONUS_METADATA = Object.freeze({
         modalTitle: "Shuffle Bonus",
         modalText: "Accept to randomly rearrange all the letters currently on the grid. Maybe you'll get luckier!",
         acceptLabel: "Shuffle!",
-        previewSymbol: "🔀",
+        previewSymbol: "⇄",
     },
     [BONUS_TYPES.SCORE_2X]: {
         buttonLabel: "Bonus: 2×",
@@ -628,9 +865,28 @@ class AudioManager {
         } catch (_) { /* ignore audio errors */ }
     }
 
-    land()     { this._beep(220, 0.1, "triangle"); }
-    clear()    { this._beep(660, 0.25, "sine", 0.15); }
-    chain()    { this._beep(880, 0.3, "sine", 0.18); }
+    land(isFastDrop = false) {
+        if (isFastDrop) {
+            this._beep(160, 0.12, "triangle", 0.18);
+            setTimeout(() => this._beep(100, 0.08, "triangle", 0.08), 30);
+        } else {
+            this._beep(220, 0.1, "triangle");
+        }
+    }
+    clear(wordLength = 3) {
+        // Longer words = higher, richer pitch
+        const freq = 440 + (wordLength - 3) * 80;
+        this._beep(freq, 0.2, "sine", 0.15);
+        if (wordLength >= 5) {
+            setTimeout(() => this._beep(freq * 1.25, 0.15, "sine", 0.10), 60);
+        }
+    }
+    chain(chainCount = 1) {
+        // Escalating pitch with each chain
+        const freq = 660 + chainCount * 110;
+        this._beep(freq, 0.25, "sine", 0.18);
+        setTimeout(() => this._beep(freq * 1.2, 0.15, "sine", 0.12), 80);
+    }
     bomb() {
         this._beep(140, 0.2, "sawtooth", 0.12);
         setTimeout(() => this._beep(90, 0.35, "triangle", 0.1), 80);
@@ -654,16 +910,21 @@ class Particle {
         this.x = x;
         this.y = y;
         const angle = Math.random() * Math.PI * 2;
-        const speed = 40 + Math.random() * 80;
+        const speed = 60 + Math.random() * 140;
         this.vx = Math.cos(angle) * speed;
-        this.vy = Math.sin(angle) * speed;
-        this.life = 0.5 + Math.random() * 0.3;
+        this.vy = Math.sin(angle) * speed - 40; // bias upward
+        this.gravity = 180 + Math.random() * 80;
+        this.life = 0.4 + Math.random() * 0.5;
         this.maxLife = this.life;
-        this.radius = 2 + Math.random() * 3;
+        this.radius = 1.5 + Math.random() * 4;
+        // Gold/amber palette
+        const colors = ["#e2d8a6", "#c4b888", "#d4c890", "#fff", "#c4b888"];
+        this.color = colors[Math.floor(Math.random() * colors.length)];
     }
 
     update(dt) {
         this.x += this.vx * dt;
+        this.vy += this.gravity * dt;
         this.y += this.vy * dt;
         this.life -= dt;
     }
@@ -672,9 +933,9 @@ class Particle {
         const alpha = Math.max(0, this.life / this.maxLife);
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = "#fff";
+        ctx.fillStyle = this.color;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, this.radius * (0.5 + 0.5 * alpha), 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
     }
@@ -712,7 +973,7 @@ class FloatingLetter {
         ctx.translate(this.x, this.y);
         ctx.rotate(this.rotation);
         ctx.font = `bold ${this.size}px 'Segoe UI', sans-serif`;
-        ctx.fillStyle = "#ffd700";
+        ctx.fillStyle = "#e2d8a6";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(this.char, 0, 0);
@@ -800,7 +1061,7 @@ class ConfettiParticle {
         this.size = 4 + Math.random() * 6;
         this.rotation = Math.random() * Math.PI * 2;
         this.rotSpeed = (Math.random() - 0.5) * 10;
-        const colors = ["#ffd700", "#ff6b6b", "#4ecdc4", "#45b7d1", "#f9ca24", "#ff9ff3", "#54a0ff", "#5f27cd"];
+        const colors = ["#e2d8a6", "#c4a878", "#8cb860", "#7aa68e", "#d4c890", "#b0a878", "#9a9680", "#706c58"];
         this.color = colors[Math.floor(Math.random() * colors.length)];
     }
     update(dt) {
@@ -877,18 +1138,29 @@ class Grid {
 
             if (segment.length < minWordLength) continue;
 
+            // Find the index of the trigger cell (row, col) within this segment
+            const triggerIdx = segment.findIndex(s => s.r === row && s.c === col);
+
             // Check all substrings in forward AND reverse separately.
+            // Only consider substrings that INCLUDE the trigger cell.
             // If both directions produce a valid word on overlapping cells,
             // both count — the primary gets full points, reverse gets half.
             const reversed = [...segment].reverse();
+            const revTriggerIdx = segment.length - 1 - triggerIdx;
             let bestForward = null, bestForwardCells = null;
             let bestReverse = null, bestReverseCells = null;
 
             for (let start = 0; start < segment.length; start++) {
                 for (let end = start + minWordLength; end <= segment.length; end++) {
+                    // Only consider substrings containing the trigger cell
+                    if (triggerIdx < start || triggerIdx >= end) continue;
                     const sub = segment.slice(start, end);
                     const raw = sub.map(s => s.letter).join("");
                     const matches = _resolveWildcards(raw);
+                    if (raw.includes(WILDCARD_SYMBOL) && matches.length > 0) {
+                        const dictMatches = matches.filter(w => DICTIONARY.has(w));
+                        if (dictMatches.length > 0) console.log(`[WILDCARD-DETECT] Forward "${raw}" → found: ${dictMatches.join(", ")}`);
+                    }
                     for (const word of matches) {
                         if (DICTIONARY.has(word)) {
                             if (!bestForward || word.length > bestForward.length) {
@@ -903,6 +1175,8 @@ class Grid {
 
             for (let start = 0; start < reversed.length; start++) {
                 for (let end = start + minWordLength; end <= reversed.length; end++) {
+                    // Only consider substrings containing the trigger cell
+                    if (revTriggerIdx < start || revTriggerIdx >= end) continue;
                     const sub = reversed.slice(start, end);
                     const raw = sub.map(s => s.letter).join("");
                     const matches = _resolveWildcards(raw);
@@ -935,6 +1209,7 @@ class Grid {
             }
 
             if (primary) {
+                console.log(`[WORD-VAL] findWordsThrough(${row},${col}) dir=[${dr},${dc}] → primary="${primary}" cells=[${primaryCells.map(s=>`(${s.r},${s.c})=${s.letter}`).join(",")}]`);
                 foundWords.push(primary);
                 const wordCells = new Set();
                 for (const s of primaryCells) {
@@ -947,6 +1222,7 @@ class Grid {
 
             // If reverse produced a different valid word sharing cells, add as bonus
             if (secondary && primary) {
+                console.log(`[WORD-VAL] findWordsThrough(${row},${col}) dir=[${dr},${dc}] → reverse="${secondary}" cells=[${secondaryCells.map(s=>`(${s.r},${s.c})=${s.letter}`).join(",")}]`);
                 const secCells = new Set();
                 for (const s of secondaryCells) {
                     const key = `${s.r},${s.c}`;
@@ -1075,6 +1351,38 @@ class Renderer {
         this.blastCells = new Set();
         this.blastCenterKey = null;
         this.blastProgress = 0;
+        // Screen shake state
+        this.shakeX = 0;
+        this.shakeY = 0;
+        this.shakeIntensity = 0;
+        this.shakeDecay = 12; // how fast shake fades (per second)
+        // Landing impact ring
+        this.impactRings = []; // {x, y, progress, maxRadius}
+        // Theme (loaded from equipped grid theme)
+        this.theme = GRID_THEMES.theme_default;
+        // Block style (loaded from equipped block style)
+        this.blockStyle = BLOCK_STYLES.block_default;
+    }
+
+    setTheme(themeId) {
+        this.theme = GRID_THEMES[themeId] || GRID_THEMES.theme_default;
+    }
+
+    setBlockStyle(styleId) {
+        this.blockStyle = BLOCK_STYLES[styleId] || BLOCK_STYLES.block_default;
+    }
+
+    triggerShake(intensity) {
+        this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+        // Haptic feedback on mobile
+        if (navigator.vibrate) {
+            navigator.vibrate(Math.min(Math.round(intensity * 8), 50));
+        }
+    }
+
+    triggerImpact(row, col) {
+        const { x, y } = this.cellCenter(row, col);
+        this.impactRings.push({ x, y, progress: 0, maxRadius: this.cellSize * 0.9 });
     }
 
     // Convert pixel coordinates (relative to canvas) to grid row/col, or null if outside
@@ -1136,13 +1444,233 @@ class Renderer {
 
     _drawToken(value, x, y, cellSize, color, scale = 1, alpha = 1) {
         const ctx = this.ctx;
+        const bs = this.blockStyle;
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = color;
-        ctx.font = this._getTokenFont(value, cellSize * 0.55 * scale);
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(value, x, y + 1);
+
+        const half = cellSize * 0.45 * scale;
+
+        if (bs.type === "scrabble") {
+            // ── Scrabble: wooden tile with embossed edges + point value ──
+            const tileMargin = cellSize * 0.08;
+            const tileX = x - half + tileMargin;
+            const tileY = y - half + tileMargin;
+            const tileW = (half - tileMargin) * 2;
+            const tileH = (half - tileMargin) * 2;
+            const r = cellSize * 0.08;
+
+            // Darken cell behind tile for contrast
+            ctx.fillStyle = "rgba(30, 22, 10, 0.55)";
+            ctx.fillRect(x - half, y - half, half * 2, half * 2);
+
+            // Wood grain base
+            ctx.fillStyle = bs.tileColor;
+            ctx.beginPath();
+            ctx.roundRect(tileX, tileY, tileW, tileH, r);
+            ctx.fill();
+
+            // Subtle wood grain lines
+            ctx.strokeStyle = "rgba(120, 80, 30, 0.12)";
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i < 4; i++) {
+                const yy = tileY + tileH * (0.2 + i * 0.2);
+                ctx.beginPath();
+                ctx.moveTo(tileX + 2, yy + Math.sin(i * 1.7) * 1.5);
+                ctx.quadraticCurveTo(tileX + tileW * 0.5, yy + Math.cos(i * 2.3) * 2, tileX + tileW - 2, yy + Math.sin(i * 0.9) * 1.5);
+                ctx.stroke();
+            }
+
+            // Highlight (top-left emboss)
+            ctx.strokeStyle = "rgba(255, 240, 200, 0.4)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(tileX + r, tileY);
+            ctx.lineTo(tileX + tileW - r, tileY);
+            ctx.moveTo(tileX, tileY + r);
+            ctx.lineTo(tileX, tileY + tileH - r);
+            ctx.stroke();
+
+            // Shadow (bottom-right emboss)
+            ctx.strokeStyle = bs.tileBorder;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(tileX + r, tileY + tileH);
+            ctx.lineTo(tileX + tileW - r, tileY + tileH);
+            ctx.moveTo(tileX + tileW, tileY + r);
+            ctx.lineTo(tileX + tileW, tileY + tileH - r);
+            ctx.stroke();
+
+            // Letter (dark ink on wood)
+            ctx.fillStyle = "#3a2a14";
+            ctx.font = this._getTokenFont(value, cellSize * 0.48 * scale);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(value, x, y);
+
+            // Point value (bottom-right corner)
+            if (bs.showPoints && value && value.length === 1 && value.match(/[A-Z]/)) {
+                const pts = "EAIONRTLSU".includes(value) ? 1
+                          : "DG".includes(value) ? 2
+                          : "BCMP".includes(value) ? 3
+                          : "FHVWY".includes(value) ? 4
+                          : "K".includes(value) ? 5
+                          : "JX".includes(value) ? 8
+                          : "QZ".includes(value) ? 10 : 1;
+                ctx.font = `bold ${Math.floor(cellSize * 0.18 * scale)}px sans-serif`;
+                ctx.textAlign = "right";
+                ctx.textBaseline = "bottom";
+                ctx.fillStyle = "#5a4a2a";
+                ctx.fillText(String(pts), tileX + tileW - 3, tileY + tileH - 2);
+            }
+
+        } else if (bs.type === "bubble") {
+            // ── Bubble: rounded glossy circle ──
+            const bubbleR = half * 0.92;
+            // Shadow
+            ctx.beginPath();
+            ctx.arc(x + 1, y + 2, bubbleR, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(0,0,0,0.15)";
+            ctx.fill();
+
+            // Main bubble
+            const grad = ctx.createRadialGradient(x - bubbleR * 0.3, y - bubbleR * 0.3, bubbleR * 0.1, x, y, bubbleR);
+            grad.addColorStop(0, "rgba(255,255,255,0.35)");
+            grad.addColorStop(0.5, "rgba(180,210,240,0.2)");
+            grad.addColorStop(1, "rgba(100,150,200,0.15)");
+            ctx.beginPath();
+            ctx.arc(x, y, bubbleR, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(200,225,255,0.25)";
+            ctx.fill();
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255,255,255,0.45)";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Highlight dot
+            ctx.beginPath();
+            ctx.arc(x - bubbleR * 0.25, y - bubbleR * 0.3, bubbleR * 0.15, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(255,255,255,0.55)";
+            ctx.fill();
+
+            // Letter — darken for readability on translucent bubbles
+            ctx.fillStyle = "#1a1a2e";
+            ctx.font = this._getTokenFont(value, cellSize * 0.48 * scale);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(value, x, y + 1);
+
+        } else if (bs.type === "typewriter") {
+            // ── Typewriter: paper card with inked monospace letter ──
+            const pad = cellSize * 0.06;
+            const tw = half * 2 - pad * 2;
+            const th = half * 2 - pad * 2;
+            const tx = x - half + pad;
+            const ty = y - half + pad;
+
+            // Yellowed paper background
+            ctx.fillStyle = "rgba(245, 235, 215, 0.85)";
+            ctx.fillRect(tx, ty, tw, th);
+
+            // Paper border
+            ctx.strokeStyle = "rgba(160, 140, 110, 0.5)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(tx, ty, tw, th);
+
+            // Typewriter ink letter
+            ctx.fillStyle = bs.inkColor;
+            ctx.font = `bold ${Math.floor(cellSize * 0.5 * scale)}px 'Courier New', monospace`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            // Slight ink irregularity
+            ctx.fillText(value, x + (Math.random() > 0.7 ? 0.5 : 0), y + 1);
+
+        } else if (bs.type === "pixel") {
+            // ── Pixel: chunky retro block ──
+            const px = cellSize * bs.pixelScale;
+            const blockX = x - half;
+            const blockY = y - half;
+            const blockW = half * 2;
+            const blockH = half * 2;
+
+            // Solid block
+            ctx.fillStyle = "rgba(60, 80, 60, 0.6)";
+            ctx.fillRect(blockX, blockY, blockW, blockH);
+
+            // Pixel grid lines
+            ctx.strokeStyle = "rgba(40, 60, 40, 0.3)";
+            ctx.lineWidth = 0.5;
+            for (let gx = blockX; gx <= blockX + blockW; gx += px) {
+                ctx.beginPath(); ctx.moveTo(Math.round(gx), blockY); ctx.lineTo(Math.round(gx), blockY + blockH); ctx.stroke();
+            }
+            for (let gy = blockY; gy <= blockY + blockH; gy += px) {
+                ctx.beginPath(); ctx.moveTo(blockX, Math.round(gy)); ctx.lineTo(blockX + blockW, Math.round(gy)); ctx.stroke();
+            }
+
+            // Highlight edge (top + left)
+            ctx.fillStyle = "rgba(100, 200, 100, 0.25)";
+            ctx.fillRect(blockX, blockY, blockW, px);
+            ctx.fillRect(blockX, blockY, px, blockH);
+
+            // Shadow edge (bottom + right)
+            ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+            ctx.fillRect(blockX, blockY + blockH - px, blockW, px);
+            ctx.fillRect(blockX + blockW - px, blockY, px, blockH);
+
+            // Letter
+            ctx.fillStyle = "#b8f0b8";
+            ctx.font = `bold ${Math.floor(cellSize * 0.5 * scale)}px monospace`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(value, x, y + 1);
+
+        } else if (bs.type === "glass") {
+            // ── Glass: translucent refractive tile ──
+            const glassR = cellSize * 0.06;
+            const gx = x - half + 2;
+            const gy = y - half + 2;
+            const gw = half * 2 - 4;
+            const gh = half * 2 - 4;
+
+            // Glass background
+            ctx.globalAlpha = alpha * bs.opacity;
+            const glassGrad = ctx.createLinearGradient(gx, gy, gx + gw, gy + gh);
+            glassGrad.addColorStop(0, "rgba(255,255,255,0.18)");
+            glassGrad.addColorStop(0.5, "rgba(200,220,255,0.1)");
+            glassGrad.addColorStop(1, "rgba(255,255,255,0.06)");
+            ctx.beginPath();
+            ctx.roundRect(gx, gy, gw, gh, glassR);
+            ctx.fillStyle = glassGrad;
+            ctx.fill();
+
+            // Glass border
+            ctx.strokeStyle = "rgba(255,255,255,0.3)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Top shine
+            ctx.beginPath();
+            ctx.roundRect(gx + 3, gy + 2, gw - 6, gh * 0.35, [glassR, glassR, 0, 0]);
+            ctx.fillStyle = "rgba(255,255,255,0.12)";
+            ctx.fill();
+
+            // Letter
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
+            ctx.font = this._getTokenFont(value, cellSize * 0.52 * scale);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(value, x, y + 1);
+
+        } else {
+            // ── Default flat style ──
+            ctx.fillStyle = color;
+            ctx.font = this._getTokenFont(value, cellSize * 0.55 * scale);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(value, x, y + 1);
+        }
+
         ctx.restore();
     }
 
@@ -1154,16 +1682,32 @@ class Renderer {
         const w = cs * cols;
         const h = this.totalH || cs * (rows + BUFFER_ROWS);
 
-        // Background (full canvas including buffer)
-        ctx.fillStyle = "#1a1a1a";
+        // Update screen shake
+        if (this.shakeIntensity > 0.1) {
+            this.shakeX = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+            this.shakeY = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+            this.shakeIntensity *= Math.exp(-this.shakeDecay * dt);
+        } else {
+            this.shakeX = 0;
+            this.shakeY = 0;
+            this.shakeIntensity = 0;
+        }
+
+        // Background (full canvas including buffer) — drawn before shake transform
+        const T = this.theme;
+        ctx.fillStyle = T.bg;
         ctx.fillRect(0, 0, w, h);
 
+        // Apply shake offset to all subsequent drawing
+        ctx.save();
+        ctx.translate(this.shakeX, this.shakeY);
+
         // Buffer zone subtle background
-        ctx.fillStyle = "#151515";
+        ctx.fillStyle = T.buffer;
         ctx.fillRect(0, 0, w, this.offsetY);
 
         // Separator line between buffer and grid
-        ctx.strokeStyle = "#ffd70055";
+        ctx.strokeStyle = T.separator;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(0, this.offsetY);
@@ -1178,41 +1722,32 @@ class Renderer {
                 const key = `${r},${c}`;
 
                 // Cell background
-                ctx.fillStyle = "#2a2a2a";
+                ctx.fillStyle = T.cell;
                 ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
 
                 const isBlastCell = this.blastCells.has(key);
 
                 if (isBlastCell) {
                     const pulse = 0.35 + 0.25 * Math.sin(this.blastProgress * Math.PI * 6);
-                    ctx.fillStyle = `rgba(255, 120, 20, ${0.22 + pulse * 0.45})`;
+                    ctx.fillStyle = `rgba(196, 168, 120, ${0.22 + pulse * 0.45})`;
                     ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-                    ctx.strokeStyle = `rgba(255, 220, 120, ${0.4 + pulse * 0.35})`;
+                    ctx.strokeStyle = `rgba(226, 216, 166, ${0.4 + pulse * 0.35})`;
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
                 }
 
                 // Hint border (orange) — one letter away from a word
                 if (this.hintCells.has(key) && !this.flashCells.has(key) && !isBlastCell && !this.validatedCells.has(key)) {
-                    ctx.strokeStyle = "rgba(255, 140, 0, 0.85)";
+                    ctx.strokeStyle = "rgba(176, 168, 120, 0.85)";
                     ctx.lineWidth = 3;
-                    ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
-                }
-
-                // Validated cells glow (green) — tap to claim in Target Word challenge
-                if (this.validatedCells.has(key) && !this.flashCells.has(key) && !isBlastCell) {
-                    ctx.fillStyle = "rgba(0, 200, 80, 0.3)";
-                    ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-                    ctx.strokeStyle = "rgba(0, 220, 100, 0.8)";
-                    ctx.lineWidth = 2;
                     ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
                 }
 
                 // Row drag cells glow (green) — interactive row clear bonus
                 if (this.rowDragCells.has(key) && !this.flashCells.has(key) && !isBlastCell) {
-                    ctx.fillStyle = "rgba(0, 200, 80, 0.35)";
+                    ctx.fillStyle = "rgba(140, 184, 96, 0.35)";
                     ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-                    ctx.strokeStyle = "rgba(0, 220, 100, 0.9)";
+                    ctx.strokeStyle = "rgba(140, 184, 96, 0.9)";
                     ctx.lineWidth = 2.5;
                     ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
                 }
@@ -1227,22 +1762,28 @@ class Renderer {
                 // Letter
                 const letter = grid.get(r, c);
                 if (letter && this.shuffleAnims.length === 0) {
-                    let color = "#fff";
-                    if (this.rowDragCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for row drag
-                    else if (this.validatedCells.has(key) && !this.flashCells.has(key)) color = "#00e664"; // green for validated
-                    else if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#da70d6"; // orchid purple for wildcards
+                    let color = T.text;
+                    if (this.rowDragCells.has(key) && !this.flashCells.has(key)) color = "#8cb860"; // green for row drag
+                    else if (this.validatedCells.has(key) && !this.flashCells.has(key)) color = "#8cb860"; // green for validated
+                    else if (letter === WILDCARD_SYMBOL && !this.flashCells.has(key)) color = "#c4a878"; // orchid purple for wildcards
                     let scale = 1;
                     let alpha = 1;
                     if (isBlastCell) {
                         if (key === this.blastCenterKey) {
                             scale = 0.95 + 0.12 * Math.sin(this.blastProgress * Math.PI * 4);
                         } else {
-                            color = "#ffe082";
+                            color = "#d4c890";
                             scale = Math.max(0.2, 1 - this.blastProgress * 0.55);
                             alpha = Math.max(0.12, 1 - this.blastProgress * 0.9);
                         }
                     }
                     this._drawToken(letter, x + cs / 2, y + cs / 2, cs, color, scale, alpha);
+
+                    // Green overlay ON TOP of styled blocks (so scrabble wood etc. show through)
+                    if (this.validatedCells.has(key) && !this.flashCells.has(key) && !isBlastCell) {
+                        ctx.fillStyle = "rgba(140, 184, 96, 0.35)";
+                        ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+                    }
                 }
             }
         }
@@ -1252,9 +1793,9 @@ class Renderer {
             const currentRow = anim.fromRow + (anim.toRow - anim.fromRow) * anim.progress;
             const x = this.offsetX + anim.col * cs;
             const y = this.offsetY + currentRow * cs;
-            ctx.fillStyle = "#2a2a2a";
+            ctx.fillStyle = T.cell;
             ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-            this._drawToken(anim.letter, x + cs / 2, y + cs / 2, cs, "#fff");
+            this._drawToken(anim.letter, x + cs / 2, y + cs / 2, cs, T.text);
         }
 
         // Shuffle animations (letters flying to new positions)
@@ -1270,13 +1811,13 @@ class Renderer {
             const x = this.offsetX + curCol * cs;
             const y = this.offsetY + (curRow + arc) * cs;
             const scale = 0.8 + 0.4 * Math.sin(t * Math.PI); // grow slightly mid-flight
-            ctx.fillStyle = "#2a2a3e";
+            ctx.fillStyle = T.cell;
             ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-            this._drawToken(anim.letter, x + cs / 2, y + cs / 2, cs, "#ffd700", scale);
+            this._drawToken(anim.letter, x + cs / 2, y + cs / 2, cs, T.textFalling, scale);
         }
 
         // Grid lines
-        ctx.strokeStyle = "#444";
+        ctx.strokeStyle = T.gridLine;
         ctx.lineWidth = 1;
         for (let r = 0; r <= rows; r++) {
             ctx.beginPath();
@@ -1296,14 +1837,14 @@ class Renderer {
         if (block && ghostRow !== null) {
             const ghostX = this.offsetX + block.col * cs;
             const ghostY = this.offsetY + ghostRow * cs;
-            ctx.fillStyle = "rgba(255, 215, 0, 0.08)";
+            ctx.fillStyle = T.ghost;
             ctx.fillRect(ghostX + 1, ghostY + 1, cs - 2, cs - 2);
-            ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
+            ctx.strokeStyle = T.ghostBorder;
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 4]);
             ctx.strokeRect(ghostX + 3, ghostY + 3, cs - 6, cs - 6);
             ctx.setLineDash([]);
-            this._drawToken(block.letter, ghostX + cs / 2, ghostY + cs / 2, cs, "rgba(255, 215, 0, 0.45)");
+            this._drawToken(block.letter, ghostX + cs / 2, ghostY + cs / 2, cs, T.ghostBorder);
         }
 
         // Falling block (smooth position)
@@ -1311,13 +1852,33 @@ class Renderer {
             const x = this.offsetX + block.col * cs;
             const y = this.offsetY + block.visualRow * cs;
             // Highlight border
-            ctx.fillStyle = "#3a3520";
+            ctx.fillStyle = T.cell;
             ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-            ctx.strokeStyle = "#ffd700";
+            ctx.strokeStyle = T.border;
             ctx.lineWidth = 3;
             ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
             // Letter
-            this._drawToken(block.letter, x + cs / 2, y + cs / 2, cs, "#ffd700");
+            this._drawToken(block.letter, x + cs / 2, y + cs / 2, cs, T.textFalling);
+        }
+
+        // Impact rings (landing effect)
+        for (let i = this.impactRings.length - 1; i >= 0; i--) {
+            const ring = this.impactRings[i];
+            ring.progress += dt * 4; // complete in ~0.25s
+            if (ring.progress >= 1) { this.impactRings.splice(i, 1); continue; }
+            const alpha = 0.6 * (1 - ring.progress);
+            const radius = ring.maxRadius * ring.progress;
+            const bc = T.border;
+            if (bc.startsWith('#')) {
+                const r2 = parseInt(bc.slice(1,3),16), g2 = parseInt(bc.slice(3,5),16), b2 = parseInt(bc.slice(5,7),16);
+                ctx.strokeStyle = `rgba(${r2},${g2},${b2},${alpha})`;
+            } else {
+                ctx.strokeStyle = bc;
+            }
+            ctx.lineWidth = 2 * (1 - ring.progress);
+            ctx.beginPath();
+            ctx.arc(ring.x, ring.y, radius, 0, Math.PI * 2);
+            ctx.stroke();
         }
 
         // Particles
@@ -1326,6 +1887,9 @@ class Renderer {
             this.particles[i].draw(ctx);
             if (this.particles[i].dead) this.particles.splice(i, 1);
         }
+
+        // End shake transform
+        ctx.restore();
     }
 
     // Spawn particles at cell centers
@@ -1333,7 +1897,7 @@ class Renderer {
         for (const key of cellSet) {
             const [r, c] = key.split(",").map(Number);
             const { x, y } = this.cellCenter(r, c);
-            for (let i = 0; i < 6; i++) {
+            for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(x, y));
             }
         }
@@ -1540,6 +2104,10 @@ class MusicManager {
         this._crossfadeAudio = null;
         this._crossfading = false;
 
+        // Preloaded next track for gapless playback
+        this._preloadedAudio = null;
+        this._preloadedTrackId = null;
+
         // Sleep timer
         this.sleepTimerEnd = 0;     // timestamp (ms) when playback should auto-stop
         this.sleepTimerInterval = null;
@@ -1615,6 +2183,17 @@ class MusicManager {
         }
     }
 
+    _getNextTrackId() {
+        const q = this._getEffectiveQueue();
+        if (q.length === 0) return null;
+        let nextIdx = this._getEffectiveIndex() + 1;
+        if (nextIdx >= q.length) {
+            if (this.repeatMode === "off") return null;
+            nextIdx = 0;
+        }
+        return q[nextIdx] || null;
+    }
+
     // ── Shuffle & Repeat ──
 
     toggleShuffle() {
@@ -1660,8 +2239,9 @@ class MusicManager {
         this.audio.pause();
         this.audio.src = "";
 
-        // Create a fresh Audio element for reliable playback
-        this.audio = new Audio(track.file);
+        // Use preloaded audio if available for instant playback
+        const preloaded = this._consumePreloaded(trackId);
+        this.audio = preloaded || new Audio(track.file);
         this.audio.volume = 1;
         this.audio.muted = !!this.muted;
         this._ensureGainNode(this.audio);
@@ -1670,6 +2250,7 @@ class MusicManager {
         this.playing = true;
         this._saveMusicState();
         this._notify();
+        this._preloadNextTrack();
     }
 
     play() {
@@ -1678,6 +2259,7 @@ class MusicManager {
             this.audio.play().catch(() => {});
             this.playing = true;
             localStorage.setItem("wf_music_paused", "0");
+            this._preloadNextTrack();
             this._notify();
         } else {
             const q = this._getEffectiveQueue();
@@ -1699,6 +2281,42 @@ class MusicManager {
 
     toggle() {
         this.playing ? this.pause() : this.play();
+    }
+
+    resumePlayback() {
+        if (!this.playing || !this.currentTrackId) return;
+        if (this._audioCtx && this._audioCtx.state === "suspended") {
+            this._audioCtx.resume().catch(() => {});
+        }
+        if (this.audio.paused) {
+            this.audio.play().catch(() => {});
+        }
+    }
+
+    _preloadNextTrack() {
+        const nextId = this._getNextTrackId();
+        if (this._preloadedAudio && this._preloadedTrackId !== nextId) {
+            this._preloadedAudio.src = "";
+            this._preloadedAudio = null;
+            this._preloadedTrackId = null;
+        }
+        if (!nextId || this._preloadedTrackId === nextId) return;
+        const track = this.plMgr.getTrack(nextId);
+        if (!track) return;
+        this._preloadedAudio = new Audio();
+        this._preloadedAudio.preload = "auto";
+        this._preloadedAudio.src = track.file;
+        this._preloadedTrackId = nextId;
+    }
+
+    _consumePreloaded(trackId) {
+        if (this._preloadedTrackId === trackId && this._preloadedAudio) {
+            const audio = this._preloadedAudio;
+            this._preloadedAudio = null;
+            this._preloadedTrackId = null;
+            return audio;
+        }
+        return null;
     }
 
     next() {
@@ -1850,7 +2468,8 @@ class MusicManager {
         if (!nextTrack) return;
 
         this._crossfading = true;
-        this._crossfadeAudio = new Audio(nextTrack.file);
+        const preloadedCF = this._consumePreloaded(q[nextIdx]);
+        this._crossfadeAudio = preloadedCF || new Audio(nextTrack.file);
         this._crossfadeAudio.volume = this.muted ? 0 : 1;
         this._crossfadeAudio.muted = !!this.muted;
         this._crossfadeAudio.play().catch(() => {
@@ -1932,6 +2551,7 @@ class MusicManager {
 
                 this._saveMusicState();
                 this._notify();
+                this._preloadNextTrack();
 
                 // Clean up
                 oldAudio.src = "";
@@ -2089,6 +2709,21 @@ class ProfileManager {
             xp: 0,
             totalXp: 0,
             bestScores: {},
+            // Coin system
+            coins: 0,
+            totalCoinsEarned: 0,
+            inventory: [],           // owned item IDs
+            equipped: {              // currently active cosmetics
+                gridTheme: "theme_default",
+                blockStyle: "block_default",
+            },
+            bonusSlotContents: [null, null, null],  // bonus type in each slot (null = empty)
+            perks: {},               // consumable counts: { perk_headstart: 2, ... }
+            unlockedGrids: {},       // { "3": true, "4": true } — purchased grid unlocks
+            // Streak / daily tracking
+            lastPlayDate: null,      // YYYY-MM-DD
+            playStreak: 0,
+            claimedMilestones: [],   // milestone IDs already paid out
         };
         this.profiles.push(profile);
         this.activeId = id;
@@ -2186,6 +2821,28 @@ class ProfileManager {
         if (!p.bestScores) p.bestScores = {};
     }
 
+    /** Ensure legacy profiles have coin/shop fields. */
+    _ensureCoinFields(p) {
+        if (!p) return;
+        if (p.coins === undefined) p.coins = 0;
+        if (p.totalCoinsEarned === undefined) p.totalCoinsEarned = 0;
+        if (!Array.isArray(p.inventory)) p.inventory = [];
+        if (!p.equipped) p.equipped = { gridTheme: "theme_default", blockStyle: "block_default" };
+        // Migrate old equipped fields
+        if (p.equipped.clearEffect !== undefined) delete p.equipped.clearEffect;
+        if (p.equipped.badge !== undefined) delete p.equipped.badge;
+        if (p.equipped.title !== undefined) delete p.equipped.title;
+        if (p.equipped.profileColor !== undefined) delete p.equipped.profileColor;
+        if (!Array.isArray(p.bonusSlotContents)) p.bonusSlotContents = [null, null, null];
+        if (!p.perks || typeof p.perks !== "object") p.perks = {};
+        if (!p.unlockedGrids || typeof p.unlockedGrids !== "object") p.unlockedGrids = {};
+        if (p.lastPlayDate === undefined) p.lastPlayDate = null;
+        if (p.playStreak === undefined) p.playStreak = 0;
+        if (!Array.isArray(p.claimedMilestones)) p.claimedMilestones = [];
+        // ── TEMP: testing cheat — remove after testing ──
+        p.coins = 99999;
+    }
+
     /** Build a key for bestScores lookup. */
     bestScoreKey(gridSize, difficulty, gameMode, isChallenge, challengeType) {
         if (isChallenge) return `ch-${challengeType}`;
@@ -2279,6 +2936,245 @@ class ProfileManager {
             totalXp: p.totalXp,
         };
     }
+
+    // ── Coin methods ──
+
+    getCoins() {
+        const p = this.getActive();
+        if (!p) return 0;
+        this._ensureCoinFields(p);
+        return p.coins;
+    }
+
+    addCoins(amount) {
+        const p = this.getActive();
+        if (!p || amount <= 0) return 0;
+        this._ensureCoinFields(p);
+        p.coins += amount;
+        p.totalCoinsEarned += amount;
+        this._save();
+        return p.coins;
+    }
+
+    spendCoins(amount) {
+        const p = this.getActive();
+        if (!p) return false;
+        this._ensureCoinFields(p);
+        if (p.coins < amount) return false;
+        p.coins -= amount;
+        this._save();
+        return true;
+    }
+
+    // ── Inventory / Shop methods ──
+
+    ownsItem(itemId) {
+        const p = this.getActive();
+        if (!p) return false;
+        this._ensureCoinFields(p);
+        // Defaults are always owned
+        const item = SHOP_ITEMS[itemId];
+        if (item && item.owned) return true;
+        return p.inventory.includes(itemId);
+    }
+
+    purchaseItem(itemId) {
+        const p = this.getActive();
+        if (!p) return { success: false, reason: "no_profile" };
+        this._ensureCoinFields(p);
+        const item = SHOP_ITEMS[itemId];
+        if (!item) return { success: false, reason: "invalid_item" };
+        // Consumable perks (stackable)
+        if (item.stackSize) {
+            if (p.coins < item.price) return { success: false, reason: "insufficient_coins" };
+            p.coins -= item.price;
+            p.perks[itemId] = (p.perks[itemId] || 0) + item.stackSize;
+            this._save();
+            return { success: true, newBalance: p.coins, quantity: p.perks[itemId] };
+        }
+        // Unique items (one-time purchase)
+        if (this.ownsItem(itemId)) return { success: false, reason: "already_owned" };
+        if (p.coins < item.price) return { success: false, reason: "insufficient_coins" };
+        p.coins -= item.price;
+        p.inventory.push(itemId);
+        this._save();
+        return { success: true, newBalance: p.coins };
+    }
+
+    equipItem(itemId) {
+        const p = this.getActive();
+        if (!p) return false;
+        this._ensureCoinFields(p);
+        if (!this.ownsItem(itemId)) return false;
+        const item = SHOP_ITEMS[itemId];
+        if (!item) return false;
+        switch (item.category) {
+            case SHOP_CATEGORIES.GRID_THEMES:   p.equipped.gridTheme = itemId; break;
+            case SHOP_CATEGORIES.BLOCK_STYLES:  p.equipped.blockStyle = itemId; break;
+            default: return false;
+        }
+        this._save();
+        return true;
+    }
+
+    getEquipped() {
+        const p = this.getActive();
+        if (!p) return { gridTheme: "theme_default", blockStyle: "block_default" };
+        this._ensureCoinFields(p);
+        return { ...p.equipped };
+    }
+
+    // ── Perk (consumable) methods ──
+
+    getPerkCount(perkId) {
+        const p = this.getActive();
+        if (!p) return 0;
+        this._ensureCoinFields(p);
+        return p.perks[perkId] || 0;
+    }
+
+    consumePerk(perkId) {
+        const p = this.getActive();
+        if (!p) return false;
+        this._ensureCoinFields(p);
+        if ((p.perks[perkId] || 0) <= 0) return false;
+        p.perks[perkId]--;
+        this._save();
+        return true;
+    }
+
+    // ── Bonus Slot methods ──
+
+    getMaxBonusSlots() {
+        const p = this.getActive();
+        if (!p) return 0;
+        this._ensureCoinFields(p);
+        let slots = 0;
+        if (p.inventory.includes("bonus_slot_1")) slots = 1;
+        if (p.inventory.includes("bonus_slot_2")) slots = 2;
+        if (p.inventory.includes("bonus_slot_3")) slots = 3;
+        return slots;
+    }
+
+    getBonusSlotContents() {
+        const p = this.getActive();
+        if (!p) return [null, null, null];
+        this._ensureCoinFields(p);
+        return [...p.bonusSlotContents];
+    }
+
+    fillBonusSlot(slotIndex, bonusType) {
+        const p = this.getActive();
+        if (!p) return { success: false, reason: "no_profile" };
+        this._ensureCoinFields(p);
+        const maxSlots = this.getMaxBonusSlots();
+        if (slotIndex < 0 || slotIndex >= maxSlots) return { success: false, reason: "slot_locked" };
+        if (p.bonusSlotContents[slotIndex] !== null) return { success: false, reason: "slot_filled" };
+        const fillCost = 500;
+        if (p.coins < fillCost) return { success: false, reason: "insufficient_coins" };
+        p.coins -= fillCost;
+        p.bonusSlotContents[slotIndex] = bonusType;
+        this._save();
+        return { success: true, newBalance: p.coins };
+    }
+
+    useBonusSlot(slotIndex) {
+        const p = this.getActive();
+        if (!p) return null;
+        this._ensureCoinFields(p);
+        const maxSlots = this.getMaxBonusSlots();
+        if (slotIndex < 0 || slotIndex >= maxSlots) return null;
+        const bonusType = p.bonusSlotContents[slotIndex];
+        if (!bonusType) return null;
+        p.bonusSlotContents[slotIndex] = null;
+        this._save();
+        return bonusType;
+    }
+
+    // ── Grid unlock methods ──
+
+    isGridUnlocked(gridSize) {
+        const req = GRID_UNLOCK_REQUIREMENTS[gridSize];
+        if (!req) return true; // no requirement = always available
+        if (req.level === 0 && req.coins === 0) return true;
+        const p = this.getActive();
+        if (!p) return false;
+        this._ensureCoinFields(p);
+        this._ensureXPFields(p);
+        // Must meet level requirement
+        if (p.level < req.level) return false;
+        // If costs coins, must have purchased it
+        if (req.coins > 0 && !p.unlockedGrids[String(gridSize)]) return false;
+        return true;
+    }
+
+    purchaseGridUnlock(gridSize) {
+        const p = this.getActive();
+        if (!p) return { success: false, reason: "no_profile" };
+        this._ensureCoinFields(p);
+        this._ensureXPFields(p);
+        const req = GRID_UNLOCK_REQUIREMENTS[gridSize];
+        if (!req) return { success: false, reason: "invalid_grid" };
+        if (p.level < req.level) return { success: false, reason: "level_too_low" };
+        if (p.unlockedGrids[String(gridSize)]) return { success: false, reason: "already_unlocked" };
+        if (req.coins > 0 && p.coins < req.coins) return { success: false, reason: "insufficient_coins" };
+        if (req.coins > 0) p.coins -= req.coins;
+        p.unlockedGrids[String(gridSize)] = true;
+        this._save();
+        return { success: true, newBalance: p.coins };
+    }
+
+    // ── Daily / streak tracking ──
+
+    _todayStr() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
+    /** Call at game start to update streak. Returns { isFirstGameToday, playStreak }. */
+    recordDailyPlay() {
+        const p = this.getActive();
+        if (!p) return { isFirstGameToday: false, playStreak: 0 };
+        this._ensureCoinFields(p);
+        const today = this._todayStr();
+        if (p.lastPlayDate === today) {
+            return { isFirstGameToday: false, playStreak: p.playStreak };
+        }
+        // Check if yesterday was the last play date (streak continues)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+        if (p.lastPlayDate === yStr) {
+            p.playStreak++;
+        } else {
+            p.playStreak = 1;
+        }
+        p.lastPlayDate = today;
+        this._save();
+        return { isFirstGameToday: true, playStreak: p.playStreak };
+    }
+
+    // ── Milestone checking ──
+
+    /** Check and pay out any unclaimed milestones. Returns array of newly claimed milestones. */
+    checkMilestones() {
+        const p = this.getActive();
+        if (!p) return [];
+        this._ensureCoinFields(p);
+        this._ensureXPFields(p);
+        const newClaims = [];
+        for (const m of MILESTONES) {
+            if (p.claimedMilestones.includes(m.id)) continue;
+            if (m.check(p)) {
+                p.claimedMilestones.push(m.id);
+                p.coins += m.coins;
+                p.totalCoinsEarned += m.coins;
+                newClaims.push(m);
+            }
+        }
+        if (newClaims.length > 0) this._save();
+        return newClaims;
+    }
 }
 
 // ────────────────────────────────────────
@@ -2322,6 +3218,9 @@ class Game {
             pauseOverlay:   document.getElementById("pause-overlay"),
             timeSelectModal: document.getElementById("time-select-modal"),
             timeSelectCancelBtn: document.getElementById("time-select-cancel-btn"),
+            perkSelectModal: document.getElementById("perk-select-modal"),
+            perkSelectGrid: document.getElementById("perk-select-grid"),
+            perkSelectSkipBtn: document.getElementById("perk-select-skip-btn"),
             gameTimer: document.getElementById("game-timer"),
             timerScoreItem: document.getElementById("timer-score-item"),
             letterChoiceModal: document.getElementById("letter-choice-modal"),
@@ -2339,6 +3238,9 @@ class Game {
             finalScore:     document.getElementById("final-score-text"),
             newHighScore:   document.getElementById("new-high-score-text"),
             bonusBtn:       document.getElementById("bonus-btn"),
+            radialMenu:     document.getElementById("radial-menu"),
+            radialToggle:   document.getElementById("radial-toggle"),
+            radialSlots:    document.getElementById("radial-slots"),
             startBtn:       document.getElementById("start-btn"),
             resumeGameBtn:  document.getElementById("resume-game-btn"),
             restartBtn:     document.getElementById("restart-btn"),
@@ -2348,6 +3250,8 @@ class Game {
             resumeBtn:      document.getElementById("resume-btn"),
             pauseWordsFoundBtn: document.getElementById("pause-words-found-btn"),
             pauseMusicBtn:  document.getElementById("pause-music-btn"),
+            pauseShopBtn:   document.getElementById("pause-shop-btn"),
+            playCoins:      document.getElementById("play-coins"),
             quitBtn:        document.getElementById("quit-btn"),
             globalMuteBtn:  document.getElementById("global-mute-btn"),
             nextLetter:     document.getElementById("next-letter"),
@@ -2471,6 +3375,7 @@ class Game {
             menuXpText: document.getElementById("menu-xp-text"),
             xpEarnedDisplay: document.getElementById("xp-earned-display"),
             xpEarnedText: document.getElementById("xp-earned-text"),
+            coinsEarnedText: document.getElementById("coins-earned-text"),
             gameoverLevelText: document.getElementById("gameover-level-text"),
             gameoverXpBarFill: document.getElementById("gameover-xp-bar-fill"),
             levelUpOverlay: document.getElementById("level-up-overlay"),
@@ -2480,6 +3385,15 @@ class Game {
             xpTutorialOverlay: document.getElementById("xp-tutorial-overlay"),
             xpTutorialCanvas: document.getElementById("xp-tutorial-canvas"),
             xpTutorialOkBtn: document.getElementById("xp-tutorial-ok-btn"),
+            chainBanner: document.getElementById("chain-banner"),
+            // Shop
+            shopBtn: document.getElementById("shop-btn"),
+            shopScreen: document.getElementById("shop-screen"),
+            shopBackBtn: document.getElementById("shop-back-btn"),
+            shopCoins: document.getElementById("shop-coins"),
+            shopContent: document.getElementById("shop-content"),
+            shopTabs: document.querySelectorAll(".shop-tab"),
+            menuCoins: document.getElementById("menu-coins"),
         };
 
         this.state = State.MENU;
@@ -2524,6 +3438,16 @@ class Game {
         this.wordsFoundBackTarget = "gameover";
         this.wordsFoundResumeState = null;
         this.swipeState = null;
+
+        // ── Combo / Streak state (Preact-driven) ──
+        this.comboCount = 0;
+        this.bestCombo = 0;
+        this.comboTimer = 0;            // seconds remaining in combo window
+        this._totalWordsThisGame = 0;   // for difficulty progression
+
+        // ── Difficulty progression ──
+        this._difficultyLevel = 1;
+        this._baseFallInterval = 1.5;   // set at game start, modified by difficulty
 
         // New bonus state
         this.freezeActive = false;
@@ -2600,6 +3524,31 @@ class Game {
         document.querySelectorAll(".size-btn").forEach(btn => {
             btn.addEventListener("click", () => {
                 const size = parseInt(btn.dataset.size, 10);
+                const unlocked = this.profileMgr.isGridUnlocked(size);
+                if (!unlocked) {
+                    const req = GRID_UNLOCK_REQUIREMENTS[size];
+                    if (!req) return;
+                    const lvl = this.profileMgr.getLevelInfo();
+                    if (lvl.level < req.level) {
+                        this._showShopToast(`Reach Level ${req.level} to unlock ${req.label}`);
+                        return;
+                    }
+                    if (req.coins > 0) {
+                        if (confirm(`Unlock ${req.label} for ${req.coins} coins?`)) {
+                            const result = this.profileMgr.purchaseGridUnlock(size);
+                            if (result.success) {
+                                this._showShopToast(`${req.label} unlocked!`);
+                                this.gridSize = size;
+                                this.profileMgr.setGridSize(this.gridSize);
+                                this._highlightSizeButton();
+                                this._updateDifficultySelector();
+                            } else if (result.reason === "insufficient_coins") {
+                                this._showShopToast("Not enough coins!");
+                            }
+                        }
+                        return;
+                    }
+                }
                 if (btn.disabled) return;
                 this.gridSize = size;
                 this.profileMgr.setGridSize(this.gridSize);
@@ -2669,6 +3618,12 @@ class Game {
             this._showScreen("music");
             this._renderMusicScreen();
         });
+        this.els.pauseShopBtn.addEventListener("click", () => {
+            this.els.pauseOverlay.classList.remove("active");
+            this._shopBackTarget = "pause";
+            this._shopCurrentTab = "grid_themes";
+            this._showScreen("shop");
+        });
         this.els.quitBtn.addEventListener("click", () => {
             this._saveGameState();
             this.state = State.MENU;
@@ -2684,6 +3639,28 @@ class Game {
         this.els.switchProfileBtn.addEventListener("click", () => {
             this._renderProfilesList();
             this._showScreen("profiles");
+        });
+
+        // Shop
+        this.els.shopBtn.addEventListener("click", () => {
+            this._shopCurrentTab = "grid_themes";
+            this._showScreen("shop");
+        });
+        this.els.shopBackBtn.addEventListener("click", () => {
+            if (this._shopBackTarget === "pause") {
+                this._shopBackTarget = null;
+                this._showScreen("play");
+                this.els.pauseOverlay.classList.add("active");
+            } else {
+                this._showScreen("menu");
+            }
+        });
+        this.els.shopTabs.forEach(tab => {
+            tab.addEventListener("click", () => {
+                this._shopCurrentTab = tab.dataset.tab;
+                this.els.shopTabs.forEach(t => t.classList.toggle("active", t === tab));
+                this._renderShopTab(this._shopCurrentTab);
+            });
         });
 
         // Challenges
@@ -2738,6 +3715,16 @@ class Game {
             this._openLetterChoiceModal();
         });
 
+        // Radial bonus slot menu
+        this._radialOpen = false;
+        this.els.radialToggle.addEventListener("click", () => this._toggleRadialMenu());
+        this.els.radialSlots.querySelectorAll(".radial-slot").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const slotIdx = parseInt(btn.dataset.slot, 10);
+                this._useRadialSlot(slotIdx);
+            });
+        });
+
         // Music menu button
         this.els.musicMenuBtn.addEventListener("click", () => {
             this._showScreen("music");
@@ -2779,8 +3766,15 @@ class Game {
                 const minutes = parseInt(btn.dataset.minutes, 10);
                 if (!Number.isFinite(minutes)) return;
                 this._closeTimeSelectModal();
-                this._beginNewGame(minutes * 60);
+                this._maybeShowPerkSelect(minutes * 60);
             });
+        });
+
+        // Perk selection modal
+        this.els.perkSelectSkipBtn.addEventListener("click", () => {
+            this._chosenPerk = null;
+            this._closePerkSelectModal();
+            this._beginNewGame(this._pendingTimeLimitSeconds || 0);
         });
     }
 
@@ -2812,7 +3806,7 @@ class Game {
         this.musicMuted = muted;
         this.audio.muted = muted;
         this.music.setMuted(muted);
-        this.els.globalMuteBtn.textContent = muted ? "🔇" : "🔊";
+        this.els.globalMuteBtn.textContent = muted ? "♭" : "♪";
         this.els.globalMuteBtn.classList.toggle("muted", muted);
         this._updateVolumeIcon();
     }
@@ -2832,8 +3826,7 @@ class Game {
     }
 
     _computeHintCells() {
-        // First, detect any valid words sitting on the board and validate them green
-        this._detectBoardWords();
+        // Hints: show cells that are one letter away from forming a word
 
         if (!this.hintsEnabled || !this.grid) {
             this.renderer.hintCells = new Set();
@@ -3044,7 +4037,7 @@ class Game {
                 this.els.npTimerDisplay.textContent = `${mins}m`;
                 this.els.npTimerDisplay.classList.remove("hidden");
                 this._setMusicControlButton(this.els.npTimerBtn, "timer", "Sleep Timer");
-                this.els.npTimerBtn.style.color = "#ffd700";
+                this.els.npTimerBtn.style.color = "#e2d8a6";
             } else {
                 this.els.npTimerDisplay.classList.add("hidden");
                 this.els.npTimerBtn.style.color = "";
@@ -3270,10 +4263,28 @@ class Game {
         const minSize = this.difficulty === "hard" ? 6 : 3;
         document.querySelectorAll(".size-btn").forEach(btn => {
             const size = parseInt(btn.dataset.size, 10);
-            const disabled = size < minSize;
+            const tooSmall = size < minSize;
+            const unlocked = this.profileMgr.isGridUnlocked(size);
+            const disabled = tooSmall || !unlocked;
             btn.classList.toggle("selected", size === this.gridSize);
             btn.disabled = disabled;
             btn.classList.toggle("btn-disabled", disabled);
+            // Show lock icon for grid-gated sizes
+            const req = GRID_UNLOCK_REQUIREMENTS[size];
+            if (!unlocked && req) {
+                const lvl = this.profileMgr.getLevelInfo();
+                if (lvl.level < req.level) {
+                    btn.title = `Requires Level ${req.level}`;
+                } else if (req.coins > 0) {
+                    btn.title = `Unlock for ${req.coins} coins`;
+                }
+                btn.classList.add("grid-btn-locked");
+            } else {
+                btn.classList.remove("grid-btn-locked");
+                btn.title = "";
+            }
+            // Show/remove unlock level label under locked buttons
+            this._updateUnlockLabel(btn, !unlocked && req && req.level > 0 ? req.level : 0);
         });
     }
 
@@ -3291,6 +4302,25 @@ class Game {
         document.querySelectorAll(".game-mode-btn").forEach(btn => {
             btn.classList.toggle("selected", btn.dataset.mode === this.gameMode);
         });
+    }
+
+    /**
+     * Generic helper: show or remove a small "Level X" label under any
+     * lockable button/element.  Pass requiredLevel > 0 to show, 0 to hide.
+     * Reuse this for future unlockable items (themes, perks, etc.).
+     */
+    _updateUnlockLabel(el, requiredLevel) {
+        let label = el.querySelector(".unlock-level-label");
+        if (requiredLevel > 0) {
+            if (!label) {
+                label = document.createElement("span");
+                label.className = "unlock-level-label";
+                el.appendChild(label);
+            }
+            label.textContent = `Level ${requiredLevel}`;
+        } else if (label) {
+            label.remove();
+        }
     }
 
     _isDifficultyActiveGrid() {
@@ -3349,9 +4379,13 @@ class Game {
         this.els.wordsFoundScreen.classList.toggle("active", name === "wordsfound");
         this.els.challengesScreen.classList.toggle("active", name === "challenges");
         this.els.challengeSetupScreen.classList.toggle("active", name === "challengesetup");
+        this.els.shopScreen.classList.toggle("active", name === "shop");
         if (name === "menu") {
             this._updateHighScoreDisplay();
             this._updateMenuStats();
+            this._highlightSizeButton();
+            this._updateDifficultySelector();
+            this._updateLevelDisplay();
             const hasSaved = this._hasSavedGame(null);
             this.els.resumeGameBtn.classList.toggle("hidden", !hasSaved);
         }
@@ -3364,6 +4398,7 @@ class Game {
         }
         if (name === "play") this._updateMiniNowPlaying();
         if (name === "profiles") this._renderProfilesList();
+        if (name === "shop") this._renderShop();
 
         // Control background animation (hide during gameplay)
         if (this.bgAnim) {
@@ -3376,6 +4411,9 @@ class Game {
 
         // Confetti on game over
         if (name === "gameover") this._spawnConfetti();
+
+        // ── Sync screen to Preact store ──
+        gameStore.set({ screen: name, gameState: this.state });
     }
 
     _wrapTitleLetters() {
@@ -3621,8 +4659,45 @@ class Game {
     }
 
     _updateScoreDisplay() {
-        this.els.currentScore.textContent = this.score;
+        const el = this.els.currentScore;
+        el.textContent = this.score;
+        // Pulse animation
+        el.classList.remove("score-bump");
+        void el.offsetWidth; // force reflow to restart animation
+        el.classList.add("score-bump");
         this._updateBonusButton();
+        // Update coin count in HUD
+        this._updatePlayCoins();
+
+        // ── Sync to Preact store ──
+        const comboMult = Math.min(COMBO_MAX_MULTIPLIER, 1 + (this.comboCount - 1) * COMBO_MULTIPLIER_STEP);
+        gameStore.set({
+            score: this.score,
+            highScore: this.highScore,
+            scoreMultiplier: this.scoreMultiplier,
+            comboCount: this.comboCount,
+            bestCombo: this.bestCombo,
+            comboMultiplier: this.comboCount >= 2 ? comboMult : 1,
+            comboActive: this.comboCount >= 2,
+            chainCount: this.totalWordsInChain,
+            wordsFoundCount: this._totalWordsThisGame,
+            difficultyLevel: this._difficultyLevel,
+            fallSpeed: this.fallInterval,
+            freezeActive: this.freezeActive,
+            freezeTimeRemaining: this.freezeTimeRemaining,
+            isTimed: (this._getSelectedGameMode() === GAME_MODES.TIMED || this.activeChallenge) && this.timeLimitSeconds > 0,
+            timeRemaining: this.timeRemainingSeconds,
+            timeLimit: this.timeLimitSeconds,
+            activeChallenge: this.activeChallenge,
+            targetWord: this.targetWord,
+            targetWordsCompleted: this.targetWordsCompleted,
+        });
+    }
+
+    _updatePlayCoins() {
+        if (this.els.playCoins) {
+            this.els.playCoins.textContent = this.profileMgr.getCoins();
+        }
     }
 
     _updateBonusButton() {
@@ -3639,6 +4714,75 @@ class Game {
         this.els.bonusBtn.textContent = bonusMeta?.buttonLabel || "Bonus!";
         this.els.bonusBtn.title = bonusMeta?.buttonTitle || "Use Bonus";
         this.els.bonusBtn.disabled = !this.block || this.letterChoiceActive;
+        this._updateRadialMenu();
+    }
+
+    // ── Radial bonus slot menu ──
+
+    _toggleRadialMenu() {
+        this._radialOpen = !this._radialOpen;
+        this.els.radialMenu.classList.toggle("open", this._radialOpen);
+        if (this._radialOpen) this._updateRadialSlots();
+    }
+
+    _closeRadialMenu() {
+        this._radialOpen = false;
+        this.els.radialMenu.classList.remove("open");
+    }
+
+    _updateRadialMenu() {
+        const maxSlots = this.profileMgr.getMaxBonusSlots();
+        // Show radial only during gameplay and if player has slots
+        const inGame = this.state === State.PLAYING || this.state === State.PAUSED;
+        this.els.radialMenu.classList.toggle("hidden", !inGame || maxSlots === 0);
+        if (inGame && maxSlots > 0) this._updateRadialSlots();
+    }
+
+    _updateRadialSlots() {
+        const maxSlots = this.profileMgr.getMaxBonusSlots();
+        const contents = this.profileMgr.getBonusSlotContents();
+        const bonusIcons = {
+            [BONUS_TYPES.LETTER_PICK]: "🔤",
+            [BONUS_TYPES.BOMB]: "💣",
+            [BONUS_TYPES.WILDCARD]: "⭐",
+            [BONUS_TYPES.ROW_CLEAR]: "─",
+            [BONUS_TYPES.FREEZE]: "❄️",
+            [BONUS_TYPES.SHUFFLE]: "⇄",
+            [BONUS_TYPES.SCORE_2X]: "2×",
+        };
+        const blockIndependent = [BONUS_TYPES.SCORE_2X, BONUS_TYPES.FREEZE, BONUS_TYPES.SHUFFLE];
+        const baseCanUse = !this.letterChoiceActive && !this.availableBonusType && !this.rowDragActive;
+
+        this.els.radialSlots.querySelectorAll(".radial-slot").forEach(btn => {
+            const idx = parseInt(btn.dataset.slot, 10);
+            const purchased = idx < maxSlots;
+            const filled = contents[idx];
+            const canUseSlot = baseCanUse && (this.block || blockIndependent.includes(filled));
+
+            btn.classList.toggle("slot-hidden", !purchased);
+            btn.classList.toggle("slot-empty", purchased && !filled);
+            btn.classList.toggle("slot-filled", purchased && !!filled);
+            btn.textContent = filled ? (bonusIcons[filled] || "?") : "○";
+            btn.disabled = !purchased || !filled || !canUseSlot;
+            btn.title = filled ? (BONUS_METADATA[filled]?.buttonLabel || filled) : (purchased ? "Empty slot" : "Locked");
+        });
+    }
+
+    _useRadialSlot(slotIdx) {
+        if (this.availableBonusType || this.letterChoiceActive || this.rowDragActive || this.clearing) return;
+        // Peek at what bonus is in this slot to check if a block is needed
+        const contents = this.profileMgr.getBonusSlotContents();
+        const peekType = contents[slotIdx];
+        const needsBlock = [BONUS_TYPES.BOMB, BONUS_TYPES.WILDCARD, BONUS_TYPES.LETTER_PICK, BONUS_TYPES.ROW_CLEAR].includes(peekType);
+        if (needsBlock && !this.block) return;
+        const bonusType = this.profileMgr.useBonusSlot(slotIdx);
+        if (!bonusType) return;
+        console.log(`[SLOT] Used radial slot ${slotIdx} → bonus type: "${bonusType}"`);
+        this._closeRadialMenu();
+        this.availableBonusType = bonusType;
+        this._bonusFromSlot = true;
+        this._updateBonusButton();
+        this._openLetterChoiceModal();
     }
 
     // ── Save / Resume game state ──
@@ -3674,6 +4818,9 @@ class Game {
             bonusUsageCounts: this._bonusUsageCounts || {},
             block: this.block ? { letter: this.block.letter, col: this.block.col, row: this.block.row, kind: this.block.kind } : null,
             fallInterval: this.fallInterval,
+            scoreMultiplier: this.scoreMultiplier || 1,
+            freezeActive: this.freezeActive || false,
+            freezeTimeRemaining: this.freezeTimeRemaining || 0,
             activeChallenge: this.activeChallenge || null,
             targetWord: this.targetWord || null,
             targetWordsCompleted: this.targetWordsCompleted || 0,
@@ -3739,14 +4886,24 @@ class Game {
             };
 
             const draw = drawRandomBonusType(this.bonusBag, this.lastAwardedBonusType, this._bonusHistory, gameContext);
-            this.availableBonusType = draw.bonusType;
+            let bonusType = draw.bonusType;
+
+            // Lucky Draw perk: force first bonus to be bomb, wild, or score2x
+            if (this._activePerks && this._activePerks.luckydraw) {
+                const luckyPool = [BONUS_TYPES.BOMB, BONUS_TYPES.WILDCARD, BONUS_TYPES.SCORE_2X];
+                bonusType = luckyPool[Math.floor(Math.random() * luckyPool.length)];
+                this._activePerks.luckydraw = false; // consume on first use
+            }
+
+            this.availableBonusType = bonusType;
+            this._bonusFromSlot = false;
             this.bonusBag = draw.nextBag;
             this._bonusHistory = draw.nextHistory;
             this._fullBonusHistory.push(draw.bonusType);
             this.lastAwardedBonusType = draw.bonusType;
             this._updateBonusButton();
             const bonusMeta = BONUS_METADATA[this.availableBonusType];
-            this._showBonusPopup(bonusMeta.previewSymbol || "🎁", bonusMeta.buttonLabel || "Bonus!");
+            this._showBonusPopup(bonusMeta.previewSymbol || "◇", bonusMeta.buttonLabel || "Bonus!");
         }
     }
 
@@ -3808,9 +4965,12 @@ class Game {
     }
 
     _openLetterChoiceModal() {
-        if (!this.availableBonusType || !this.block || this.clearing || this.letterChoiceActive) {
+        const needsBlock = [BONUS_TYPES.BOMB, BONUS_TYPES.WILDCARD, BONUS_TYPES.LETTER_PICK, BONUS_TYPES.ROW_CLEAR].includes(this.availableBonusType);
+        if (!this.availableBonusType || (needsBlock && !this.block) || this.clearing || this.letterChoiceActive) {
+            console.warn(`[BONUS-MODAL] Cannot open: avail=${this.availableBonusType}, block=${!!this.block}, clearing=${this.clearing}, letterChoice=${this.letterChoiceActive}`);
             return;
         }
+        console.log(`[BONUS-MODAL] Opening for type: "${this.availableBonusType}" (fromSlot=${!!this._bonusFromSlot})`);
 
         this.letterChoiceResumeState = this.state;
         this.letterChoiceActive = true;
@@ -3840,8 +5000,13 @@ class Game {
         this.letterChoiceActive = false;
         this.els.letterChoiceModal.classList.remove("active");
         if (consumeBonus) {
+            console.log(`[BONUS-MODAL] Closing & consuming: "${this.availableBonusType}" (fromSlot=${!!this._bonusFromSlot})`);
             this.availableBonusType = null;
-            this.nextBonusScore = this.score + BONUS_UNLOCK_SCORE_INTERVAL;
+            // Only advance next-bonus threshold for score-earned bonuses, not slot-sourced
+            if (!this._bonusFromSlot) {
+                this.nextBonusScore = this.score + BONUS_UNLOCK_SCORE_INTERVAL;
+            }
+            this._bonusFromSlot = false;
         }
         this.state = this.letterChoiceResumeState === State.PAUSED ? State.PAUSED : State.PLAYING;
         this.letterChoiceResumeState = null;
@@ -3849,8 +5014,18 @@ class Game {
     }
 
     _acceptActiveBonus() {
-        if (!this.block || !this.letterChoiceActive) return;
+        if (!this.letterChoiceActive) {
+            console.warn(`[BONUS-ACCEPT] Cannot accept: letterChoice=${this.letterChoiceActive}`);
+            return;
+        }
         const type = this.availableBonusType;
+        // Some bonuses (SCORE_2X, FREEZE, SHUFFLE) don't require a live block
+        const needsBlock = [BONUS_TYPES.BOMB, BONUS_TYPES.WILDCARD, BONUS_TYPES.LETTER_PICK, BONUS_TYPES.ROW_CLEAR].includes(type);
+        if (needsBlock && !this.block) {
+            console.warn(`[BONUS-ACCEPT] Cannot accept "${type}": no block in play`);
+            return;
+        }
+        console.log(`[BONUS-ACCEPT] Activating type: "${type}"`);
         // Track usage counts for advanced randomizer
         if (!this._bonusUsageCounts) this._bonusUsageCounts = {};
         this._bonusUsageCounts[type] = (this._bonusUsageCounts[type] || 0) + 1;
@@ -3861,6 +5036,7 @@ class Game {
         } else if (type === BONUS_TYPES.WILDCARD) {
             this.block.kind = "wildcard";
             this.block.letter = WILDCARD_SYMBOL;
+            console.log(`[BONUS-ACCEPT] Wildcard applied → block.kind="${this.block.kind}", block.letter="${this.block.letter}"`);
             this._closeLetterChoiceModal(true);
         } else if (type === BONUS_TYPES.ROW_CLEAR) {
             this._startRowDragMode();
@@ -3882,6 +5058,7 @@ class Game {
         } else if (type === BONUS_TYPES.SCORE_2X) {
             this.scoreMultiplier = 2;
             this.els.score2xIndicator.classList.remove("hidden");
+            console.log(`[BONUS-ACCEPT] Score 2× activated → scoreMultiplier=${this.scoreMultiplier}`);
             this._closeLetterChoiceModal(true);
         }
     }
@@ -4076,7 +5253,7 @@ class Game {
             this.score += linePts;
             this._checkBonusUnlock(prevScore, this.score);
             this._updateScoreDisplay();
-            this._showWordPopup([{ word: "🧹 LINE", pts: linePts, isBonus: true }]);
+            this._showWordPopup([{ word: "LINE", pts: linePts, isBonus: true }]);
         }
 
         // Execute the clear animation
@@ -4216,10 +5393,17 @@ class Game {
         this.letterChoiceActive = false;
         this.letterChoiceResumeState = null;
         this.fallInterval = saved.fallInterval || (this.difficulty === "casual" ? 1.5 : 0.9);
+        this.scoreMultiplier = saved.scoreMultiplier || 1;
+        this.freezeActive = saved.freezeActive || false;
+        this.freezeTimeRemaining = saved.freezeTimeRemaining || 0;
         this.clearing = false;
         this.clearPhase = "";
         this.totalWordsInChain = 0;
         this.totalLettersInChain = 0;
+        this._chainWords = [];
+        this._wordPopupActive = false;
+        this._wordPopupCount = 0;
+        this.els.wordPopup.innerHTML = "";
         this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
         this.pendingClearMode = "";
         this.renderer.flashCells.clear();
@@ -4228,10 +5412,17 @@ class Game {
         this.renderer.blastProgress = 0;
         this.renderer.particles = [];
         this.renderer.gravityAnims = [];
+        this.renderer.hintCells = new Set();
+        this._activeHintKey = null;
         this.pendingGravityMoves = [];
         this._validatedWordGroups = [];
         this._claimAnimating = false;
         this.renderer.validatedCells = new Set();
+        this.comboCount = 0;
+        this.bestCombo = 0;
+        this.comboTimer = 0;
+        this._totalWordsThisGame = 0;
+        this._difficultyLevel = 1;
         this.activeChallenge = null;
         this._updateScoreDisplay();
         this._updateHighScoreDisplay();
@@ -4242,6 +5433,15 @@ class Game {
         this._updateTimerDisplay();
         this._showScreen("play");
         this.state = State.PLAYING;
+
+        // Restore bonus indicators
+        this.els.score2xIndicator.classList.toggle("hidden", this.scoreMultiplier <= 1);
+        this.els.freezeIndicator.classList.toggle("hidden", !this.freezeActive);
+
+        // Apply equipped theme on resume
+        const eqResume = this.profileMgr.getEquipped();
+        this.renderer.setTheme(eqResume.gridTheme);
+        this.renderer.setBlockStyle(eqResume.blockStyle);
 
         this._autoplayMusicFromUserAction();
 
@@ -4291,6 +5491,10 @@ class Game {
         this.clearPhase = "";
         this.totalWordsInChain = 0;
         this.totalLettersInChain = 0;
+        this._chainWords = [];
+        this._wordPopupActive = false;
+        this._wordPopupCount = 0;
+        this.els.wordPopup.innerHTML = "";
         this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
         this.pendingClearMode = "";
         this.renderer.flashCells.clear();
@@ -4299,10 +5503,17 @@ class Game {
         this.renderer.blastProgress = 0;
         this.renderer.particles = [];
         this.renderer.gravityAnims = [];
+        this.renderer.hintCells = new Set();
+        this._activeHintKey = null;
         this.pendingGravityMoves = [];
         this._validatedWordGroups = [];
         this._claimAnimating = false;
         this.renderer.validatedCells = new Set();
+        this.comboCount = 0;
+        this.bestCombo = 0;
+        this.comboTimer = 0;
+        this._totalWordsThisGame = 0;
+        this._difficultyLevel = 1;
 
         // Reset bonus state
         this.freezeActive = false;
@@ -4345,6 +5556,11 @@ class Game {
         this._showScreen("play");
         this.state = State.PLAYING;
 
+        // Apply equipped theme on challenge resume
+        const eqChal = this.profileMgr.getEquipped();
+        this.renderer.setTheme(eqChal.gridTheme);
+        this.renderer.setBlockStyle(eqChal.blockStyle);
+
         this._autoplayMusicFromUserAction();
 
         requestAnimationFrame(() => {
@@ -4369,7 +5585,49 @@ class Game {
             this._openTimeSelectModal();
             return;
         }
-        this._beginNewGame(0);
+        this._maybeShowPerkSelect(0);
+    }
+
+    /** Check if player has perks; if so show selection modal, otherwise start immediately */
+    _maybeShowPerkSelect(timeLimitSeconds) {
+        this._pendingTimeLimitSeconds = timeLimitSeconds;
+        this._chosenPerk = null;
+
+        // Gather owned perks
+        const ownedPerks = [];
+        for (const [id, item] of Object.entries(SHOP_ITEMS)) {
+            if (item.category === SHOP_CATEGORIES.STARTING_PERKS && this.profileMgr.getPerkCount(id) > 0) {
+                ownedPerks.push({ id, ...item, count: this.profileMgr.getPerkCount(id) });
+            }
+        }
+
+        if (ownedPerks.length === 0) {
+            this._beginNewGame(timeLimitSeconds);
+            return;
+        }
+
+        this._openPerkSelectModal(ownedPerks);
+    }
+
+    _openPerkSelectModal(ownedPerks) {
+        const grid = this.els.perkSelectGrid;
+        grid.innerHTML = "";
+        for (const perk of ownedPerks) {
+            const btn = document.createElement("button");
+            btn.className = "perk-select-btn";
+            btn.innerHTML = `<span class="perk-select-name">${perk.name}</span><span class="perk-select-desc">${perk.preview}</span><span class="perk-select-count">×${perk.count}</span>`;
+            btn.addEventListener("click", () => {
+                this._chosenPerk = perk.id;
+                this._closePerkSelectModal();
+                this._beginNewGame(this._pendingTimeLimitSeconds || 0);
+            });
+            grid.appendChild(btn);
+        }
+        this.els.perkSelectModal.classList.add("active");
+    }
+
+    _closePerkSelectModal() {
+        this.els.perkSelectModal.classList.remove("active");
     }
 
     _beginNewGame(timeLimitSeconds = 0) {
@@ -4423,6 +5681,50 @@ class Game {
         this.els.score2xIndicator.classList.add("hidden");
         this.els.rowDragIndicator.classList.add("hidden");
 
+        // ── Reset combo / streak / difficulty (Preact-driven) ──
+        this.comboCount = 0;
+        this.bestCombo = 0;
+        this.comboTimer = 0;
+        this._totalWordsThisGame = 0;
+        this._difficultyLevel = 1;
+        this._baseFallInterval = this.difficulty === "casual" ? 1.5 : 0.9;
+
+        // ── Coin tracking for this game ──
+        this._coinsThisGame = 0;
+        this._dailyInfo = this.profileMgr.recordDailyPlay();
+
+        // ── Apply equipped theme ──
+        const equipped = this.profileMgr.getEquipped();
+        this.renderer.setTheme(equipped.gridTheme);
+        this.renderer.setBlockStyle(equipped.blockStyle);
+
+        // ── Apply chosen perk (only 1 per game) ──
+        this._activePerks = {};
+        const chosenPerk = this._chosenPerk;
+        this._chosenPerk = null;
+
+        if (chosenPerk && this.profileMgr.consumePerk(chosenPerk)) {
+            switch (chosenPerk) {
+                case "perk_headstart":
+                    this.score = 200;
+                    this._activePerks.headstart = true;
+                    break;
+                case "perk_slowstart":
+                    this._activePerks.slowstart = 30;
+                    break;
+                case "perk_bonusboost":
+                    this.nextBonusScore = 500;
+                    this._activePerks.bonusboost = true;
+                    break;
+                case "perk_comboext":
+                    this._activePerks.comboext = true;
+                    break;
+                case "perk_luckydraw":
+                    this._activePerks.luckydraw = true;
+                    break;
+            }
+        }
+
         // Reset challenge state (activeChallenge is set before calling this for challenges)
         this.targetWord = null;
         this.targetWordsCompleted = 0;
@@ -4436,7 +5738,44 @@ class Game {
         this._updateLevelDisplay();
         this._showScreen("play");
         this.state = State.PLAYING;
-        this.fallInterval = this.difficulty === "casual" ? 1.5 : 0.9;
+        this.fallInterval = this._baseFallInterval;
+
+        // Apply slow start perk (half speed for 30s)
+        if (this._activePerks.slowstart) {
+            this._slowStartTimeLeft = this._activePerks.slowstart;
+            this.fallInterval *= 2; // double the interval = half speed
+        } else {
+            this._slowStartTimeLeft = 0;
+        }
+
+        // ── Sync full state to Preact store at game start ──
+        const lvlInfo = this.profileMgr.getLevelInfo();
+        gameStore.set({
+            score: 0,
+            highScore: this.highScore,
+            gameState: State.PLAYING,
+            comboCount: 0,
+            bestCombo: 0,
+            comboMultiplier: 1,
+            comboActive: false,
+            comboTimer: 0,
+            difficultyLevel: 1,
+            wordsFoundCount: 0,
+            fallSpeed: this.fallInterval,
+            scoreMultiplier: 1,
+            freezeActive: false,
+            freezeTimeRemaining: 0,
+            isTimed: timeLimitSeconds > 0,
+            timeRemaining: timeLimitSeconds,
+            timeLimit: timeLimitSeconds,
+            level: lvlInfo.level,
+            xp: lvlInfo.xp,
+            xpRequired: lvlInfo.xpRequired,
+            profileName: this.profileMgr.getActive()?.username || '',
+            activeChallenge: this.activeChallenge,
+            isNewHighScore: false,
+            finalScore: 0,
+        });
 
         // Start or resume music from the player's start-game action.
         this._autoplayMusicFromUserAction();
@@ -4488,32 +5827,54 @@ class Game {
 
         this.block.row = r;
         this.block.visualRow = r;
+        this.block.dropAnimating = true; // flag for impact effect
         this._landBlock();
     }
 
     _landBlock() {
         if (!this.block) return;
+        const wasFastDrop = this.block.dropAnimating;
         this.grid.set(this.block.row, this.block.col, this.block.letter);
         const landedRow = this.block.row;
         const landedCol = this.block.col;
         const landedKind = this.block.kind;
+        if (landedKind === "wildcard") {
+            console.log(`[WILDCARD] ★ landed at (${landedRow},${landedCol}) — grid cell now: "${this.grid.get(landedRow, landedCol)}"`);
+        }
         this.block = null;
         this._updateBonusButton();
         this._saveGameState();
 
         if (landedKind === "bomb") {
             this.audio.bomb();
+            this.renderer.triggerShake(6);
             this._triggerBombClear(landedRow, landedCol);
             return;
         }
 
         this._computeHintCells();
-        this.audio.land();
+        if (wasFastDrop) {
+            this.audio.land(true);
+            this.renderer.triggerShake(1.5);
+            this.renderer.triggerImpact(landedRow, landedCol);
+        } else {
+            this.audio.land(false);
+        }
 
         // Start word detection chain
         this.totalWordsInChain = 0;
         this.totalLettersInChain = 0;
         this._chainWords = [];
+
+        // Prune any stale validated groups before new detection
+        this._pruneInvalidGroups();
+
+        // Log state for diagnostics
+        if (this._validatedWordGroups.length > 0) {
+            console.log(`[WORD-VAL] Landing at (${landedRow},${landedCol})="${this.grid.get(landedRow, landedCol)}" — ${this._validatedWordGroups.length} existing groups:`,
+                this._validatedWordGroups.map(g => `${g.word}@[${[...g.cells].join(";")}]`));
+        }
+
         this._checkWords(landedRow, landedCol);
     }
 
@@ -4545,6 +5906,7 @@ class Game {
         this.renderer.hintCells = new Set();
         this._activeHintKey = null;
 
+        this.renderer.triggerShake(8);
         this.clearing = true;
         this.clearPhase = "flash";
         this.clearTimer = 0;
@@ -4562,9 +5924,25 @@ class Game {
         // If triggerRow < 0, do a full-board scan (chain reaction)
         let result;
         if (triggerRow >= 0) {
+            console.log(`[WORD-VAL] _checkWords LANDING at (${triggerRow},${triggerCol})`);
             result = this.grid.findWordsThrough(triggerRow, triggerCol, this._getMinWordLength());
         } else {
+            console.log(`[WORD-VAL] _checkWords CHAIN SCAN (full board)`);
             result = this.grid.findAllWords(this._getMinWordLength());
+        }
+        console.log(`[WORD-VAL] _checkWords result: ${result.words.length} words [${result.words.join(", ")}]`);
+
+        // Dump the grid when words are found for diagnostics
+        if (result.words.length > 0) {
+            const rows = [];
+            for (let r = 0; r < this.grid.rows; r++) {
+                const row = [];
+                for (let c = 0; c < this.grid.cols; c++) {
+                    row.push(this.grid.get(r, c) || ".");
+                }
+                rows.push(row.join(" "));
+            }
+            console.log(`[WORD-VAL] Grid state:\n${rows.join("\n")}`);
         }
 
         if (result.words.length === 0 && result.cells.size === 0) {
@@ -4592,6 +5970,7 @@ class Game {
             this.clearing = false;
             this._claimAnimating = false;
             this._computeHintCells();
+            this._hideChainBanner();
 
             // Chain words were already shown via _addWordPopupRow during claiming
             if (this._chainWords && this._chainWords.length > 0) {
@@ -4647,6 +6026,7 @@ class Game {
                     // Gravity shifts cells — clear all validated groups (rescan will re-detect)
                     this._validatedWordGroups = [];
                     this._rebuildValidatedCells();
+
                     this.pendingGravityMoves = moves.map(m => ({ ...m, progress: 0 }));
                     this.renderer.gravityAnims = this.pendingGravityMoves;
                     this.clearPhase = "gravity";
@@ -4695,6 +6075,28 @@ class Game {
         }
     }
 
+    _showChainBanner(chainCount) {
+        const el = this.els.chainBanner;
+        if (!el) return;
+        if (chainCount < 2) {
+            this._hideChainBanner();
+            return;
+        }
+        const labels = ["", "", "CHAIN ×2", "CHAIN ×3!", "CHAIN ×4!!", "🔥 CHAIN ×5!!", "🔥🔥 CHAIN ×6!!!"];
+        el.textContent = chainCount < labels.length ? labels[chainCount] : `🔥🔥🔥 CHAIN ×${chainCount}!!!`;
+        el.classList.remove("hidden", "pop");
+        el.classList.add("visible");
+        void el.offsetWidth;
+        el.classList.add("pop");
+    }
+
+    _hideChainBanner() {
+        const el = this.els.chainBanner;
+        if (!el) return;
+        el.classList.remove("visible", "pop");
+        el.classList.add("hidden");
+    }
+
     _addWordPopupRow(entry) {
         const container = this.els.wordPopup;
 
@@ -4728,8 +6130,8 @@ class Game {
             });
 
             const pts = document.createElement("span");
-            pts.className = "word-popup-pts";
-            pts.textContent = "+" + entry.pts;
+            pts.className = "word-popup-pts" + (entry.multiplied ? " multiplied" : "");
+            pts.textContent = "+" + entry.pts + (entry.multiplied ? " ×2" : "");
             pts.style.setProperty("--d", letters.length * 0.06 + 0.1 + "s");
             row.appendChild(pts);
 
@@ -4784,6 +6186,7 @@ class Game {
 
         // Clean up bonus indicators
         this.freezeActive = false;
+        this._closeRadialMenu();
         this.els.freezeIndicator.classList.add("hidden");
         this.els.score2xIndicator.classList.add("hidden");
         this.els.targetWordDisplay.classList.add("hidden");
@@ -4843,6 +6246,7 @@ class Game {
                 targetWordsCompleted: this.targetWordsCompleted || 0,
                 bonusWordsCompleted: (this.categoryWordsFound || []).length,
                 categoryKey: this.activeCategoryKey || null,
+                comboMax: this.bestCombo || 0,
             });
         }
 
@@ -4851,6 +6255,34 @@ class Game {
 
         // Award XP
         const xpResult = this.profileMgr.awardXP(xpEarned);
+
+        // ── Award coins ──
+        const gameCoins = calculateGameCoins({
+            score: this.score,
+            wordsFound: wordsCount,
+            isNewHighScore: isNew,
+            isChallenge: !!this.activeChallenge,
+            challengeType: this.activeChallenge,
+            comboMax: this.bestCombo,
+            playerLevel: (this.profileMgr.getLevelInfo() || {}).level || 1,
+            isFirstGameToday: this._dailyInfo ? this._dailyInfo.isFirstGameToday : false,
+            playStreak: this._dailyInfo ? this._dailyInfo.playStreak : 0,
+        });
+        const totalCoins = (this._coinsThisGame || 0) + gameCoins;
+        // Level-up coin bonus
+        let levelUpCoins = 0;
+        if (xpResult.leveled) {
+            for (let lv = xpResult.oldLevel + 1; lv <= xpResult.newLevel; lv++) {
+                levelUpCoins += COIN_LEVEL_UP_BASE + lv * COIN_LEVEL_UP_PER_LEVEL;
+            }
+        }
+        const finalCoins = totalCoins + levelUpCoins;
+        this.profileMgr.addCoins(finalCoins);
+        this._lastGameCoins = finalCoins;
+
+        // Check milestones
+        const newMilestones = this.profileMgr.checkMilestones();
+        this._lastMilestones = newMilestones;
 
         // Build final score text (add challenge info if applicable)
         let finalText = `Score: ${this.score}`;
@@ -4880,6 +6312,18 @@ class Game {
 
         // ── Show gameover screen with XP animation ──
         this._showGameOverXP(xpEarned, xpResult, wasFirstGame);
+
+        // ── Sync game-over state to Preact store ──
+        gameStore.set({
+            gameState: State.GAMEOVER,
+            finalScore: this.score,
+            isNewHighScore: isNew,
+            xpEarned,
+            bestCombo: this.bestCombo,
+            wordsFoundCount: this._totalWordsThisGame,
+            difficultyLevel: this._difficultyLevel,
+            wordsFound: (this.wordsFound || []).slice(),
+        });
     }
 
     // ── Level / XP display methods ──
@@ -4910,12 +6354,28 @@ class Game {
         this.els.xpEarnedText.textContent = `+${xpEarned} XP`;
         this.els.xpEarnedText.classList.remove("visible");
 
+        // Show coin earnings
+        const coinsEarned = this._lastGameCoins || 0;
+        if (this.els.coinsEarnedText) {
+            this.els.coinsEarnedText.textContent = `+${coinsEarned} Coins`;
+        }
+
         this._showScreen("gameover");
 
         // Animate after a brief delay
         setTimeout(() => {
             this.els.xpEarnedText.classList.add("visible");
         }, 300);
+
+        // Show milestone toasts after a delay
+        const milestones = this._lastMilestones || [];
+        if (milestones.length > 0) {
+            milestones.forEach((m, i) => {
+                setTimeout(() => {
+                    this._showMilestoneToast(m);
+                }, 1500 + i * 1200);
+            });
+        }
 
         setTimeout(() => {
             this.els.gameoverXpBarFill.style.transition = "width 1.2s cubic-bezier(0.22,1,0.36,1)";
@@ -5022,8 +6482,8 @@ class Game {
             const cycle = t % 3;
             const fillPct = cycle < 2 ? Math.min(cycle / 2, 1) : 1;
             const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-            grad.addColorStop(0, "#3b82f6");
-            grad.addColorStop(1, "#60a5fa");
+            grad.addColorStop(0, "#9a9478");
+            grad.addColorStop(1, "#b0a878");
             ctx.fillStyle = grad;
             ctx.fillRect(barX, barY, barW * fillPct, barH);
 
@@ -5031,13 +6491,13 @@ class Game {
             if (cycle >= 2) {
                 const flash = Math.sin(t * 8) > 0;
                 ctx.font = "bold 20px sans-serif";
-                ctx.fillStyle = flash ? "#ffd700" : "#ff9800";
+                ctx.fillStyle = flash ? "#e2d8a6" : "#b0a878";
                 ctx.fillText("LEVEL UP!", w / 2, 95);
             }
 
             // Info text
             ctx.font = "12px sans-serif";
-            ctx.fillStyle = "#888";
+            ctx.fillStyle = "#9a9680";
             ctx.fillText("Earn XP by playing games", w / 2, 125);
             ctx.fillText("Harder modes = more XP", w / 2, 142);
             ctx.fillText("Beat your best = bonus XP!", w / 2, 159);
@@ -5174,6 +6634,290 @@ class Game {
         this.els.menuProfileName.textContent = `👤 ${profile.username}`;
         this.els.menuGamesPlayed.textContent = profile.gamesPlayed;
         this.els.menuTotalWords.textContent = Array.isArray(profile.uniqueWordsFound) ? profile.uniqueWordsFound.length : profile.totalWords;
+        // Update coin display
+        if (this.els.menuCoins) {
+            this.els.menuCoins.textContent = this.profileMgr.getCoins();
+        }
+    }
+
+    // ── Shop rendering ──
+
+    _renderShop() {
+        // Update coin display
+        this.els.shopCoins.textContent = this.profileMgr.getCoins();
+        // Default to first tab
+        if (!this._shopCurrentTab) this._shopCurrentTab = "grid_themes";
+        this.els.shopTabs.forEach(t => t.classList.toggle("active", t.dataset.tab === this._shopCurrentTab));
+        this._renderShopTab(this._shopCurrentTab);
+    }
+
+    _renderShopTab(tabName) {
+        const content = this.els.shopContent;
+        content.innerHTML = "";
+
+        if (tabName === "bonus_slots") {
+            this._renderSlotsTab(content);
+            return;
+        }
+
+        const equipped = this.profileMgr.getEquipped();
+        const items = Object.entries(SHOP_ITEMS).filter(([, v]) => v.category === tabName);
+
+        if (items.length === 0) {
+            content.innerHTML = '<p style="color:#888;text-align:center;padding:2rem;">Coming soon!</p>';
+            return;
+        }
+
+        const grid = document.createElement("div");
+        grid.className = "shop-grid";
+
+        for (const [id, item] of items) {
+            const owned = this.profileMgr.ownsItem(id);
+            const isEquipped = this._isItemEquipped(id, equipped);
+            const isPerk = !!item.stackSize;
+            const perkCount = isPerk ? this.profileMgr.getPerkCount(id) : 0;
+
+            const card = document.createElement("div");
+            card.className = "shop-item" + (isEquipped ? " equipped" : "") + (owned && !isPerk ? " owned" : "");
+
+            let badgeHtml = "";
+            if (isEquipped) badgeHtml = '<span class="shop-item-badge equipped-badge">Equipped</span>';
+            else if (owned && !isPerk) badgeHtml = '<span class="shop-item-badge owned-badge">Owned</span>';
+
+            let previewHtml = "";
+            if (item.color) {
+                previewHtml = `<div class="shop-item-color-swatch" style="background:${item.color}"></div>`;
+            }
+
+            let perkCountHtml = isPerk && perkCount > 0 ? `<div class="shop-perk-count">${perkCount} remaining</div>` : "";
+
+            card.innerHTML = `
+                ${badgeHtml}
+                <div class="shop-item-name">${item.name}</div>
+                ${previewHtml}
+                <div class="shop-item-desc">${item.preview}</div>
+                ${perkCountHtml}
+                <div class="shop-item-actions">
+                    ${this._shopItemButton(id, item, owned, isEquipped, isPerk)}
+                </div>
+            `;
+
+            // Bind actions
+            const btn = card.querySelector(".shop-action-btn");
+            if (btn) {
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    this._handleShopAction(id, item, owned, isEquipped, isPerk);
+                });
+            }
+
+            grid.appendChild(card);
+        }
+
+        content.appendChild(grid);
+    }
+
+    _isItemEquipped(id, equipped) {
+        return equipped.gridTheme === id || equipped.blockStyle === id;
+    }
+
+    _shopItemButton(id, item, owned, isEquipped, isPerk) {
+        if (isEquipped) return '<button class="shop-action-btn equipped-btn" disabled>Equipped</button>';
+        if (owned && !isPerk) return '<button class="shop-action-btn equip-btn">Equip</button>';
+        const coins = this.profileMgr.getCoins();
+        const canAfford = coins >= item.price;
+        if (item.price === 0 && !owned) return '<button class="shop-action-btn equip-btn">Equip</button>';
+        const label = isPerk ? `Buy ×${item.stackSize} · ${item.price}` : `Buy · ${item.price}`;
+        return `<button class="shop-action-btn buy-btn${canAfford ? "" : " disabled-btn"}" ${canAfford ? "" : "disabled"}>${label}</button>`;
+    }
+
+    _handleShopAction(id, item, owned, isEquipped, isPerk) {
+        if (isEquipped) return;
+
+        // Equip owned item
+        if (owned && !isPerk) {
+            this.profileMgr.equipItem(id);
+            this._renderShop();
+            this._showShopToast(`${item.name} equipped!`);
+            return;
+        }
+
+        // Free default item — just equip
+        if (item.price === 0 && !owned) {
+            this.profileMgr.equipItem(id);
+            this._renderShop();
+            return;
+        }
+
+        // Purchase
+        const result = this.profileMgr.purchaseItem(id);
+        if (result.success) {
+            // Auto-equip non-perk items on purchase
+            if (!isPerk) {
+                this.profileMgr.equipItem(id);
+            }
+            this._renderShop();
+            const msg = isPerk
+                ? `Bought ${item.stackSize}× ${item.name}! (${result.quantity} total)`
+                : `${item.name} purchased & equipped!`;
+            this._showShopToast(msg);
+        } else if (result.reason === "insufficient_coins") {
+            this._showShopToast("Not enough coins!");
+        }
+    }
+
+    _renderSlotsTab(container) {
+        const maxSlots = this.profileMgr.getMaxBonusSlots();
+        const contents = this.profileMgr.getBonusSlotContents();
+        const coins = this.profileMgr.getCoins();
+        const FILL_COST = 500;
+        const bonusTypes = BONUS_TYPE_POOL;
+        const bonusIcons = {
+            [BONUS_TYPES.LETTER_PICK]: "🔤",
+            [BONUS_TYPES.BOMB]: "💣",
+            [BONUS_TYPES.WILDCARD]: "⭐",
+            [BONUS_TYPES.ROW_CLEAR]: "─",
+            [BONUS_TYPES.FREEZE]: "❄️",
+            [BONUS_TYPES.SHUFFLE]: "⇄",
+            [BONUS_TYPES.SCORE_2X]: "2×",
+        };
+        const bonusLabels = {
+            [BONUS_TYPES.LETTER_PICK]: "Letter",
+            [BONUS_TYPES.BOMB]: "Bomb",
+            [BONUS_TYPES.WILDCARD]: "Wild",
+            [BONUS_TYPES.ROW_CLEAR]: "Line",
+            [BONUS_TYPES.FREEZE]: "Freeze",
+            [BONUS_TYPES.SHUFFLE]: "Shuffle",
+            [BONUS_TYPES.SCORE_2X]: "2× Score",
+        };
+
+        let html = '<div class="slots-config">';
+        html += '<h3 class="slots-config-title">Bonus Slots</h3>';
+        html += '<p class="slots-config-desc">Buy slots, then fill them with bonuses to use during gameplay!</p>';
+
+        // Render 3 slots
+        for (let i = 0; i < 3; i++) {
+            const locked = i >= maxSlots;
+            const filled = contents[i];
+            const slotItemId = `bonus_slot_${i + 1}`;
+            const slotItem = SHOP_ITEMS[slotItemId];
+
+            html += `<div class="slot-row${locked ? " locked" : ""}${filled ? " filled" : ""}">`;
+            html += `<div class="slot-icon">${filled ? (bonusIcons[filled] || "?") : (locked ? "🔒" : "○")}</div>`;
+            html += `<div class="slot-info">`;
+            html += `<span class="slot-label">Slot ${i + 1}</span>`;
+
+            if (locked) {
+                // Buy slot button
+                const canAfford = coins >= slotItem.price;
+                // Must buy sequentially
+                const canBuy = i === maxSlots;
+                html += `<span class="slot-status">Locked</span>`;
+                html += `</div>`;
+                if (canBuy) {
+                    html += `<button class="shop-action-btn buy-btn slot-buy-btn${canAfford ? "" : " disabled-btn"}" data-slot-id="${slotItemId}" ${canAfford ? "" : "disabled"}>Unlock · ${slotItem.price}</button>`;
+                }
+            } else if (filled) {
+                // Show what's in the slot
+                html += `<span class="slot-status filled-status">${bonusLabels[filled] || filled}</span>`;
+                html += `</div>`;
+            } else {
+                // Empty — show fill dropdown
+                html += `<span class="slot-status">Empty</span>`;
+                html += `</div>`;
+                html += `<div class="slot-fill-controls">`;
+                html += `<select class="slot-fill-select" data-slot="${i}">`;
+                html += `<option value="">Choose bonus…</option>`;
+                for (const bt of bonusTypes) {
+                    html += `<option value="${bt}">${bonusIcons[bt]} ${bonusLabels[bt]}</option>`;
+                }
+                html += `</select>`;
+                const canFill = coins >= FILL_COST;
+                html += `<button class="shop-action-btn buy-btn slot-fill-btn${canFill ? "" : " disabled-btn"}" data-slot="${i}" ${canFill ? "" : "disabled"}>Fill · ${FILL_COST}</button>`;
+                html += `</div>`;
+            }
+
+            html += '</div>';
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+
+        // Bind slot buy buttons
+        container.querySelectorAll(".slot-buy-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const slotItemId = btn.dataset.slotId;
+                const result = this.profileMgr.purchaseItem(slotItemId);
+                if (result.success) {
+                    this._showShopToast(`${SHOP_ITEMS[slotItemId].name} unlocked!`);
+                    this._renderShop();
+                } else if (result.reason === "insufficient_coins") {
+                    this._showShopToast("Not enough coins!");
+                }
+            });
+        });
+
+        // Bind fill buttons
+        container.querySelectorAll(".slot-fill-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const slotIdx = parseInt(btn.dataset.slot, 10);
+                const select = container.querySelector(`.slot-fill-select[data-slot="${slotIdx}"]`);
+                const bonusType = select ? select.value : "";
+                if (!bonusType) {
+                    this._showShopToast("Choose a bonus type first!");
+                    return;
+                }
+                const result = this.profileMgr.fillBonusSlot(slotIdx, bonusType);
+                if (result.success) {
+                    this._showShopToast(`Slot ${slotIdx + 1} filled with ${bonusLabels[bonusType]}!`);
+                    this._renderShop();
+                } else if (result.reason === "insufficient_coins") {
+                    this._showShopToast("Not enough coins!");
+                } else if (result.reason === "slot_filled") {
+                    this._showShopToast("Slot already filled!");
+                }
+            });
+        });
+    }
+
+    _showShopToast(msg) {
+        // Remove existing toast
+        const existing = document.querySelector(".shop-toast");
+        if (existing) existing.remove();
+
+        const toast = document.createElement("div");
+        toast.className = "shop-toast";
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        // Force reflow then add visible class
+        requestAnimationFrame(() => {
+            toast.classList.add("visible");
+            setTimeout(() => {
+                toast.classList.remove("visible");
+                setTimeout(() => toast.remove(), 400);
+            }, 2000);
+        });
+    }
+
+    _showMilestoneToast(milestone) {
+        const toast = document.createElement("div");
+        toast.className = "milestone-toast";
+        toast.innerHTML = `
+            <div class="milestone-toast-icon">🏆</div>
+            <div class="milestone-toast-body">
+                <div class="milestone-toast-title">${milestone.label}</div>
+                <div class="milestone-toast-desc">${milestone.desc}</div>
+                <div class="milestone-toast-coins">+${milestone.coins} Coins</div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            toast.classList.add("visible");
+            setTimeout(() => {
+                toast.classList.remove("visible");
+                setTimeout(() => toast.remove(), 500);
+            }, 2500);
+        });
     }
 
     // ── Words Found rendering ──
@@ -5233,11 +6977,11 @@ class Game {
             const ch = this.activeChallenge || this._gameOverChallenge;
             let label = "Bonus Words";
             if (ch === CHALLENGE_TYPES.TARGET_WORD) {
-                label = "🎯 Target Words";
+                label = "◎ Target Words";
             } else if (ch === CHALLENGE_TYPES.WORD_CATEGORY) {
                 const catKey = this.activeCategoryKey || this._gameOverCategoryKey;
                 const catMeta = catKey && WORD_CATEGORIES[catKey];
-                label = catMeta ? `${catMeta.icon} ${catMeta.label}` : "📂 Category Words";
+                label = catMeta ? `${catMeta.icon} ${catMeta.label}` : "▦ Category Words";
             }
             this.els.bonusWordsCount.textContent = `${bonusWords.length} ${label} found`;
 
@@ -5368,15 +7112,15 @@ class Game {
         };
         const gBg = (ctx, ox, oy, cs, gs) => {
             for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
-                ctx.fillStyle = '#1e1e30';
+                ctx.fillStyle = '#353530';
                 ctx.fillRect(ox + c * cs + 1, oy + r * cs + 1, cs - 2, cs - 2);
-                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                 ctx.strokeRect(ox + c * cs, oy + r * cs, cs, cs);
             }
         };
         const gC = (ctx, ox, oy, cs, r, c, ltr, bg, glw) => {
             const x = ox + c * cs, y = oy + r * cs;
-            ctx.fillStyle = bg || '#2a2a3e';
+            ctx.fillStyle = bg || '#3a3933';
             ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
             if (glw) {
                 ctx.save(); ctx.shadowColor = glw; ctx.shadowBlur = 10;
@@ -5392,10 +7136,10 @@ class Game {
         };
         const gF = (ctx, ox, oy, cs, r, c, ltr) => {
             const x = ox + c * cs, y = oy + r * cs;
-            ctx.fillStyle = '#3a3a5e';
+            ctx.fillStyle = '#3a3933';
             ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-            ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 12;
-            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+            ctx.save(); ctx.shadowColor = '#e2d8a6'; ctx.shadowBlur = 12;
+            ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 2;
             ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4); ctx.restore();
             ctx.fillStyle = '#fff';
             ctx.font = `bold ${Math.floor(cs * 0.45)}px sans-serif`;
@@ -5404,7 +7148,7 @@ class Game {
         };
         const gG = (ctx, ox, oy, cs, r, c) => {
             const x = ox + c * cs, y = oy + r * cs;
-            ctx.save(); ctx.strokeStyle = 'rgba(255,215,0,0.2)'; ctx.lineWidth = 1;
+            ctx.save(); ctx.strokeStyle = 'rgba(226,216,166,0.2)'; ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
             ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
             ctx.setLineDash([]); ctx.restore();
@@ -5412,14 +7156,14 @@ class Game {
         const gT = (ctx, x, y, txt, clr, sz, a) => {
             ctx.save();
             if (a !== undefined) ctx.globalAlpha = a;
-            ctx.fillStyle = clr || '#ffd700';
+            ctx.fillStyle = clr || '#e2d8a6';
             ctx.font = `bold ${sz || 16}px sans-serif`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(txt, x, y); ctx.restore();
         };
         const gA = (ctx, x, y, dir, sz) => {
             sz = sz || 18;
-            ctx.save(); ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3;
+            ctx.save(); ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 3;
             ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
             const h = sz * 0.4;
             if (dir === 'left') {
@@ -5438,9 +7182,9 @@ class Game {
             const p = 0.5 + 0.5 * Math.sin(t * 6);
             ctx.save();
             ctx.beginPath(); ctx.arc(x, y, 10 + p * 12, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(255,215,0,${0.3 + p * 0.5})`; ctx.lineWidth = 2; ctx.stroke();
+            ctx.strokeStyle = `rgba(226,216,166,${0.3 + p * 0.5})`; ctx.lineWidth = 2; ctx.stroke();
             ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
-            ctx.fillStyle = '#ffd700'; ctx.fill(); ctx.restore();
+            ctx.fillStyle = '#e2d8a6'; ctx.fill(); ctx.restore();
         };
         const ease = v => v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2;
         const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
@@ -5451,7 +7195,7 @@ class Game {
         this._tutorialCategories = [
             // ═══ ADD TO PHONE ═══
             {
-                id: 'addphone', icon: '📱', label: 'Add Game to Phone',
+                id: 'addphone', icon: '□', label: 'Add Game to Phone',
                 desc: 'Install the game on your iPhone home screen',
                 slides: [
                     { title: 'Step 1: Open in Safari', desc: 'Open this game\'s URL in Safari on your iPhone. This only works in Safari — Chrome and other browsers don\'t support adding web apps to the home screen.', img: 'TUTORIAL/1.png' },
@@ -5463,7 +7207,7 @@ class Game {
 
             // ═══ HOW TO PLAY ═══
             {
-                id: 'basics', icon: '🎮', label: 'How to Play',
+                id: 'basics', icon: '▷', label: 'How to Play',
                 desc: 'Learn the basics — dropping letters, forming words, and scoring points',
                 slides: [
                     {
@@ -5474,7 +7218,7 @@ class Game {
                             gBg(ctx, ox, oy, cs, gs);
                             const placed = [[4,0,'W'],[4,1,'O'],[4,2,'R'],[4,3,'D'],[4,4,'S'],
                                             [3,1,'A'],[3,3,'L'],[3,4,'E']];
-                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             const ltrs = 'TSPKRN', cyc = t % 3;
                             const ltr = ltrs[Math.floor(t / 3) % ltrs.length];
                             const tgtR = 2, col = 2;
@@ -5492,25 +7236,25 @@ class Game {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
                             const placed = [[4,1,'H'],[4,2,'E'],[4,3,'L'],[4,4,'P'],[3,3,'A']];
-                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             const ph = t % 7;
                             let col, row;
                             if (ph < 2) {
                                 col = 2 + ease(Math.min(ph, 1)) * 2; row = 0.5;
                                 const ax = ox + 3.5 * cs, ay = oy + 0.5 * cs;
                                 gA(ctx, ax, ay, 'right', cs * 0.35);
-                                gT(ctx, w / 2, oy - cs * 0.7, 'Swipe Right →', '#ffd700', Math.floor(cs * 0.3));
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Swipe Right →', '#e2d8a6', Math.floor(cs * 0.3));
                             } else if (ph < 4) {
                                 const p = ph - 2;
                                 col = 4 - ease(Math.min(p, 1)) * 4; row = 0.5;
                                 const ax = ox + 1.5 * cs, ay = oy + 0.5 * cs;
                                 gA(ctx, ax, ay, 'left', cs * 0.35);
-                                gT(ctx, w / 2, oy - cs * 0.7, '← Swipe Left', '#ffd700', Math.floor(cs * 0.3));
+                                gT(ctx, w / 2, oy - cs * 0.7, '← Swipe Left', '#e2d8a6', Math.floor(cs * 0.3));
                             } else {
                                 const p = ph - 4;
                                 col = 0; row = clamp(ease(Math.min(p * 2, 1)) * 3, 0, 3);
                                 gA(ctx, ox + 0.5 * cs, oy + 1.5 * cs, 'down', cs * 0.35);
-                                gT(ctx, w / 2, oy - cs * 0.7, 'Swipe Down ↓', '#ffd700', Math.floor(cs * 0.3));
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Swipe Down ↓', '#e2d8a6', Math.floor(cs * 0.3));
                             }
                             col = clamp(Math.round(col), 0, gs - 1);
                             gG(ctx, ox, oy, cs, col === 0 ? 3 : 4, col);
@@ -5541,10 +7285,10 @@ class Game {
                                 if (grid[r][c] === ' ') continue;
                                 const hit = active.cells.some(([wr,wc]) => wr === r && wc === c);
                                 gC(ctx, ox, oy, cs, r, c, grid[r][c],
-                                   hit ? '#2e5c2e' : '#2a2a3e',
-                                   hit ? '#4caf50' : null);
+                                   hit ? '#4a5c38' : '#3a3933',
+                                   hit ? '#8cb860' : null);
                             }
-                            gT(ctx, w / 2, oy - cs * 0.7, active.label, '#4caf50', Math.floor(cs * 0.35));
+                            gT(ctx, w / 2, oy - cs * 0.7, active.label, '#8cb860', Math.floor(cs * 0.35));
                         }
                     },
                     {
@@ -5561,16 +7305,16 @@ class Game {
                                 for (const [r,c,l] of placed) {
                                     const hit = wordCells.some(([wr,wc]) => wr === r && wc === c);
                                     gC(ctx, ox, oy, cs, r, c, l,
-                                       hit ? '#2e5c2e' : '#2a2a3e',
-                                       hit ? '#4caf50' : null);
+                                       hit ? '#4a5c38' : '#3a3933',
+                                       hit ? '#8cb860' : null);
                                 }
                                 if (cyc > 0.5) {
                                     const tapX = ox + 1 * cs + cs / 2;
                                     const tapY = oy + 4 * cs + cs / 2;
                                     gTap(ctx, tapX, tapY, t);
-                                    gT(ctx, w / 2, oy - cs * 0.7, 'TAP to claim!', '#ffd700', Math.floor(cs * 0.35));
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'TAP to claim!', '#e2d8a6', Math.floor(cs * 0.35));
                                 } else {
-                                    gT(ctx, w / 2, oy - cs * 0.7, 'Word found!', '#4caf50', Math.floor(cs * 0.35));
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Word found!', '#8cb860', Math.floor(cs * 0.35));
                                 }
                             } else {
                                 const alpha = 1 - (cyc - 2.5) * 2;
@@ -5578,14 +7322,14 @@ class Game {
                                     const hit = wordCells.some(([wr,wc]) => wr === r && wc === c);
                                     if (hit) {
                                         ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
-                                        gC(ctx, ox, oy, cs, r, c, l, '#2e5c2e', '#4caf50');
+                                        gC(ctx, ox, oy, cs, r, c, l, '#4a5c38', '#8cb860');
                                         ctx.restore();
                                     } else {
-                                        gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                        gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                                     }
                                 }
                                 const pts = Math.floor(clamp(1 - alpha, 0, 1) * 90);
-                                if (alpha < 0.5) gT(ctx, w / 2, oy + 2 * cs, '+' + pts + ' pts!', '#ffd700',
+                                if (alpha < 0.5) gT(ctx, w / 2, oy + 2 * cs, '+' + pts + ' pts!', '#e2d8a6',
                                     Math.floor(cs * 0.5), clamp(1 - (cyc - 3) * 3, 0, 1));
                             }
                         }
@@ -5607,16 +7351,16 @@ class Game {
                                 for (const [r,c,l] of placed) {
                                     const hit = allGreen.some(([wr,wc]) => wr === r && wc === c);
                                     gC(ctx, ox, oy, cs, r, c, l,
-                                       hit ? '#2e5c2e' : '#2a2a3e',
-                                       hit ? '#4caf50' : null);
+                                       hit ? '#4a5c38' : '#3a3933',
+                                       hit ? '#8cb860' : null);
                                 }
                                 if (cyc < 1.5) {
-                                    gT(ctx, w / 2, oy - cs * 0.7, '"RANK" + "TAN"', '#4caf50', Math.floor(cs * 0.3));
+                                    gT(ctx, w / 2, oy - cs * 0.7, '"RANK" + "TAN"', '#8cb860', Math.floor(cs * 0.3));
                                 } else {
                                     const tapX = ox + sharedC * cs + cs / 2;
                                     const tapY = oy + sharedR * cs + cs / 2;
                                     gTap(ctx, tapX, tapY, t);
-                                    gT(ctx, w / 2, oy - cs * 0.7, 'TAP shared letter!', '#ffd700', Math.floor(cs * 0.3));
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'TAP shared letter!', '#e2d8a6', Math.floor(cs * 0.3));
                                 }
                             } else {
                                 const alpha = 1 - (cyc - 3) * 0.8;
@@ -5624,14 +7368,14 @@ class Game {
                                     const hit = allGreen.some(([wr,wc]) => wr === r && wc === c);
                                     if (hit) {
                                         ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
-                                        gC(ctx, ox, oy, cs, r, c, l, '#2e5c2e', '#4caf50');
+                                        gC(ctx, ox, oy, cs, r, c, l, '#4a5c38', '#8cb860');
                                         ctx.restore();
                                     } else {
-                                        gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                        gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                                     }
                                 }
                                 const pts = Math.floor(clamp(1 - alpha, 0, 1) * 340);
-                                if (alpha < 0.5) gT(ctx, w / 2, oy + 2 * cs, '+' + pts + ' pts!', '#ffd700',
+                                if (alpha < 0.5) gT(ctx, w / 2, oy + 2 * cs, '+' + pts + ' pts!', '#e2d8a6',
                                     Math.floor(cs * 0.5), clamp(1 - (cyc - 3.8) * 3, 0, 1));
                             }
                         }
@@ -5650,9 +7394,9 @@ class Game {
                                 const word1 = [[4,0],[4,1],[4,2]];
                                 for (const [r,c,l] of cells) {
                                     const hit = word1.some(([wr,wc]) => wr === r && wc === c);
-                                    gC(ctx, ox, oy, cs, r, c, l, hit ? '#2e5c2e' : '#2a2a3e', hit ? '#4caf50' : null);
+                                    gC(ctx, ox, oy, cs, r, c, l, hit ? '#4a5c38' : '#3a3933', hit ? '#8cb860' : null);
                                 }
-                                gT(ctx, w / 2, oy - cs * 0.7, '"SET" found!', '#4caf50', Math.floor(cs * 0.35));
+                                gT(ctx, w / 2, oy - cs * 0.7, '"SET" found!', '#8cb860', Math.floor(cs * 0.35));
                             } else if (cyc < 3.5) {
                                 const p = cyc - 2;
                                 const fallCells = [[3,0,'R'],[3,1,'A'],[3,2,'N'],[3,4,'D'],
@@ -5662,7 +7406,7 @@ class Game {
                                 const cells = p < 0.8 ? fallCells.map(([r,c,l]) =>
                                     [lerp(r, r + 1, ease(Math.min(p / 0.8, 1))), c, l]
                                 ) : landedCells.map(([r,c,l]) => [r,c,l]);
-                                for (const [r,c,l] of cells) gC(ctx, ox, oy, cs, Math.round(r), c, l, '#2a2a3e');
+                                for (const [r,c,l] of cells) gC(ctx, ox, oy, cs, Math.round(r), c, l, '#3a3933');
                                 gT(ctx, w / 2, oy - cs * 0.7, 'Letters fall...', '#aaa', Math.floor(cs * 0.35));
                             } else {
                                 const cells = [[4,0,'R'],[4,1,'A'],[4,2,'N'],[4,3,'X'],[4,4,'D'],
@@ -5670,10 +7414,10 @@ class Game {
                                 const word2 = [[4,0],[4,1],[4,2]];
                                 for (const [r,c,l] of cells) {
                                     const hit = word2.some(([wr,wc]) => wr === r && wc === c);
-                                    gC(ctx, ox, oy, cs, r, c, l, hit ? '#2e5c2e' : '#2a2a3e', hit ? '#4caf50' : null);
+                                    gC(ctx, ox, oy, cs, r, c, l, hit ? '#4a5c38' : '#3a3933', hit ? '#8cb860' : null);
                                 }
                                 const flash = Math.sin(t * 8) > 0;
-                                gT(ctx, w / 2, oy - cs * 0.7, '⚡ CHAIN +50!', flash ? '#ff9800' : '#ffd700',
+                                gT(ctx, w / 2, oy - cs * 0.7, 'CHAIN +50!', flash ? '#b0a878' : '#e2d8a6',
                                     Math.floor(cs * 0.4));
                             }
                         }
@@ -5686,30 +7430,30 @@ class Game {
                             gBg(ctx, ox, oy, cs, gs);
                             const placed = [[4,0,'P'],[4,1,'L'],[4,2,'A'],[4,3,'N'],[4,4,'E'],
                                             [3,2,'T']];
-                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             const cyc = t % 5;
                             if (cyc < 2) {
                                 const row = lerp(-1, 2, ease(Math.min(cyc / 1.5, 1)));
                                 gG(ctx, ox, oy, cs, 2, 2);
                                 gF(ctx, ox, oy, cs, clamp(row, -0.5, 2), 2, 'H');
                             } else if (cyc < 4) {
-                                gC(ctx, ox, oy, cs, 2, 2, 'H', '#2a2a3e');
+                                gC(ctx, ox, oy, cs, 2, 2, 'H', '#3a3933');
                                 const remain = 2 - (cyc - 2);
                                 const barW = cs * 3, barH = 8;
                                 const bx = (w - barW) / 2, by = oy - cs * 1.2;
-                                ctx.fillStyle = '#333';
+                                ctx.fillStyle = '#4a493e';
                                 ctx.fillRect(bx, by, barW, barH);
-                                ctx.fillStyle = '#ffd700';
+                                ctx.fillStyle = '#e2d8a6';
                                 ctx.fillRect(bx, by, barW * (remain / 2), barH);
-                                gT(ctx, w / 2, by - 14, remain.toFixed(1) + 's', '#ffd700', Math.floor(cs * 0.3));
+                                gT(ctx, w / 2, by - 14, remain.toFixed(1) + 's', '#e2d8a6', Math.floor(cs * 0.3));
                                 if (cyc > 3) {
                                     gA(ctx, w / 2, by + cs * 0.8, 'down', 14);
                                     gT(ctx, w / 2, by + cs * 1.4, 'Swipe ↓ to skip', '#888', Math.floor(cs * 0.22));
                                 }
                             } else {
-                                gC(ctx, ox, oy, cs, 2, 2, 'H', '#2a2a3e');
+                                gC(ctx, ox, oy, cs, 2, 2, 'H', '#3a3933');
                                 gF(ctx, ox, oy, cs, -0.5, 2, 'R');
-                                gT(ctx, w / 2, oy - cs * 0.9, 'Next block!', '#4caf50', Math.floor(cs * 0.3));
+                                gT(ctx, w / 2, oy - cs * 0.9, 'Next block!', '#8cb860', Math.floor(cs * 0.3));
                             }
                         }
                     },
@@ -5721,7 +7465,7 @@ class Game {
                             gBg(ctx, ox, oy, cs, gs);
                             const placed = [[4,0,'G'],[4,1,'A'],[4,2,'M'],[4,3,'E'],[4,4,'S'],
                                             [3,1,'R'],[3,2,'I'],[3,3,'D']];
-                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             const cyc = t % 4;
                             // Pause button position - right side, near top (spawn area)
                             const btnX = ox + cs * gs + cs * 0.5, btnY = oy + cs * 0.5;
@@ -5743,12 +7487,12 @@ class Game {
                                 ctx.fillText('⏸', 0, 1);
                                 ctx.restore();
                                 gTap(ctx, btnX, btnY, t);
-                                gT(ctx, w / 2, oy - cs * 1.3, 'Tap ⏸ to pause!', '#ffd700', Math.floor(cs * 0.3));
+                                gT(ctx, w / 2, oy - cs * 1.3, 'Tap ⏸ to pause!', '#e2d8a6', Math.floor(cs * 0.3));
                             } else {
                                 // Show "PAUSED" overlay
                                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
                                 ctx.fillRect(ox, oy, cs * gs, cs * gs);
-                                const flash = Math.sin(t * 3) > 0 ? '#fff' : '#ccc';
+                                const flash = Math.sin(t * 3) > 0 ? '#fff' : '#b0a878';
                                 gT(ctx, w / 2, oy + cs * 2.5, '⏸ PAUSED', flash, Math.floor(cs * 0.55));
                                 gT(ctx, w / 2, oy + cs * 3.3, 'Tap Resume to continue', '#999', Math.floor(cs * 0.22));
                             }
@@ -5759,7 +7503,7 @@ class Game {
 
             // ═══ BONUSES & POWER-UPS ═══
             {
-                id: 'bonuses', icon: '⭐', label: 'Bonuses & Power-Ups',
+                id: 'bonuses', icon: '◇', label: 'Bonuses & Power-Ups',
                 desc: 'Earn powerful abilities every 1,000 points — 7 different types!',
                 slides: [
                     {
@@ -5775,16 +7519,16 @@ class Game {
                                 ctx.save();
                                 ctx.translate(w / 2, h * 0.5);
                                 ctx.scale(scale, scale);
-                                gT(ctx, 0, 0, '🎁 BONUS!', '#ffd700', 32);
+                                gT(ctx, 0, 0, 'BONUS!', '#e2d8a6', 32);
                                 ctx.restore();
-                                const icons = ['🔤', '💣', '★', '🧹', '❄️', '🔀', '×2'];
+                                const icons = ['A', '×', '★', '─', '□', '⇄', '×2'];
                                 const ic = icons[Math.floor(t * 3) % icons.length];
                                 gT(ctx, w / 2, h * 0.68, ic, '#fff', 36, 0.5 + p * 0.5);
                             }
                             const barW = w * 0.5, barH = 10;
                             const bx = (w - barW) / 2, by = h * 0.35;
-                            ctx.fillStyle = '#333'; ctx.fillRect(bx, by, barW, barH);
-                            ctx.fillStyle = '#ffd700';
+                            ctx.fillStyle = '#4a493e'; ctx.fillRect(bx, by, barW, barH);
+                            ctx.fillStyle = '#e2d8a6';
                             ctx.fillRect(bx, by, barW * ((score % 1000) / 1000 || (cyc >= 2 ? 1 : 0)), barH);
                         }
                     },
@@ -5802,21 +7546,21 @@ class Game {
                                 const r = Math.floor(i / cols), c = i % cols;
                                 const x = ox + c * bsz, y = oy + r * bsz;
                                 const sel = i === selected;
-                                ctx.fillStyle = sel ? '#3a5a3a' : '#2a2a3e';
+                                ctx.fillStyle = sel ? '#3a5a3a' : '#3a3933';
                                 ctx.fillRect(x + 2, y + 2, bsz - 4, bsz - 4);
                                 if (sel) {
-                                    ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 10;
-                                    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                    ctx.save(); ctx.shadowColor = '#e2d8a6'; ctx.shadowBlur = 10;
+                                    ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 2;
                                     ctx.strokeRect(x + 3, y + 3, bsz - 6, bsz - 6); ctx.restore();
                                 }
-                                ctx.fillStyle = sel ? '#ffd700' : '#ccc';
+                                ctx.fillStyle = sel ? '#e2d8a6' : '#b0a878';
                                 ctx.font = `bold ${Math.floor(bsz * 0.5)}px sans-serif`;
                                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                                 ctx.fillText(alphabet[i], x + bsz / 2, y + bsz / 2);
                             }
-                            gT(ctx, w / 2, oy - bsz * 0.6, 'Pick your letter:', '#ffd700', 16);
+                            gT(ctx, w / 2, oy - bsz * 0.6, 'Pick your letter:', '#e2d8a6', 16);
                             gT(ctx, w / 2, oy + gh + bsz * 0.6,
-                                'Selected: ' + alphabet[selected], '#4caf50', 18);
+                                'Selected: ' + alphabet[selected], '#8cb860', 18);
                         }
                     },
                     {
@@ -5829,7 +7573,7 @@ class Game {
                             const bombCol = 2, bombRow = 2;
                             for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
                                 if (r >= 3 || (r === 2 && c !== bombCol))
-                                    gC(ctx, ox, oy, cs, r, c, 'XYZAB'[c], '#2a2a3e');
+                                    gC(ctx, ox, oy, cs, r, c, 'XYZAB'[c], '#3a3933');
                             }
                             if (cyc < 1.5) {
                                 const row = lerp(-1, bombRow, ease(Math.min(cyc / 1.2, 1)));
@@ -5853,9 +7597,9 @@ class Game {
                             } else {
                                 for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++) {
                                     if (r === bombRow || c === bombCol) continue;
-                                    if (r >= 3) gC(ctx, ox, oy, cs, r, c, 'XYZAB'[c], '#2a2a3e');
+                                    if (r >= 3) gC(ctx, ox, oy, cs, r, c, 'XYZAB'[c], '#3a3933');
                                 }
-                                gT(ctx, w / 2, oy - cs * 0.7, 'Row + Column cleared!', '#ff9800', Math.floor(cs * 0.3));
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Row + Column cleared!', '#b0a878', Math.floor(cs * 0.3));
                             }
                         }
                     },
@@ -5866,7 +7610,7 @@ class Game {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
                             const placed = [[4,0,'C'],[4,2,'T'],[4,3,'S'],[3,0,'R'],[3,2,'E']];
-                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             const cyc = t % 5;
                             if (cyc < 2) {
                                 const row = lerp(-1, 4, ease(Math.min(cyc / 1.5, 1)));
@@ -5878,31 +7622,31 @@ class Game {
                                 const x = ox + 1 * cs, y = oy + 4 * cs;
                                 ctx.fillStyle = '#4a3a1e';
                                 ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
-                                ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 15;
-                                ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                ctx.save(); ctx.shadowColor = '#e2d8a6'; ctx.shadowBlur = 15;
+                                ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 2;
                                 ctx.strokeRect(x + 3, y + 3, cs - 6, cs - 6); ctx.restore();
-                                ctx.fillStyle = '#ffd700';
+                                ctx.fillStyle = '#e2d8a6';
                                 ctx.font = `bold ${Math.floor(cs * 0.45)}px sans-serif`;
                                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                                 ctx.fillText('★' + ml, x + cs / 2, y + cs / 2);
                                 if (ml === 'A') {
                                     const word = [[4,0],[4,1],[4,2]];
                                     for (const [wr,wc] of word) {
-                                        ctx.save(); ctx.shadowColor = '#4caf50'; ctx.shadowBlur = 8;
-                                        ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 2;
+                                        ctx.save(); ctx.shadowColor = '#8cb860'; ctx.shadowBlur = 8;
+                                        ctx.strokeStyle = '#8cb860'; ctx.lineWidth = 2;
                                         ctx.strokeRect(ox + wc * cs + 3, oy + wr * cs + 3, cs - 6, cs - 6);
                                         ctx.restore();
                                     }
-                                    gT(ctx, w / 2, oy - cs * 0.7, '"CAT" found!', '#4caf50', Math.floor(cs * 0.35));
+                                    gT(ctx, w / 2, oy - cs * 0.7, '"CAT" found!', '#8cb860', Math.floor(cs * 0.35));
                                 } else {
-                                    gT(ctx, w / 2, oy - cs * 0.7, '★ = ' + ml + '?', '#ffd700', Math.floor(cs * 0.35));
+                                    gT(ctx, w / 2, oy - cs * 0.7, '★ = ' + ml + '?', '#e2d8a6', Math.floor(cs * 0.35));
                                 }
                             }
                         }
                     },
                     {
                         title: 'Line Clear & Freeze',
-                        desc: 'LINE CLEAR (🧹) lets you tap any two letters in a straight line — horizontal, vertical, or diagonal — and every letter between them gets selected! Press Clear to remove them (20 pts per letter) or Cancel to re-pick. Even a single letter works. FREEZE (❄️) pauses block falling for 10 seconds (+50 pts). Tap the freeze timer early to unfreeze and earn up to 100 bonus points based on time left!',
+                        desc: 'LINE CLEAR (─) lets you tap any two letters in a straight line — horizontal, vertical, or diagonal — and every letter between them gets selected! Press Clear to remove them (20 pts per letter) or Cancel to re-pick. Even a single letter works. FREEZE (□) pauses block falling for 10 seconds (+50 pts). Tap the freeze timer early to unfreeze and earn up to 100 bonus points based on time left!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, -10);
                             gBg(ctx, ox, oy, cs, gs);
@@ -5918,10 +7662,10 @@ class Game {
                                 const selected = [[2,0],[3,1],[4,2]];
                                 for (const [r,c,l] of letters) {
                                     const isSel = cyc > 1 && selected.some(([sr,sc]) => sr === r && sc === c);
-                                    gC(ctx, ox, oy, cs, r, c, l, isSel ? '#1e4a1e' : '#2a2a3e', isSel ? '#00c853' : null);
+                                    gC(ctx, ox, oy, cs, r, c, l, isSel ? '#1e4a1e' : '#3a3933', isSel ? '#00c853' : null);
                                 }
                                 if (cyc < 1) {
-                                    gT(ctx, w / 2, oy - cs * 0.7, '🧹 Line Clear!', '#ff9800', Math.floor(cs * 0.35));
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Line Clear!', '#b0a878', Math.floor(cs * 0.35));
                                 } else if (cyc < 2.2) {
                                     gT(ctx, w / 2, oy - cs * 0.7, 'Tap start & end', '#4ade80', Math.floor(cs * 0.3));
                                 } else if (cyc < 3.2) {
@@ -5930,21 +7674,21 @@ class Game {
                                     // Show cleared
                                     for (const [r,c,l] of letters) {
                                         if (!selected.some(([sr,sc]) => sr === r && sc === c))
-                                            gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                            gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                                     }
-                                    gT(ctx, w / 2, oy - cs * 0.7, '+60 pts!', '#ffd700', Math.floor(cs * 0.35));
+                                    gT(ctx, w / 2, oy - cs * 0.7, '+60 pts!', '#e2d8a6', Math.floor(cs * 0.35));
                                 }
                             } else {
                                 // Freeze demo with tap-to-unfreeze
                                 for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
-                                    gC(ctx, ox, oy, cs, r, c, 'FGHIJ'[c], '#2a2a3e');
+                                    gC(ctx, ox, oy, cs, r, c, 'FGHIJ'[c], '#3a3933');
                                 const freezePhase = cyc - 4;
                                 if (freezePhase < 2.5) {
                                     const remain = 10 - freezePhase * 2;
                                     gT(ctx, w / 2, oy - cs * 0.9, '❄️ FREEZE +50', '#64b5f6', Math.floor(cs * 0.4));
                                     const barW = gs * cs * 0.8, barH = 8;
                                     const bx = (w - barW) / 2, by = oy - cs * 0.3;
-                                    ctx.fillStyle = '#333'; ctx.fillRect(bx, by, barW, barH);
+                                    ctx.fillStyle = '#4a493e'; ctx.fillRect(bx, by, barW, barH);
                                     ctx.fillStyle = '#64b5f6';
                                     ctx.fillRect(bx, by, barW * Math.max(0, remain / 10), barH);
                                     gT(ctx, w / 2, by - 14, remain.toFixed(1) + 's', '#64b5f6', Math.floor(cs * 0.25));
@@ -5952,7 +7696,7 @@ class Game {
                                 } else {
                                     const flash = Math.sin(t * 8) > 0;
                                     gT(ctx, w / 2, oy - cs * 0.7, flash ? '👆 TAP!' : '❄️ Unfreeze!', '#64b5f6', Math.floor(cs * 0.4));
-                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.3, '+50 bonus pts!', '#ffd700', Math.floor(cs * 0.28));
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.3, '+50 bonus pts!', '#e2d8a6', Math.floor(cs * 0.28));
                                 }
                                 const snowT = t * 2;
                                 for (let i = 0; i < 6; i++) {
@@ -5979,7 +7723,7 @@ class Game {
                                     const l = cyc < 2 ? ltrs1[i] : shuffled[i];
                                     const jitter = cyc > 0.5 && cyc < 2 ? Math.sin(t * 20 + i) * 3 : 0;
                                     ctx.save(); ctx.translate(jitter, jitter * 0.5);
-                                    gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                                    gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                                     ctx.restore();
                                 }
                                 gT(ctx, w / 2, oy - cs * 0.7, '🔀 Shuffle!',
@@ -5987,21 +7731,21 @@ class Game {
                             } else {
                                 gBg(ctx, ox, oy, cs, gs);
                                 for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++)
-                                    gC(ctx, ox, oy, cs, r, c, 'WORD'[c], '#2a2a3e');
+                                    gC(ctx, ox, oy, cs, r, c, 'WORD'[c], '#3a3933');
                                 const flash = Math.sin(t * 5) > 0;
                                 const badge = '×2';
                                 gT(ctx, w / 2, oy - cs * 0.8, '💰 Score ×2 Active!',
-                                    flash ? '#ffd700' : '#ff9800', Math.floor(cs * 0.35));
+                                    flash ? '#e2d8a6' : '#b0a878', Math.floor(cs * 0.35));
                                 const word = [[3,0],[3,1],[3,2],[3,3]];
                                 for (const [r,c] of word) {
-                                    ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 8;
-                                    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                    ctx.save(); ctx.shadowColor = '#e2d8a6'; ctx.shadowBlur = 8;
+                                    ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 2;
                                     ctx.strokeRect(ox + c * cs + 3, oy + r * cs + 3, cs - 6, cs - 6);
                                     ctx.restore();
                                 }
                                 if (cyc > 5.5) {
                                     const pts = '×2 = 180 pts!';
-                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.5, pts, '#ffd700', Math.floor(cs * 0.35));
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.5, pts, '#e2d8a6', Math.floor(cs * 0.35));
                                 }
                             }
                         }
@@ -6011,7 +7755,7 @@ class Game {
 
             // ═══ GAME MODES ═══
             {
-                id: 'modes', icon: '⚙️', label: 'Game Modes',
+                id: 'modes', icon: '◦', label: 'Game Modes',
                 desc: 'Choose your playstyle — modes, grid sizes, difficulty & hints',
                 slides: [
                     {
@@ -6019,36 +7763,36 @@ class Game {
                         desc: 'Two main game modes to choose from! SANDBOX is relaxed with no time limit — play as long as you want until the grid fills up. Perfect for practicing and learning, but Sandbox earns only 25% of normal points and XP. TIMED mode gives you a countdown clock — score as many points as possible before time runs out! The game ends when either the timer hits zero or the grid fills up, whichever comes first.',
                         draw(ctx, w, h, t) {
                             const mid = w / 2;
-                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                             ctx.beginPath(); ctx.moveTo(mid, h * 0.15); ctx.lineTo(mid, h * 0.85);
                             ctx.stroke();
-                            gT(ctx, mid * 0.5, h * 0.2, 'SANDBOX', '#4caf50', 18);
-                            gT(ctx, mid * 0.5, h * 0.35, '∞', '#4caf50', 48);
+                            gT(ctx, mid * 0.5, h * 0.2, 'SANDBOX', '#8cb860', 18);
+                            gT(ctx, mid * 0.5, h * 0.35, '∞', '#8cb860', 48);
                             gT(ctx, mid * 0.5, h * 0.52, 'No timer', '#888', 13);
                             gT(ctx, mid * 0.5, h * 0.62, 'Relaxed play', '#888', 13);
                             const gs1 = 3, cs1 = Math.floor(mid * 0.22);
                             const ox1 = (mid - gs1 * cs1) / 2, oy1 = h * 0.68;
                             for (let r = 0; r < gs1; r++) for (let c = 0; c < gs1; c++) {
-                                ctx.fillStyle = '#1e1e30'; ctx.fillRect(ox1 + c * cs1 + 1, oy1 + r * cs1 + 1, cs1 - 2, cs1 - 2);
-                                ctx.strokeStyle = '#333'; ctx.strokeRect(ox1 + c * cs1, oy1 + r * cs1, cs1, cs1);
+                                ctx.fillStyle = '#353530'; ctx.fillRect(ox1 + c * cs1 + 1, oy1 + r * cs1 + 1, cs1 - 2, cs1 - 2);
+                                ctx.strokeStyle = '#4a493e'; ctx.strokeRect(ox1 + c * cs1, oy1 + r * cs1, cs1, cs1);
                             }
-                            gT(ctx, mid * 1.5, h * 0.2, 'TIMED', '#f44336', 18);
+                            gT(ctx, mid * 1.5, h * 0.2, 'TIMED', '#c45c4a', 18);
                             const timeLeft = 300 - (t % 300);
                             const mm = Math.floor(timeLeft / 60), ss = Math.floor(timeLeft % 60);
-                            gT(ctx, mid * 1.5, h * 0.35, `${mm}:${String(ss).padStart(2,'0')}`, '#f44336', 32);
+                            gT(ctx, mid * 1.5, h * 0.35, `${mm}:${String(ss).padStart(2,'0')}`, '#c45c4a', 32);
                             gT(ctx, mid * 1.5, h * 0.52, 'Beat the clock', '#888', 13);
                             gT(ctx, mid * 1.5, h * 0.62, 'Race for points', '#888', 13);
                             const gs2 = 3, cs2 = cs1;
                             const ox2 = mid + (mid - gs2 * cs2) / 2, oy2 = h * 0.68;
                             for (let r = 0; r < gs2; r++) for (let c = 0; c < gs2; c++) {
-                                ctx.fillStyle = '#1e1e30'; ctx.fillRect(ox2 + c * cs2 + 1, oy2 + r * cs2 + 1, cs2 - 2, cs2 - 2);
-                                ctx.strokeStyle = '#333'; ctx.strokeRect(ox2 + c * cs2, oy2 + r * cs2, cs2, cs2);
+                                ctx.fillStyle = '#353530'; ctx.fillRect(ox2 + c * cs2 + 1, oy2 + r * cs2 + 1, cs2 - 2, cs2 - 2);
+                                ctx.strokeStyle = '#4a493e'; ctx.strokeRect(ox2 + c * cs2, oy2 + r * cs2, cs2, cs2);
                             }
                         }
                     },
                     {
                         title: 'Grid Sizes & Difficulty',
-                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. On 3×3 and 4×4 grids, 2-letter words like "IT" or "GO" are valid! Larger grids require 3+ letters. Two difficulty levels: CASUAL accepts the minimum word length, while HARD requires 4+ letters — short words won\'t count, forcing you to think bigger!',
+                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. On 3×3 and 4×4 grids, 2-letter words like "IT" or "GO" are valid! Larger grids require 3+ letters. Two difficulty levels: NORMAL accepts the minimum word length, while HARD requires 4+ letters — short words won\'t count, forcing you to think bigger!',
                         draw(ctx, w, h, t) {
                             const sizes = [3, 5, 8];
                             const si = Math.floor(t * 0.4) % sizes.length;
@@ -6056,12 +7800,12 @@ class Game {
                             const { cs, ox, oy } = gL(w, h, gs, -15);
                             gBg(ctx, ox, oy, cs, gs);
                             for (let r = gs - 2; r < gs; r++) for (let c = 0; c < gs; c++)
-                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#2a2a3e');
-                            gT(ctx, w / 2, oy - cs * 0.9, gs + '×' + gs + ' Grid', '#ffd700', 20);
+                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#3a3933');
+                            gT(ctx, w / 2, oy - cs * 0.9, gs + '×' + gs + ' Grid', '#e2d8a6', 20);
                             const diffY = oy + gs * cs + 25;
-                            gT(ctx, w * 0.3, diffY, 'Casual', '#4caf50', 14);
+                            gT(ctx, w * 0.3, diffY, 'Normal', '#8cb860', 14);
                             gT(ctx, w * 0.3, diffY + 20, '3+ letters', '#888', 11);
-                            gT(ctx, w * 0.7, diffY, 'Hard', '#f44336', 14);
+                            gT(ctx, w * 0.7, diffY, 'Hard', '#c45c4a', 14);
                             gT(ctx, w * 0.7, diffY + 20, '4+ letters', '#888', 11);
                         }
                     },
@@ -6073,24 +7817,24 @@ class Game {
                             gBg(ctx, ox, oy, cs, gs);
                             const placed = [[4,0,'C'],[4,1,'A'],[4,3,'S'],[4,4,'E'],
                                             [3,0,'R'],[3,2,'N']];
-                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             const cyc = t % 5;
                             const hintGlow = `rgba(255,165,0,${0.4 + 0.3 * Math.sin(t * 4)})`;
-                            gC(ctx, ox, oy, cs, 4, 2, '', '#2a2a3e', hintGlow);
-                            gT(ctx, w / 2, oy - cs * 0.7, '🔶 Hint: one letter away!', '#ff9800', Math.floor(cs * 0.3));
+                            gC(ctx, ox, oy, cs, 4, 2, '', '#3a3933', hintGlow);
+                            gT(ctx, w / 2, oy - cs * 0.7, 'Hint: one letter away!', '#b0a878', Math.floor(cs * 0.3));
                             if (cyc > 2) {
                                 const row = lerp(-1, 4, ease(clamp((cyc - 2) / 1.5, 0, 1)));
                                 gF(ctx, ox, oy, cs, clamp(row, -0.5, 4), 2, 'T');
                                 if (cyc > 3.8) {
                                     const word = [[4,0],[4,1],[4,2]];
                                     for (const [wr,wc] of word) {
-                                        ctx.save(); ctx.shadowColor = '#4caf50'; ctx.shadowBlur = 8;
-                                        ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 2;
+                                        ctx.save(); ctx.shadowColor = '#8cb860'; ctx.shadowBlur = 8;
+                                        ctx.strokeStyle = '#8cb860'; ctx.lineWidth = 2;
                                         ctx.strokeRect(ox + wc * cs + 3, oy + wr * cs + 3, cs - 6, cs - 6);
                                         ctx.restore();
                                     }
-                                    gC(ctx, ox, oy, cs, 4, 2, 'T', '#2e5c2e', '#4caf50');
-                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '"CAT" complete!', '#4caf50', Math.floor(cs * 0.3));
+                                    gC(ctx, ox, oy, cs, 4, 2, 'T', '#4a5c38', '#8cb860');
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '"CAT" complete!', '#8cb860', Math.floor(cs * 0.3));
                                 }
                             }
                         }
@@ -6100,12 +7844,12 @@ class Game {
 
             // ═══ CHALLENGES ═══
             {
-                id: 'challenges', icon: '🏆', label: 'Challenges',
+                id: 'challenges', icon: '◎', label: 'Challenges',
                 desc: 'Special timed modes with unique twists',
                 slides: [
                     {
                         title: 'Target Word',
-                        desc: 'In Target Word challenge, a specific word (3-5 letters) appears at the top of the screen. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! When you do, you earn a 200-point bonus on top of the normal word score, and a new target word is assigned. All challenges are 7 minutes long, use Casual difficulty, and are limited to 6×6, 7×7, or 8×8 grids. Your stats are tracked separately for each challenge!',
+                        desc: 'In Target Word challenge, a specific word (3-5 letters) appears at the top of the screen. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! When you do, you earn a 200-point bonus on top of the normal word score, and a new target word is assigned. All challenges are 7 minutes long, use Normal difficulty, and are limited to 6×6, 7×7, or 8×8 grids. Your stats are tracked separately for each challenge!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, 15);
                             gBg(ctx, ox, oy, cs, gs);
@@ -6114,9 +7858,9 @@ class Game {
                             ctx.fillStyle = '#1a1a2e';
                             const tw = cs * 5, th = cs * 0.8;
                             ctx.fillRect((w - tw) / 2, targetY - th / 2, tw, th);
-                            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1;
+                            ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 1;
                             ctx.strokeRect((w - tw) / 2, targetY - th / 2, tw, th);
-                            gT(ctx, w / 2, targetY, '🎯 ' + target, '#ffd700', Math.floor(cs * 0.4));
+                            gT(ctx, w / 2, targetY, '◎ ' + target, '#e2d8a6', Math.floor(cs * 0.4));
                             const cyc = t % 6;
                             const letters = [
                                 { l:'P', r:4, c:0, t:0 },
@@ -6125,7 +7869,7 @@ class Game {
                                 { l:'Y', r:4, c:3, t:3.6 }
                             ];
                             const otherCells = [[4,4,'E'],[3,0,'S'],[3,2,'T']];
-                            for (const [r,c,l] of otherCells) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of otherCells) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             for (const lt of letters) {
                                 if (cyc < lt.t) continue;
                                 const p = cyc - lt.t;
@@ -6135,12 +7879,12 @@ class Game {
                                 } else {
                                     const complete = letters.every(x => cyc >= x.t + 1);
                                     gC(ctx, ox, oy, cs, lt.r, lt.c, lt.l,
-                                        complete ? '#2e5c2e' : '#2a2a3e',
-                                        complete ? '#4caf50' : null);
+                                        complete ? '#4a5c38' : '#3a3933',
+                                        complete ? '#8cb860' : null);
                                 }
                             }
                             if (cyc > 5) {
-                                gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '+200 BONUS!', '#ffd700',
+                                gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '+200 BONUS!', '#e2d8a6',
                                     Math.floor(cs * 0.4), clamp((cyc - 5) * 3, 0, 1));
                             }
                         }
@@ -6152,22 +7896,22 @@ class Game {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
                             for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
-                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#2a2a3e');
+                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#3a3933');
                             const speed = 0.5 + (t % 10) * 0.15;
                             const meterX = ox + gs * cs + 12, meterY = oy;
                             const meterH = gs * cs, meterW = 12;
-                            ctx.fillStyle = '#333'; ctx.fillRect(meterX, meterY, meterW, meterH);
+                            ctx.fillStyle = '#4a493e'; ctx.fillRect(meterX, meterY, meterW, meterH);
                             const fill = Math.min(speed / 2, 1);
                             const grad = ctx.createLinearGradient(0, meterY + meterH, 0, meterY);
-                            grad.addColorStop(0, '#4caf50'); grad.addColorStop(0.5, '#ff9800'); grad.addColorStop(1, '#f44336');
+                            grad.addColorStop(0, '#8cb860'); grad.addColorStop(0.5, '#b0a878'); grad.addColorStop(1, '#c45c4a');
                             ctx.fillStyle = grad;
                             ctx.fillRect(meterX, meterY + meterH * (1 - fill), meterW, meterH * fill);
-                            gT(ctx, meterX + meterW / 2, meterY - 14, '⚡', '#fff', 14);
+                            gT(ctx, meterX + meterW / 2, meterY - 14, '▲', '#fff', 14);
                             const fallSpeed = 0.3 + fill * 2;
                             const fallRow = ((t * fallSpeed) % (gs + 1)) - 1;
                             gF(ctx, ox, oy, cs, clamp(fallRow, -0.5, 2), 2, 'Z');
                             gT(ctx, ox + gs * cs / 2, oy - cs * 0.7,
-                                `Speed: ${speed.toFixed(1)}×`, '#ff9800', Math.floor(cs * 0.35));
+                                `Speed: ${speed.toFixed(1)}×`, '#b0a878', Math.floor(cs * 0.35));
                         }
                     },
                     {
@@ -6181,23 +7925,23 @@ class Game {
                             ctx.fillStyle = '#1a1a2e';
                             const tw = cs * 5, th = cs * 0.8;
                             ctx.fillRect((w - tw) / 2, catY - th / 2, tw, th);
-                            ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 1;
+                            ctx.strokeStyle = '#8cb860'; ctx.lineWidth = 1;
                             ctx.strokeRect((w - tw) / 2, catY - th / 2, tw, th);
-                            gT(ctx, w / 2, catY, '📂 Food', '#4caf50', Math.floor(cs * 0.4));
+                            gT(ctx, w / 2, catY, '▦ Food', '#8cb860', Math.floor(cs * 0.4));
                             const foodCells = [
                                 [3,0,'C'],[3,1,'A'],[3,2,'K'],[3,3,'E'],
                                 [4,1,'P'],[4,2,'I'],[4,3,'E']
                             ];
                             const otherCells = [[4,0,'X'],[4,4,'R'],[3,4,'W'],[2,0,'N'],[2,3,'H']];
-                            for (const [r,c,l] of otherCells) gC(ctx, ox, oy, cs, r, c, l, '#2a2a3e');
+                            for (const [r,c,l] of otherCells) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
                             const cyc = t % 4;
                             for (let i = 0; i < foodCells.length; i++) {
                                 const [r,c,l] = foodCells[i];
                                 const lit = cyc > 2;
-                                gC(ctx, ox, oy, cs, r, c, l, lit ? '#2e5c2e' : '#2a2a3e', lit ? '#4caf50' : null);
+                                gC(ctx, ox, oy, cs, r, c, l, lit ? '#4a5c38' : '#3a3933', lit ? '#8cb860' : null);
                             }
                             if (cyc > 2.5) {
-                                gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '2× POINTS!', '#4caf50',
+                                gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '2× POINTS!', '#8cb860',
                                     Math.floor(cs * 0.4), clamp((cyc - 2.5) * 3, 0, 1));
                             }
                         }
@@ -6207,25 +7951,25 @@ class Game {
 
             // ═══ MUSIC ═══
             {
-                id: 'music', icon: '🎵', label: 'Music',
+                id: 'music', icon: '♪', label: 'Music',
                 desc: 'Background music player with custom playlists',
                 slides: [
                     {
                         title: 'Browsing & Playing',
-                        desc: 'Tap the 🎵 Music button on the main menu to open the music screen. You\'ll see a list of all available tracks with their title and artist. Tap the circular ▶ play button next to any track to start playing it — the currently playing track is highlighted with a gold border. Music continues playing in the background while you play the game, so pick your vibe before you start!',
+                        desc: 'Tap the Music button on the main menu to open the music screen. You\'ll see a list of all available tracks with their title and artist. Tap the circular \u25b7 play button next to any track to start playing it \u2014 the currently playing track is highlighted. Music continues playing in the background while you play the game, so pick your vibe before you start!',
                         draw(ctx, w, h, t) {
                             const pad = 20, cw = w - pad * 2;
                             ctx.fillStyle = '#1a1a2e';
                             ctx.fillRect(pad, 30, cw, h - 60);
-                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                             ctx.strokeRect(pad, 30, cw, h - 60);
-                            gT(ctx, w / 2, 55, '🎵 Music', '#ffd700', 18);
+                            gT(ctx, w / 2, 55, '♪ Music', '#e2d8a6', 18);
                             const tabs = ['All Songs', 'My Mix', '+ New'];
                             const tabW = cw / tabs.length;
                             for (let i = 0; i < tabs.length; i++) {
                                 const tx = pad + i * tabW, ty = 72;
                                 const active = i === 0;
-                                ctx.fillStyle = active ? '#ffd700' : '#333';
+                                ctx.fillStyle = active ? '#e2d8a6' : '#4a493e';
                                 ctx.fillRect(tx + 4, ty, tabW - 8, 26);
                                 ctx.fillStyle = active ? '#111' : '#888';
                                 ctx.font = 'bold 11px sans-serif';
@@ -6242,13 +7986,13 @@ class Game {
                             for (let i = 0; i < tracks.length; i++) {
                                 const ty = 108 + i * 44;
                                 const pl = i === playing;
-                                ctx.fillStyle = pl ? 'rgba(255,215,0,0.1)' : 'transparent';
+                                ctx.fillStyle = pl ? 'rgba(226,216,166,0.1)' : 'transparent';
                                 ctx.fillRect(pad + 10, ty, cw - 20, 38);
-                                ctx.strokeStyle = pl ? '#ffd700' : '#444';
+                                ctx.strokeStyle = pl ? '#e2d8a6' : '#4a493e';
                                 ctx.strokeRect(pad + 10, ty, cw - 20, 38);
                                 const btnX = pad + 28, btnY = ty + 19;
                                 ctx.beginPath(); ctx.arc(btnX, btnY, 12, 0, Math.PI * 2);
-                                ctx.fillStyle = pl ? '#ffd700' : '#444'; ctx.fill();
+                                ctx.fillStyle = pl ? '#e2d8a6' : '#4a493e'; ctx.fill();
                                 ctx.fillStyle = pl ? '#111' : '#aaa';
                                 ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                                 ctx.fillText(pl ? '⏸' : '▶', btnX, btnY);
@@ -6261,9 +8005,9 @@ class Game {
                                 }
                             }
                             const barY = h - 60, barW = cw - 40;
-                            ctx.fillStyle = '#333'; ctx.fillRect(pad + 20, barY, barW, 5);
+                            ctx.fillStyle = '#4a493e'; ctx.fillRect(pad + 20, barY, barW, 5);
                             const prog = (t * 0.05) % 1;
-                            ctx.fillStyle = '#ffd700'; ctx.fillRect(pad + 20, barY, barW * prog, 5);
+                            ctx.fillStyle = '#e2d8a6'; ctx.fillRect(pad + 20, barY, barW * prog, 5);
                         }
                     },
                     {
@@ -6273,9 +8017,9 @@ class Game {
                             const pad = 20, cw = w - pad * 2;
                             ctx.fillStyle = '#1a1a2e';
                             ctx.fillRect(pad, 40, cw, h - 80);
-                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                             ctx.strokeRect(pad, 40, cw, h - 80);
-                            gT(ctx, w / 2, 60, 'Reorder Tracks', '#ffd700', 16);
+                            gT(ctx, w / 2, 60, 'Reorder Tracks', '#e2d8a6', 16);
                             const names = ['Sunset Vibes', 'Focus Flow', 'Night Drive'];
                             const cyc = t % 4;
                             const swapA = 0, swapB = 1;
@@ -6287,15 +8031,15 @@ class Game {
                                 const moving = (cyc > 1 && cyc < 2.5 && idx === 0);
                                 const yOff = moving ? Math.sin((cyc - 1) * Math.PI) * -20 : 0;
                                 ctx.save(); ctx.translate(0, yOff);
-                                ctx.fillStyle = moving ? 'rgba(255,215,0,0.15)' : 'transparent';
+                                ctx.fillStyle = moving ? 'rgba(226,216,166,0.15)' : 'transparent';
                                 ctx.fillRect(pad + 10, ty, cw - 20, 46);
-                                ctx.strokeStyle = moving ? '#ffd700' : '#444';
+                                ctx.strokeStyle = moving ? '#e2d8a6' : '#4a493e';
                                 ctx.strokeRect(pad + 10, ty, cw - 20, 46);
                                 ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif';
                                 ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
                                 ctx.fillText(names[idx], pad + 22, ty + 23);
                                 const hX = pad + cw - 36;
-                                ctx.fillStyle = moving ? '#ffd700' : '#555'; ctx.font = '18px sans-serif';
+                                ctx.fillStyle = moving ? '#e2d8a6' : '#5c5b4c'; ctx.font = '18px sans-serif';
                                 ctx.textAlign = 'center';
                                 ctx.fillText('☰', hX, ty + 23);
                                 ctx.restore();
@@ -6304,9 +8048,9 @@ class Game {
                                 const hX = pad + cw - 36;
                                 const ty = 85;
                                 gTap(ctx, hX, ty + 23, t);
-                                gT(ctx, w / 2, h - 50, 'Hold & drag ☰', '#ffd700', 14);
+                                gT(ctx, w / 2, h - 50, 'Hold & drag ☰', '#e2d8a6', 14);
                             } else if (cyc > 2.5) {
-                                gT(ctx, w / 2, h - 50, 'Track moved ✓', '#4caf50', 14);
+                                gT(ctx, w / 2, h - 50, 'Track moved ✓', '#8cb860', 14);
                             }
                         }
                     },
@@ -6319,19 +8063,19 @@ class Game {
                             if (cyc < 4) {
                                 ctx.fillStyle = '#1a1a2e';
                                 ctx.fillRect(pad, 30, cw, h - 60);
-                                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                                ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                                 ctx.strokeRect(pad, 30, cw, h - 60);
-                                gT(ctx, w / 2, 52, 'Create Playlist', '#ffd700', 16);
+                                gT(ctx, w / 2, 52, 'Create Playlist', '#e2d8a6', 16);
                                 const inputY = 68;
                                 ctx.fillStyle = '#222'; ctx.fillRect(pad + 16, inputY, cw - 32, 28);
-                                ctx.strokeStyle = '#555'; ctx.strokeRect(pad + 16, inputY, cw - 32, 28);
+                                ctx.strokeStyle = '#5c5b4c'; ctx.strokeRect(pad + 16, inputY, cw - 32, 28);
                                 const nameProgress = clamp(cyc / 1.5, 0, 1);
                                 const typedName = 'Chill Vibes'.substring(0, Math.floor(nameProgress * 11));
-                                ctx.fillStyle = typedName ? '#fff' : '#666';
+                                ctx.fillStyle = typedName ? '#fff' : '#706c58';
                                 ctx.font = '12px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
                                 ctx.fillText(typedName || 'Playlist name...', pad + 24, inputY + 14);
                                 if (nameProgress < 1) {
-                                    ctx.fillStyle = '#ffd700'; ctx.fillRect(pad + 24 + ctx.measureText(typedName).width, inputY + 4, 2, 20);
+                                    ctx.fillStyle = '#e2d8a6'; ctx.fillRect(pad + 24 + ctx.measureText(typedName).width, inputY + 4, 2, 20);
                                 }
                                 const songs = ['Sunset Vibes', 'Focus Flow', 'Night Drive', 'Pixel Dreams', 'Ocean Waves'];
                                 const checkOrder = [0, 2, 4];
@@ -6340,23 +8084,23 @@ class Game {
                                     const checkTime = checkOrder.indexOf(i);
                                     const checked = checkTime !== -1 && cyc > 1.5 + checkTime * 0.6;
                                     ctx.fillStyle = '#222'; ctx.fillRect(pad + 16, sy, cw - 32, 28);
-                                    ctx.strokeStyle = '#444'; ctx.strokeRect(pad + 16, sy, cw - 32, 28);
+                                    ctx.strokeStyle = '#4a493e'; ctx.strokeRect(pad + 16, sy, cw - 32, 28);
                                     const bx = pad + 24, by = sy + 6;
-                                    ctx.strokeStyle = checked ? '#ffd700' : '#555'; ctx.lineWidth = 1.5;
+                                    ctx.strokeStyle = checked ? '#e2d8a6' : '#5c5b4c'; ctx.lineWidth = 1.5;
                                     ctx.strokeRect(bx, by, 16, 16);
                                     if (checked) {
-                                        ctx.fillStyle = '#ffd700'; ctx.font = 'bold 13px sans-serif';
+                                        ctx.fillStyle = '#e2d8a6'; ctx.font = 'bold 13px sans-serif';
                                         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                                         ctx.fillText('✓', bx + 8, by + 9);
                                     }
-                                    ctx.fillStyle = '#ccc'; ctx.font = '11px sans-serif';
+                                    ctx.fillStyle = '#b0a878'; ctx.font = '11px sans-serif';
                                     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
                                     ctx.fillText(songs[i], bx + 24, sy + 14);
                                 }
                                 if (cyc > 3.2) {
                                     const saveW = 80, saveH = 30;
                                     const saveX = (w - saveW) / 2, saveY = h - 75;
-                                    ctx.fillStyle = '#ffd700'; ctx.fillRect(saveX, saveY, saveW, saveH);
+                                    ctx.fillStyle = '#e2d8a6'; ctx.fillRect(saveX, saveY, saveW, saveH);
                                     ctx.fillStyle = '#111'; ctx.font = 'bold 13px sans-serif';
                                     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                                     ctx.fillText('Save', saveX + saveW / 2, saveY + saveH / 2);
@@ -6365,15 +8109,15 @@ class Game {
                             } else {
                                 ctx.fillStyle = '#1a1a2e';
                                 ctx.fillRect(pad, 30, cw, h - 60);
-                                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                                ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                                 ctx.strokeRect(pad, 30, cw, h - 60);
-                                gT(ctx, w / 2, 52, '🎵 Music', '#ffd700', 16);
+                                gT(ctx, w / 2, 52, '♪ Music', '#e2d8a6', 16);
                                 const tabs = ['All Songs', 'Chill Vibes', '+ New'];
                                 const tabW = cw / tabs.length;
                                 const activeTab = 1;
                                 for (let i = 0; i < tabs.length; i++) {
                                     const tx = pad + i * tabW, ty = 68;
-                                    ctx.fillStyle = i === activeTab ? '#ffd700' : '#333';
+                                    ctx.fillStyle = i === activeTab ? '#e2d8a6' : '#4a493e';
                                     ctx.fillRect(tx + 3, ty, tabW - 6, 24);
                                     ctx.fillStyle = i === activeTab ? '#111' : '#888';
                                     ctx.font = 'bold 10px sans-serif';
@@ -6384,18 +8128,18 @@ class Game {
                                 for (let i = 0; i < plTracks.length; i++) {
                                     const ty = 104 + i * 44;
                                     ctx.fillStyle = 'transparent';
-                                    ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+                                    ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                                     ctx.strokeRect(pad + 10, ty, cw - 20, 38);
                                     ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif';
                                     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
                                     ctx.fillText(plTracks[i], pad + 24, ty + 19);
-                                    ctx.fillStyle = '#f44336'; ctx.font = '12px sans-serif';
+                                    ctx.fillStyle = '#c45c4a'; ctx.font = '12px sans-serif';
                                     ctx.textAlign = 'center';
                                     ctx.fillText('✕', pad + cw - 30, ty + 19);
                                 }
                                 const flash = Math.sin(t * 4) > 0;
                                 gT(ctx, w / 2, h - 55, 'Playlist created! ✓',
-                                    flash ? '#ffd700' : '#4caf50', 14);
+                                    flash ? '#e2d8a6' : '#8cb860', 14);
                             }
                         }
                     },
@@ -6406,18 +8150,18 @@ class Game {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, -30);
                             gBg(ctx, ox, oy, cs, gs);
                             for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
-                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#2a2a3e');
+                                gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#3a3933');
                             const fallRow = ((t * 0.5) % 4) - 1;
                             gF(ctx, ox, oy, cs, clamp(fallRow, -0.5, 2), 2, 'M');
                             gT(ctx, w / 2, oy - cs * 0.7, 'Score: 1250', '#fff', Math.floor(cs * 0.3));
                             const barH = 48, barY = h - barH - 10;
                             ctx.fillStyle = '#1a1a2e';
                             ctx.fillRect(10, barY, w - 20, barH);
-                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                             ctx.strokeRect(10, barY, w - 20, barH);
                             const songNames = ['♪ Sunset Vibes – ChillBeats', '♪ Focus Flow – LofiLab'];
                             const si = Math.floor(t * 0.15) % songNames.length;
-                            ctx.fillStyle = '#ccc'; ctx.font = '10px sans-serif';
+                            ctx.fillStyle = '#b0a878'; ctx.font = '10px sans-serif';
                             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
                             ctx.fillText(songNames[si], 22, barY + 18);
                             const btnY = barY + 34;
@@ -6427,30 +8171,30 @@ class Game {
                             for (let i = 0; i < 3; i++) {
                                 const bx = btnStartX + i * btnSpace;
                                 ctx.beginPath(); ctx.arc(bx, btnY, 12, 0, Math.PI * 2);
-                                ctx.fillStyle = i === 1 ? '#ffd700' : '#444'; ctx.fill();
-                                ctx.fillStyle = i === 1 ? '#111' : '#ccc';
+                                ctx.fillStyle = i === 1 ? '#e2d8a6' : '#4a493e'; ctx.fill();
+                                ctx.fillStyle = i === 1 ? '#111' : '#b0a878';
                                 ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                                 ctx.fillText(btns[i], bx, btnY);
                             }
                             const progW = w - 60, progY = barY + 6;
-                            ctx.fillStyle = '#333'; ctx.fillRect(22, progY + 16, progW, 3);
+                            ctx.fillStyle = '#4a493e'; ctx.fillRect(22, progY + 16, progW, 3);
                             const prog = (t * 0.04) % 1;
-                            ctx.fillStyle = '#ffd700'; ctx.fillRect(22, progY + 16, progW * prog, 3);
+                            ctx.fillStyle = '#e2d8a6'; ctx.fillRect(22, progY + 16, progW * prog, 3);
                             const cyc = t % 5;
                             if (cyc > 2 && cyc < 3.5) {
                                 const nextX = btnStartX + 2 * btnSpace;
                                 gTap(ctx, nextX, btnY, t);
-                                gT(ctx, w / 2, barY - 14, 'Skip to next ▷', '#ffd700', 12);
+                                gT(ctx, w / 2, barY - 14, 'Skip to next ▷', '#e2d8a6', 12);
                             }
                         }
                     },
                     {
                         title: 'Mute & Unmute',
-                        desc: 'The 🔊 speaker button in the top-right corner of the screen is always visible — on every screen and during gameplay. Tap it once to MUTE all music (the icon changes to 🔇). Tap it again to UNMUTE and resume playback right where you left off. Your mute preference is saved, so it stays muted or unmuted across sessions. Perfect for when you need to quickly silence the music without pausing your game!',
+                        desc: 'The ♪ speaker button in the top-right corner of the screen is always visible — on every screen and during gameplay. Tap it once to MUTE all music (the icon changes to ♭). Tap it again to UNMUTE and resume playback right where you left off. Your mute preference is saved, so it stays muted or unmuted across sessions. Perfect for when you need to quickly silence the music without pausing your game!',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#1a1a2e';
                             ctx.fillRect(20, 30, w - 40, h - 60);
-                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                             ctx.strokeRect(20, 30, w - 40, h - 60);
                             const cyc = t % 6;
                             const muted = cyc > 3;
@@ -6459,13 +8203,13 @@ class Game {
                             ctx.save();
                             const pulse = 1 + Math.sin(t * 4) * 0.08;
                             ctx.translate(btnX, btnY); ctx.scale(pulse, pulse); ctx.translate(-btnX, -btnY);
-                            ctx.fillStyle = muted ? '#444' : 'rgba(255,215,0,0.2)';
+                            ctx.fillStyle = muted ? '#4a493e' : 'rgba(226,216,166,0.2)';
                             ctx.beginPath(); ctx.arc(btnX, btnY, btnSz / 2, 0, Math.PI * 2); ctx.fill();
-                            ctx.strokeStyle = muted ? '#666' : '#ffd700'; ctx.lineWidth = 1.5;
+                            ctx.strokeStyle = muted ? '#706c58' : '#e2d8a6'; ctx.lineWidth = 1.5;
                             ctx.stroke();
                             ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(btnSz * 0.5)}px sans-serif`;
                             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                            ctx.fillText(muted ? '🔇' : '🔊', btnX, btnY);
+                            ctx.fillText(muted ? '♭' : '♪', btnX, btnY);
                             ctx.restore();
                             if (!muted) {
                                 const waves = 3;
@@ -6475,7 +8219,7 @@ class Game {
                                     ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
                                     ctx.beginPath();
                                     ctx.arc(btnX, btnY, r, -Math.PI * 0.35, Math.PI * 0.35);
-                                    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2; ctx.stroke();
+                                    ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 2; ctx.stroke();
                                     ctx.restore();
                                 }
                             }
@@ -6489,11 +8233,11 @@ class Game {
                                     const bh = 20 + Math.sin(t * 3 + i * 0.8) * 18 + Math.cos(t * 5 + i) * 10;
                                     const x = startX + i * (barW + barGap);
                                     const grad = ctx.createLinearGradient(0, barMid - bh / 2, 0, barMid + bh / 2);
-                                    grad.addColorStop(0, '#ffd700'); grad.addColorStop(1, '#ff9800');
+                                    grad.addColorStop(0, '#e2d8a6'); grad.addColorStop(1, '#b0a878');
                                     ctx.fillStyle = grad;
                                     ctx.fillRect(x, barMid - bh / 2, barW, bh);
                                 }
-                                gT(ctx, w / 2, barMid + 50, '♪ Now Playing...', '#ffd700', 14);
+                                gT(ctx, w / 2, barMid + 50, '♪ Now Playing...', '#e2d8a6', 14);
                             } else {
                                 const barCount = 7;
                                 const barW = 12, barGap = 8;
@@ -6501,11 +8245,11 @@ class Game {
                                 const startX = (w - totalW) / 2;
                                 for (let i = 0; i < barCount; i++) {
                                     const x = startX + i * (barW + barGap);
-                                    ctx.fillStyle = '#333';
+                                    ctx.fillStyle = '#4a493e';
                                     ctx.fillRect(x, barMid - 3, barW, 6);
                                 }
-                                gT(ctx, w / 2, barMid + 50, 'Music Muted', '#666', 14);
-                                ctx.save(); ctx.strokeStyle = '#f44336'; ctx.lineWidth = 3;
+                                gT(ctx, w / 2, barMid + 50, 'Music Muted', '#706c58', 14);
+                                ctx.save(); ctx.strokeStyle = '#c45c4a'; ctx.lineWidth = 3;
                                 ctx.beginPath();
                                 ctx.moveTo(w / 2 - 30, barMid - 20);
                                 ctx.lineTo(w / 2 + 30, barMid + 20);
@@ -6513,10 +8257,10 @@ class Game {
                             }
                             if (cyc > 2.5 && cyc < 3.5) {
                                 gTap(ctx, btnX, btnY, t);
-                                gT(ctx, w / 2, h - 50, 'Tap to mute', '#ffd700', 13);
+                                gT(ctx, w / 2, h - 50, 'Tap to mute', '#e2d8a6', 13);
                             } else if (cyc > 5 && cyc < 6) {
                                 gTap(ctx, btnX, btnY, t);
-                                gT(ctx, w / 2, h - 50, 'Tap to unmute', '#4caf50', 13);
+                                gT(ctx, w / 2, h - 50, 'Tap to unmute', '#8cb860', 13);
                             }
                         }
                     }
@@ -6525,7 +8269,7 @@ class Game {
 
             // ═══ LEVELING ═══
             {
-                id: 'leveling', icon: '⬆️', label: 'Leveling & XP',
+                id: 'leveling', icon: '△', label: 'Leveling & XP',
                 desc: 'Earn XP to level up — push yourself to climb higher!',
                 slides: [
                     {
@@ -6561,16 +8305,16 @@ class Game {
                             if (cycle >= 3) {
                                 const fl = Math.sin(t * 8) > 0;
                                 ctx.font = 'bold 18px sans-serif';
-                                ctx.fillStyle = fl ? '#ffd700' : '#ff9800';
+                                ctx.fillStyle = fl ? '#e2d8a6' : '#b0a878';
                                 ctx.fillText('LEVEL UP!', w / 2, 88);
                             }
 
                             // Multiplier icons
                             const items = [
-                                { icon: '🎯', label: 'Hard Mode', mult: '1.5×', color: '#f44336' },
-                                { icon: '⏱️', label: 'Timed', mult: '1.3×', color: '#ff9800' },
-                                { icon: '🏆', label: 'Challenge', mult: '1.4×', color: '#ffd700' },
-                                { icon: '📏', label: 'Small Grid', mult: '1.8×', color: '#4caf50' },
+                                { icon: '◎', label: 'Hard Mode', mult: '1.5×', color: '#c45c4a' },
+                                { icon: '◷', label: 'Timed', mult: '1.3×', color: '#b0a878' },
+                                { icon: '◎', label: 'Challenge', mult: '1.4×', color: '#e2d8a6' },
+                                { icon: '▢', label: 'Small Grid', mult: '1.8×', color: '#8cb860' },
                             ];
                             for (let i = 0; i < items.length; i++) {
                                 const x = 20, y = 108 + i * 24;
@@ -6595,9 +8339,9 @@ class Game {
 
                             const cyc = t % 6;
                             const scenarios = [
-                                { score: 720, label: 'Beat PB by 44%!', color: '#4caf50', bonus: '+50 bonus XP!', mult: '1.22×' },
-                                { score: 480, label: '96% of PB', color: '#ff9800', bonus: 'Normal XP', mult: '1.0×' },
-                                { score: 200, label: '40% of PB', color: '#f44336', bonus: 'Reduced XP', mult: '0.5×' },
+                                { score: 720, label: 'Beat PB by 44%!', color: '#8cb860', bonus: '+50 bonus XP!', mult: '1.22×' },
+                                { score: 480, label: '96% of PB', color: '#b0a878', bonus: 'Normal XP', mult: '1.0×' },
+                                { score: 200, label: '40% of PB', color: '#c45c4a', bonus: 'Reduced XP', mult: '0.5×' },
                             ];
                             const si = Math.floor(cyc / 2) % scenarios.length;
                             const s = scenarios[si];
@@ -6627,7 +8371,7 @@ class Game {
                             ctx.fillText(s.bonus, w / 2, 148);
 
                             ctx.font = '12px sans-serif';
-                            ctx.fillStyle = '#666';
+                            ctx.fillStyle = '#706c58';
                             ctx.fillText(`XP multiplier: ${s.mult}`, w / 2, 170);
                         }
                     }
@@ -6979,7 +8723,7 @@ class Game {
                     <div class="track-artist">${track.artist}</div>
                 </div>
                 <span class="track-duration" data-track-id="${track.id}"></span>
-                <button class="track-fav-btn${isFav ? " active" : ""}" title="Favorite" aria-label="Toggle Favorite">${isFav ? "❤️" : "🤍"}</button>
+                <button class="track-fav-btn${isFav ? " active" : ""}" title="Favorite" aria-label="Toggle Favorite">${isFav ? "♦" : "◇"}</button>
                 ${!searchTerm ? '<span class="track-drag-handle" title="Drag to reorder">☰</span>' : ""}
                 ${isCustom && !searchTerm ? '<button class="track-remove-btn" title="Remove from playlist">✕</button>' : ""}
             `;
@@ -7001,7 +8745,7 @@ class Game {
                 const nowFav = this.plMgr.toggleFavorite(track.id);
                 const btn = e.currentTarget;
                 btn.classList.toggle("active", nowFav);
-                btn.textContent = nowFav ? "❤️" : "🤍";
+                btn.textContent = nowFav ? "♦" : "◇";
                 // If on favorites tab and un-favorited, re-render
                 if (this.activePlaylistTab === "__favorites" && !nowFav) {
                     this._renderTrackList();
@@ -7224,6 +8968,29 @@ class Game {
 
     // ── Target Word: tap-to-claim ──
 
+    // Verify that the letters at the given cells still exist on the grid
+    // AND that those letters match the word (multiset check).
+    _verifyGroupOnGrid(group) {
+        const letters = [];
+        for (const key of group.cells) {
+            const [r, c] = key.split(",").map(Number);
+            const ch = this.grid.get(r, c);
+            if (!ch || !isWordLetter(ch)) return false;
+            letters.push(ch);
+        }
+        return letters.sort().join("") === group.word.split("").sort().join("");
+    }
+
+    // Remove any validated groups whose cells no longer contain letters.
+    _pruneInvalidGroups() {
+        const before = this._validatedWordGroups.length;
+        this._validatedWordGroups = this._validatedWordGroups.filter(g => this._verifyGroupOnGrid(g));
+        if (this._validatedWordGroups.length < before) {
+            console.log(`[WORD-VAL] Pruned ${before - this._validatedWordGroups.length} stale groups`);
+            this._rebuildValidatedCells();
+        }
+    }
+
     _addValidatedWords(result, words) {
         // Use per-word cell mapping from the detection result.
         // Process longest words first so shorter subsets are always caught.
@@ -7234,6 +9001,38 @@ class Game {
 
         for (const wc of incoming) {
             const newCells = new Set(wc.cells);
+
+            // ── Grid verification: read the actual letters at these cells ──
+            const cellArr = [...newCells].map(k => {
+                const [r, c] = k.split(",").map(Number);
+                return { r, c, letter: this.grid.get(r, c) };
+            });
+            const actualLetters = cellArr.map(c => c.letter || "?").join("");
+            // Log every candidate for diagnostics
+            console.log(`[WORD-VAL] Candidate "${wc.word}" cells=[${[...newCells].join(";")}] actual="${actualLetters}" reverse=${!!wc.isReverse}`);
+
+            // Reject if any cell is empty (stale reference)
+            if (cellArr.some(c => !isWordLetter(c.letter))) {
+                console.warn(`[WORD-VAL] REJECTED "${wc.word}" — cell(s) empty on grid`);
+                continue;
+            }
+
+            // Reject if the actual letters don't match the word (accounting for wildcards)
+            const actualLetters2 = cellArr.map(c => c.letter);
+            const expectedLetters = wc.word.split("");
+            if (actualLetters2.length !== expectedLetters.length) {
+                console.warn(`[WORD-VAL] REJECTED "${wc.word}" — length mismatch`);
+                continue;
+            }
+            let letterMismatch = false;
+            for (let i = 0; i < actualLetters2.length; i++) {
+                if (actualLetters2[i] === WILDCARD_SYMBOL) continue; // wildcard matches anything
+                if (actualLetters2[i] !== expectedLetters[i]) { letterMismatch = true; break; }
+            }
+            if (letterMismatch) {
+                console.warn(`[WORD-VAL] REJECTED "${wc.word}" — letters mismatch: grid="${actualLetters2.join("")}" expected="${expectedLetters.join("")}"`);
+                continue;
+            }
 
             // Skip if these exact cells + word are already validated
             const alreadyValidated = this._validatedWordGroups.some(g => {
@@ -7303,6 +9102,7 @@ class Game {
             // Sandbox mode penalty
             if (this.gameMode === GAME_MODES.SANDBOX) pts = Math.floor(pts * SANDBOX_SCORE_MULT);
 
+            console.log(`[WORD-VAL] ADDED "${wc.word}" cells=[${[...newCells].join(";")}] pts=${pts} reverse=${!!wc.isReverse}`);
             this._validatedWordGroups.push({ word: wc.word, cells: newCells, pts, isReverse: !!wc.isReverse });
         }
         this._rebuildValidatedCells();
@@ -7367,13 +9167,24 @@ class Game {
         }
         if (toClaim.length === 0) return;
 
+        // Diagnostic: log what we're about to claim
+        console.log(`[CLAIM] Tapped "${tappedKey}" — claiming ${toClaim.length} groups:`,
+            toClaim.map(g => `"${g.word}" cells=[${[...g.cells].join(";")}] pts=${g.pts}`));
+        if (toClaim.length > 1) {
+            console.warn(`[CLAIM] MULTI-CLAIM: ${toClaim.length} groups share cell "${tappedKey}":`,
+                toClaim.map(g => g.word));
+        }
+
         // Score claimed words
         const prevScore = this.score;
         const claimedWords = [];
         for (const group of toClaim) {
             let pts = group.pts;
+            let wasMultiplied = false;
             if (this.scoreMultiplier > 1) {
+                console.log(`[2X] Applying ${this.scoreMultiplier}× to "${group.word}": ${pts} → ${pts * this.scoreMultiplier}`);
                 pts *= this.scoreMultiplier;
+                wasMultiplied = true;
                 this.scoreMultiplier = 1;
                 this.els.score2xIndicator.classList.add("hidden");
             }
@@ -7381,9 +9192,13 @@ class Game {
             this.totalWordsInChain++;
             const isBonus = this._isChallengeBonusWord(group.word);
             this.wordsFound.push({ word: group.word, pts, bonus: isBonus });
-            claimedWords.push({ word: group.word, pts });
+            claimedWords.push({ word: group.word, pts, multiplied: wasMultiplied });
             if (!this._chainWords) this._chainWords = [];
             this._chainWords.push({ word: group.word, pts });
+
+            // ── Earn coins per word ──
+            const wordCoins = coinsForWord(group.word.length) + (this.comboCount >= 2 ? Math.min(this.comboCount, 10) * COIN_COMBO_BONUS : 0);
+            this._coinsThisGame = (this._coinsThisGame || 0) + wordCoins;
 
             // Check for target word match
             if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
@@ -7402,6 +9217,33 @@ class Game {
         this._checkBonusUnlock(prevScore, this.score);
         this._updateScoreDisplay();
         this._updateSpeedRound();
+        this._showChainBanner(this.totalWordsInChain);
+
+        // ── Combo / Streak tracking ──
+        this.comboCount += toClaim.length;
+        this._totalWordsThisGame += toClaim.length;
+        if (this.comboCount > this.bestCombo) this.bestCombo = this.comboCount;
+        this.comboTimer = COMBO_WINDOW_SECONDS + (this._activePerks && this._activePerks.comboext ? 4 : 0); // reset combo timer
+
+        // ── Difficulty progression ──
+        const newDiffLevel = Math.min(DIFFICULTY_MAX_LEVEL, 1 + Math.floor(this._totalWordsThisGame / DIFFICULTY_WORDS_PER_LEVEL));
+        if (newDiffLevel > this._difficultyLevel) {
+            this._difficultyLevel = newDiffLevel;
+            // Speed up slightly (only in non-challenge, non-speed modes)
+            if (this.activeChallenge !== CHALLENGE_TYPES.SPEED_ROUND) {
+                this.fallInterval = Math.max(0.25, this._baseFallInterval - (this._difficultyLevel - 1) * DIFFICULTY_SPEED_STEP);
+            }
+        }
+
+        // Apply combo multiplier to score
+        if (this.comboCount >= 2) {
+            const comboMult = Math.min(COMBO_MAX_MULTIPLIER, 1 + (this.comboCount - 1) * COMBO_MULTIPLIER_STEP);
+            const comboBonus = Math.floor(toClaim.reduce((s, g) => s + g.pts, 0) * (comboMult - 1));
+            if (comboBonus > 0) {
+                this.score += comboBonus;
+                this._updateScoreDisplay();
+            }
+        }
 
         // Collect all cells from claimed groups
         const cellsToClear = new Set();
@@ -7425,10 +9267,13 @@ class Game {
         }
 
         // Flash and clear the claimed cells
+        const longestWord = Math.max(...toClaim.map(g => g.word.length));
         if (this.totalWordsInChain > 1) {
-            this.audio.chain();
+            this.audio.chain(this.totalWordsInChain);
+            this.renderer.triggerShake(2.5 + this.totalWordsInChain * 0.8);
         } else {
-            this.audio.clear();
+            this.audio.clear(longestWord);
+            this.renderer.triggerShake(1.5 + longestWord * 0.4);
         }
         this._claimAnimating = true;
         this.clearing = true;
@@ -7540,9 +9385,9 @@ class Game {
                 <div class="challenge-card-title">${meta.icon} ${meta.title}</div>
                 <div class="challenge-card-desc">${meta.description}</div>
                 <div class="challenge-card-stats">
-                    <span>🏆 ${stats.highScore}</span>
-                    <span>🎮 ${stats.gamesPlayed}</span>
-                    <span>📝 ${(stats.uniqueWordsFound || []).length}</span>
+                    <span>◎ ${stats.highScore}</span>
+                    <span>▷ ${stats.gamesPlayed}</span>
+                    <span>≡ ${(stats.uniqueWordsFound || []).length}</span>
                 </div>
             `;
             card.addEventListener("click", () => {
@@ -7675,23 +9520,23 @@ class Game {
                 }
 
                 // Draw
-                ctx.fillStyle = "#1a1a1a";
+                ctx.fillStyle = "#2f3029";
                 ctx.fillRect(0, 0, size, size);
 
                 for (let r = 0; r < gridSize; r++) {
                     for (let c = 0; c < gridSize; c++) {
                         const x = c * cellSize, y = r * cellSize;
-                        ctx.fillStyle = "#2a2a2a";
+                        ctx.fillStyle = "#3a3933";
                         ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
                         const s = settled[r][c];
                         if (s) {
                             if (s.glow) {
                                 const pulse = 0.4 + 0.3 * Math.sin(tick * 0.1);
-                                ctx.fillStyle = `rgba(255, 215, 0, ${pulse * 0.3})`;
+                                ctx.fillStyle = `rgba(226, 216, 166, ${pulse * 0.3})`;
                                 ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
-                                ctx.fillStyle = "#ffd700";
+                                ctx.fillStyle = "#e2d8a6";
                             } else {
-                                ctx.fillStyle = "#aaa";
+                                ctx.fillStyle = "#9a9680";
                             }
                             ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
                             ctx.textAlign = "center";
@@ -7704,14 +9549,14 @@ class Game {
                 // Draw falling letters
                 for (const fl of letters) {
                     const x = fl.col * cellSize;
-                    ctx.fillStyle = fl.isTarget ? "#3a3520" : "#2a2a2a";
+                    ctx.fillStyle = fl.isTarget ? "#3a3933" : "#3a3933";
                     ctx.fillRect(x + 1, fl.y + 1, cellSize - 2, cellSize - 2);
                     if (fl.isTarget) {
-                        ctx.strokeStyle = "#ffd700";
+                        ctx.strokeStyle = "#e2d8a6";
                         ctx.lineWidth = 1.5;
                         ctx.strokeRect(x + 2, fl.y + 2, cellSize - 4, cellSize - 4);
                     }
-                    ctx.fillStyle = fl.isTarget ? "#ffd700" : "#fff";
+                    ctx.fillStyle = fl.isTarget ? "#e2d8a6" : "#fff";
                     ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
@@ -7720,14 +9565,14 @@ class Game {
 
                 // Target label at top
                 const alpha = 0.6 + 0.3 * Math.sin(tick * 0.08);
-                ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+                ctx.fillStyle = `rgba(226, 216, 166, ${alpha})`;
                 ctx.font = `bold ${Math.floor(size * 0.1)}px monospace`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
-                ctx.fillText("🎯 " + target, size / 2, size * 0.08);
+                ctx.fillText("◎ " + target, size / 2, size * 0.08);
 
                 // Grid lines
-                ctx.strokeStyle = "#333";
+                ctx.strokeStyle = "#4a493e";
                 ctx.lineWidth = 0.5;
                 for (let r = 0; r <= gridSize; r++) { ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(size, r * cellSize); ctx.stroke(); }
                 for (let c = 0; c <= gridSize; c++) { ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, size); ctx.stroke(); }
@@ -7770,16 +9615,16 @@ class Game {
                 }
 
                 // Draw
-                ctx.fillStyle = "#1a1a1a";
+                ctx.fillStyle = "#2f3029";
                 ctx.fillRect(0, 0, size, size);
 
                 for (let r = 0; r < gridSize; r++) {
                     for (let c = 0; c < gridSize; c++) {
                         const x = c * cellSize, y = r * cellSize;
-                        ctx.fillStyle = "#2a2a2a";
+                        ctx.fillStyle = "#3a3933";
                         ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
                         if (settled[r][c]) {
-                            ctx.fillStyle = "#aaa";
+                            ctx.fillStyle = "#9a9680";
                             ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
                             ctx.textAlign = "center";
                             ctx.textBaseline = "middle";
@@ -7794,17 +9639,17 @@ class Game {
                     // Motion trail
                     const trailLen = Math.min(speed * 4, cellSize);
                     const grad = ctx.createLinearGradient(x + cellSize / 2, f.y - trailLen, x + cellSize / 2, f.y);
-                    grad.addColorStop(0, "rgba(255, 215, 0, 0)");
-                    grad.addColorStop(1, "rgba(255, 215, 0, 0.3)");
+                    grad.addColorStop(0, "rgba(226, 216, 166, 0)");
+                    grad.addColorStop(1, "rgba(226, 216, 166, 0.3)");
                     ctx.fillStyle = grad;
                     ctx.fillRect(x + 4, f.y - trailLen, cellSize - 8, trailLen);
 
-                    ctx.fillStyle = "#3a3520";
+                    ctx.fillStyle = "#3a3933";
                     ctx.fillRect(x + 1, f.y + 1, cellSize - 2, cellSize - 2);
-                    ctx.strokeStyle = "#ffd700";
+                    ctx.strokeStyle = "#e2d8a6";
                     ctx.lineWidth = 1.5;
                     ctx.strokeRect(x + 2, f.y + 2, cellSize - 4, cellSize - 4);
-                    ctx.fillStyle = "#ffd700";
+                    ctx.fillStyle = "#e2d8a6";
                     ctx.font = `bold ${Math.floor(cellSize * 0.5)}px monospace`;
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
@@ -7817,16 +9662,16 @@ class Game {
                 const barX = (size - barW) / 2;
                 const barY = size - 10;
                 const pct = Math.min(1, (speed - 1.5) / 5);
-                ctx.fillStyle = "#333";
+                ctx.fillStyle = "#4a493e";
                 ctx.fillRect(barX, barY, barW, barH);
                 const barGrad = ctx.createLinearGradient(barX, 0, barX + barW * pct, 0);
-                barGrad.addColorStop(0, "#ffd700");
-                barGrad.addColorStop(1, "#ff4444");
+                barGrad.addColorStop(0, "#e2d8a6");
+                barGrad.addColorStop(1, "#c45c4a");
                 ctx.fillStyle = barGrad;
                 ctx.fillRect(barX, barY, barW * pct, barH);
 
                 // Grid lines
-                ctx.strokeStyle = "#333";
+                ctx.strokeStyle = "#4a493e";
                 ctx.lineWidth = 0.5;
                 for (let r = 0; r <= gridSize; r++) { ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(size, r * cellSize); ctx.stroke(); }
                 for (let c = 0; c <= gridSize; c++) { ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, size); ctx.stroke(); }
@@ -7846,10 +9691,10 @@ class Game {
         // ─── WORD CATEGORY preview ────────────────────────────────
         if (challengeType === CHALLENGE_TYPES.WORD_CATEGORY) {
             const categories = [
-                { icon: "🍕", label: "Food", words: ["CAKE", "RICE", "SOUP", "FISH"] },
-                { icon: "🐾", label: "Animals", words: ["BEAR", "FROG", "HAWK", "DUCK"] },
-                { icon: "⚽", label: "Sports", words: ["GOLF", "SWIM", "KICK", "RACE"] },
-                { icon: "🌿", label: "Nature", words: ["TREE", "RAIN", "LAKE", "LEAF"] },
+                { icon: "○", label: "Food", words: ["CAKE", "RICE", "SOUP", "FISH"] },
+                { icon: "○", label: "Animals", words: ["BEAR", "FROG", "HAWK", "DUCK"] },
+                { icon: "○", label: "Sports", words: ["GOLF", "SWIM", "KICK", "RACE"] },
+                { icon: "○", label: "Nature", words: ["TREE", "RAIN", "LAKE", "LEAF"] },
             ];
             let catIdx = 0, tick = 0, wordSlots = [], phase = "reveal"; // reveal → glow → fade
 
@@ -7895,13 +9740,13 @@ class Game {
                 }
 
                 // Draw
-                ctx.fillStyle = "#1a1a1a";
+                ctx.fillStyle = "#2f3029";
                 ctx.fillRect(0, 0, size, size);
 
                 for (let r = 0; r < gridSize; r++) {
                     for (let c = 0; c < gridSize; c++) {
                         const x = c * cellSize, y = r * cellSize;
-                        ctx.fillStyle = "#2a2a2a";
+                        ctx.fillStyle = "#3a3933";
                         ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
                     }
                 }
@@ -7937,7 +9782,7 @@ class Game {
                 ctx.globalAlpha = 1;
 
                 // Grid lines
-                ctx.strokeStyle = "#333";
+                ctx.strokeStyle = "#4a493e";
                 ctx.lineWidth = 0.5;
                 for (let r = 0; r <= gridSize; r++) { ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(size, r * cellSize); ctx.stroke(); }
                 for (let c = 0; c <= gridSize; c++) { ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, size); ctx.stroke(); }
@@ -8047,9 +9892,9 @@ class Game {
         canvas.width = 200;
         canvas.height = 200;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#1a1a1a";
+        ctx.fillStyle = "#2f3029";
         ctx.fillRect(0, 0, 200, 200);
-        ctx.fillStyle = "#ffd700";
+        ctx.fillStyle = "#e2d8a6";
         ctx.font = "bold 60px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -8073,6 +9918,18 @@ class Game {
             if (this._autoSaveTimer >= 5) {
                 this._autoSaveTimer = 0;
                 this._saveGameState();
+            }
+
+            // ── Combo timer countdown ──
+            if (this.comboTimer > 0 && this.comboCount >= 2) {
+                this.comboTimer -= dt;
+                if (this.comboTimer <= 0) {
+                    this.comboCount = 0;
+                    this.comboTimer = 0;
+                    gameStore.set({ comboCount: 0, comboActive: false, comboMultiplier: 1, comboTimer: 0 });
+                } else {
+                    gameStore.set({ comboTimer: this.comboTimer });
+                }
             }
 
             if (this.timeLimitSeconds > 0) {
@@ -8107,6 +9964,15 @@ class Game {
             } else if (this.rowDragActive) {
                 // Row drag mode: freeze block falling while player selects a row
             } else if (this.block) {
+                // Slow start perk countdown
+                if (this._slowStartTimeLeft > 0) {
+                    this._slowStartTimeLeft -= dt;
+                    if (this._slowStartTimeLeft <= 0) {
+                        this._slowStartTimeLeft = 0;
+                        // Restore normal speed (recalculate based on current difficulty)
+                        this.fallInterval = Math.max(0.25, this._baseFallInterval - (this._difficultyLevel - 1) * DIFFICULTY_SPEED_STEP);
+                    }
+                }
                 if (this.spawnFreezeTimer > 0) {
                     // Block sits at top for 2s before falling
                     this.spawnFreezeTimer -= dt;
@@ -8162,7 +10028,19 @@ class Game {
             this.renderer.draw(this.grid, this.block, 0);
         }
 
-        requestAnimationFrame((t) => this._loop(t));
+        if (!this._destroyed) requestAnimationFrame((t) => this._loop(t));
+    }
+
+    destroy() {
+        this._destroyed = true;
+        if (this.music) {
+            this.music.pause();
+            this.music._cancelCrossfade();
+            if (this.music.audio) { this.music.audio.pause(); this.music.audio.src = ""; }
+            if (this.music._preloadedAudio) { this.music._preloadedAudio.src = ""; this.music._preloadedAudio = null; }
+            if (this.music._audioCtx) { try { this.music._audioCtx.close(); } catch {} }
+        }
+        if (this.bgAnim && this.bgAnim._animId) cancelAnimationFrame(this.bgAnim._animId);
     }
 }
 
@@ -8197,6 +10075,10 @@ document.addEventListener("visibilitychange", () => {
         if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
             g._saveGameState();
         }
+        if (g && g.music) g.music._saveMusicState();
+    } else if (document.visibilityState === "visible") {
+        const g = window._game;
+        if (g && g.music) g.music.resumePlayback();
     }
 });
 window.addEventListener("beforeunload", () => {
@@ -8204,6 +10086,7 @@ window.addEventListener("beforeunload", () => {
     if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
         g._saveGameState();
     }
+    if (g && g.music) g.music._saveMusicState();
 });
 
 // ── Bootstrap ──
@@ -8216,5 +10099,10 @@ Promise.all([
         _buildHintSets();
     })
 ]).then(() => {
+    // Clean up previous instance (HMR reload) to prevent double audio / double game loops
+    const prev = window._game;
+    if (prev && prev.destroy) prev.destroy();
     window._game = new Game();
+    // Mount Preact UI layer after game initializes
+    mountPreactUI();
 });

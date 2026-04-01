@@ -3,3 +3,8 @@ include ':capacitor-cordova-android-plugins'
 project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
 
 apply from: 'capacitor.settings.gradle'
+
+// THE FIX: Forces all plugins to build in a safe location instead of node_modules
+gradle.beforeProject { project ->
+    project.buildDir = "${rootProject.projectDir}/build-artifacts/${project.name}"
+}

@@ -1,9 +1,9 @@
 /**
- * build-web.js — Copies web assets into www/ for Capacitor
+ * build-web.js — Copies static assets into www/ after Vite build
  *
- * Since Plummet is a vanilla HTML/CSS/JS project (no bundler),
- * this script copies the necessary files into the www/ directory
- * that Capacitor uses as its web root.
+ * Vite handles index.html, script.js, and style.css.
+ * This script copies the remaining runtime assets (words.json,
+ * Music, TUTORIAL, logo.svg) into the www/ directory.
  */
 
 const fs = require("fs");
@@ -12,11 +12,8 @@ const path = require("path");
 const SRC = __dirname;
 const DEST = path.join(__dirname, "www");
 
-// Files and folders to copy
+// Static assets that Vite doesn't process (loaded at runtime)
 const assets = [
-  "index.html",
-  "script.js",
-  "style.css",
   "words.json",
   "logo.svg",
   "Music",
@@ -41,10 +38,6 @@ function copyRecursive(src, dest) {
   }
 }
 
-// Clean & recreate www/
-if (fs.existsSync(DEST)) {
-  fs.rmSync(DEST, { recursive: true });
-}
 ensureDir(DEST);
 
 for (const name of assets) {
@@ -57,4 +50,4 @@ for (const name of assets) {
   console.log(`✓  ${name}`);
 }
 
-console.log("\n✅ www/ built successfully");
+console.log("\n✅ Static assets copied to www/");
