@@ -3804,6 +3804,18 @@ body.touch-input #mobile-controls {
     color: var(--text-dim);
 }
 
+.challenge-level-badge {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--bonus);
+    background: rgba(212, 160, 96, 0.15);
+    border: 1px solid rgba(212, 160, 96, 0.3);
+    border-radius: 6px;
+    padding: 1px 6px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
 /* ---------- Challenge Setup Screen ---------- */
 
 #challenge-setup-screen {
@@ -3932,6 +3944,17 @@ body.touch-input #mobile-controls {
     font-weight: 300;
     color: var(--accent);
     letter-spacing: 3px;
+}
+
+.target-level-tag {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--bonus);
+    background: rgba(212, 160, 96, 0.15);
+    border: 1px solid rgba(212, 160, 96, 0.3);
+    border-radius: 6px;
+    padding: 2px 7px;
+    letter-spacing: 0.5px;
 }
 
 @keyframes targetPulse {

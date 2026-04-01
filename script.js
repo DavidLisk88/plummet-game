@@ -50,6 +50,7 @@ async function loadDictionary() {
         DICTIONARY = new Set();
     }
     _buildHintSets();
+    _buildTargetWordPools();
 }
 
 // ────────────────────────────────────────
@@ -193,7 +194,7 @@ const CHALLENGE_TYPES = Object.freeze({
 const CHALLENGE_META = Object.freeze({
     [CHALLENGE_TYPES.TARGET_WORD]: {
         title: "Target Word",
-        description: "Spell target words for bonus points! Spelling the target word earns 200 bonus points.",
+        description: "Spell target words to level up! Words get harder as you progress through hundreds of levels.",
         icon: "◎",
     },
     [CHALLENGE_TYPES.SPEED_ROUND]: {
@@ -207,6 +208,78 @@ const CHALLENGE_META = Object.freeze({
         icon: "▦",
     },
 });
+
+// ── Target Word Level Progression System ──
+// Letter difficulty scores (higher = rarer/harder)
+const LETTER_DIFFICULTY = {
+    E:1,A:1,I:1,O:1,N:1,R:1,T:1,S:1,L:2,C:2,U:2,D:2,P:2,M:2,H:2,
+    G:3,B:3,F:3,Y:3,W:3,K:4,V:4,X:5,Z:5,J:5,Q:6
+};
+
+function _wordDifficulty(word) {
+    let score = 0;
+    for (const ch of word) score += (LETTER_DIFFICULTY[ch] || 3);
+    // Normalize by length to get per-letter difficulty, then weight by length
+    return (score / word.length) + (word.length - 3) * 0.6;
+}
+
+// Pre-sorted word pools built after dictionary loads
+let _targetWordPools = null;
+
+function _buildTargetWordPools() {
+    if (_targetWordPools) return;
+    const candidates = [];
+    for (const word of DICTIONARY) {
+        if (word.length >= 3 && word.length <= 7) {
+            candidates.push({ word, diff: _wordDifficulty(word), len: word.length });
+        }
+    }
+    candidates.sort((a, b) => a.diff - b.diff || a.len - b.len);
+    _targetWordPools = candidates;
+}
+
+// Given a level (1-based), return the range of the sorted pool to pick from
+function _targetLevelBand(level) {
+    if (!_targetWordPools || _targetWordPools.length === 0) return { start: 0, end: 0 };
+    const total = _targetWordPools.length;
+
+    // Very slow ramp: each level advances the difficulty window by a small fraction
+    // Levels 1-20: easiest 5% of words (short common words)
+    // Levels 21-60: 5-15%
+    // Levels 61-120: 15-35%
+    // Levels 121-200: 35-55%
+    // Levels 201-350: 55-80%
+    // Levels 351-500: 80-100%
+    // Beyond 500: top 20% (hardest)
+
+    let startPct, endPct;
+    if (level <= 20) {
+        const t = (level - 1) / 19;
+        startPct = 0; endPct = 0.03 + t * 0.04; // 3% to 7%
+    } else if (level <= 60) {
+        const t = (level - 21) / 39;
+        startPct = 0.02 + t * 0.05; endPct = 0.07 + t * 0.10; // window slides up
+    } else if (level <= 120) {
+        const t = (level - 61) / 59;
+        startPct = 0.10 + t * 0.10; endPct = 0.20 + t * 0.18;
+    } else if (level <= 200) {
+        const t = (level - 121) / 79;
+        startPct = 0.22 + t * 0.15; endPct = 0.38 + t * 0.20;
+    } else if (level <= 350) {
+        const t = (level - 201) / 149;
+        startPct = 0.40 + t * 0.18; endPct = 0.60 + t * 0.22;
+    } else if (level <= 500) {
+        const t = (level - 351) / 149;
+        startPct = 0.60 + t * 0.15; endPct = 0.80 + t * 0.20;
+    } else {
+        startPct = 0.80; endPct = 1.0;
+    }
+
+    return {
+        start: Math.floor(total * Math.min(startPct, 0.95)),
+        end: Math.max(Math.floor(total * Math.min(endPct, 1.0)), Math.floor(total * Math.min(startPct, 0.95)) + 5)
+    };
+}
 
 const CHALLENGE_GRID_SIZES = [6, 7, 8];
 const CHALLENGE_TIME_LIMIT = 7 * 60; // 7 minutes
@@ -331,12 +404,12 @@ const SHOP_ITEMS = {
 
 // ── Grid size gating (level + coin cost to unlock) ──
 const GRID_UNLOCK_REQUIREMENTS = {
-    3: { level: 10, coins: 200, label: "3×3 Extreme" },
-    4: { level: 5,  coins: 100, label: "4×4 Compact" },
-    5: { level: 0,  coins: 0,   label: "5×5 Standard" },
-    6: { level: 0,  coins: 0,   label: "6×6 Standard" },
-    7: { level: 0,  coins: 0,   label: "7×7 Wide" },
-    8: { level: 3,  coins: 0,   label: "8×8 Grand" },
+    3: { level: 10, coins: 0, label: "3×3 Extreme" },
+    4: { level: 5,  coins: 0, label: "4×4 Compact" },
+    5: { level: 0,  coins: 0, label: "5×5 Standard" },
+    6: { level: 0,  coins: 0, label: "6×6 Standard" },
+    7: { level: 0,  coins: 0, label: "7×7 Wide" },
+    8: { level: 3,  coins: 0, label: "8×8 Grand" },
 };
 
 // ── Theme color palettes for the renderer ──
@@ -2787,9 +2860,11 @@ class ProfileManager {
 
     getChallengeStats(challengeType) {
         const p = this.getActive();
-        if (!p) return { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [] };
+        if (!p) return { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], targetWordLevel: 1 };
         if (!p.challengeStats) p.challengeStats = {};
-        return p.challengeStats[challengeType] || { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [] };
+        const cs = p.challengeStats[challengeType] || { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [] };
+        if (cs.targetWordLevel === undefined) cs.targetWordLevel = 1;
+        return cs;
     }
 
     recordChallengeGame(challengeType, score, wordsFound) {
@@ -2797,7 +2872,7 @@ class ProfileManager {
         if (!p) return;
         if (!p.challengeStats) p.challengeStats = {};
         if (!p.challengeStats[challengeType]) {
-            p.challengeStats[challengeType] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [] };
+            p.challengeStats[challengeType] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], targetWordLevel: 1 };
         }
         const cs = p.challengeStats[challengeType];
         cs.gamesPlayed++;
@@ -2808,6 +2883,25 @@ class ProfileManager {
         cs.uniqueWordsFound = [...uniqueSet];
         if (score > cs.highScore) cs.highScore = score;
         this._save();
+    }
+
+    getTargetWordLevel() {
+        const stats = this.getChallengeStats(CHALLENGE_TYPES.TARGET_WORD);
+        return stats.targetWordLevel || 1;
+    }
+
+    advanceTargetWordLevel() {
+        const p = this.getActive();
+        if (!p) return 1;
+        if (!p.challengeStats) p.challengeStats = {};
+        if (!p.challengeStats[CHALLENGE_TYPES.TARGET_WORD]) {
+            p.challengeStats[CHALLENGE_TYPES.TARGET_WORD] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], targetWordLevel: 1 };
+        }
+        const cs = p.challengeStats[CHALLENGE_TYPES.TARGET_WORD];
+        if (cs.targetWordLevel === undefined) cs.targetWordLevel = 1;
+        cs.targetWordLevel++;
+        this._save();
+        return cs.targetWordLevel;
     }
 
     hasProfiles() { return this.profiles.length > 0; }
@@ -2839,8 +2933,6 @@ class ProfileManager {
         if (p.lastPlayDate === undefined) p.lastPlayDate = null;
         if (p.playStreak === undefined) p.playStreak = 0;
         if (!Array.isArray(p.claimedMilestones)) p.claimedMilestones = [];
-        // ── TEMP: testing cheat — remove after testing ──
-        p.coins = 99999;
     }
 
     /** Build a key for bestScores lookup. */
@@ -3662,6 +3754,7 @@ class Game {
                 this._renderShopTab(this._shopCurrentTab);
             });
         });
+        this._bindShopSwipe();
 
         // Challenges
         this.els.challengesBtn.addEventListener("click", () => {
@@ -5531,9 +5624,11 @@ class Game {
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
             this.targetWord = saved.targetWord || null;
             this.targetWordsCompleted = saved.targetWordsCompleted || 0;
+            this._targetWordLevel = this.profileMgr.getTargetWordLevel();
             if (this.targetWord) {
                 this.els.targetWordDisplay.classList.remove("hidden");
                 this.els.targetWordText.textContent = this.targetWord;
+                this._updateTargetLevelDisplay();
             }
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
             this.fallInterval = Math.min(this.fallInterval, 0.9);
@@ -6367,14 +6462,11 @@ class Game {
             this.els.xpEarnedText.classList.add("visible");
         }, 300);
 
-        // Show milestone toasts after a delay
+        // Show milestone toasts after a delay, one at a time
         const milestones = this._lastMilestones || [];
         if (milestones.length > 0) {
-            milestones.forEach((m, i) => {
-                setTimeout(() => {
-                    this._showMilestoneToast(m);
-                }, 1500 + i * 1200);
-            });
+            this._milestoneQueue = milestones.slice();
+            setTimeout(() => this._showNextMilestone(), 1500);
         }
 
         setTimeout(() => {
@@ -6642,6 +6734,59 @@ class Game {
 
     // ── Shop rendering ──
 
+    _shopTabOrder = ["grid_themes", "block_styles", "bonus_slots", "starting_perks"];
+
+    _bindShopSwipe() {
+        const content = this.els.shopContent;
+        let startX = 0, startY = 0, dragging = false, moved = false;
+
+        const onDown = (e) => {
+            dragging = true; moved = false;
+            startX = e.touches ? e.touches[0].clientX : e.clientX;
+            startY = e.touches ? e.touches[0].clientY : e.clientY;
+        };
+        const onMove = (e) => {
+            if (!dragging) return;
+            const x = e.touches ? e.touches[0].clientX : e.clientX;
+            const y = e.touches ? e.touches[0].clientY : e.clientY;
+            const dx = x - startX, dy = y - startY;
+            // If clearly scrolling vertically, cancel swipe
+            if (!moved && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+                dragging = false; return;
+            }
+            if (Math.abs(dx) > 15) moved = true;
+        };
+        const onUp = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            if (!moved) return;
+            const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            const dx = x - startX;
+            if (Math.abs(dx) < 40) return;
+
+            const idx = this._shopTabOrder.indexOf(this._shopCurrentTab);
+            let newIdx = idx;
+            if (dx < 0 && idx < this._shopTabOrder.length - 1) newIdx = idx + 1;
+            else if (dx > 0 && idx > 0) newIdx = idx - 1;
+            if (newIdx !== idx) {
+                this._shopCurrentTab = this._shopTabOrder[newIdx];
+                this.els.shopTabs.forEach(t => t.classList.toggle("active", t.dataset.tab === this._shopCurrentTab));
+                this._renderShopTab(this._shopCurrentTab);
+                // Scroll active tab into view
+                const activeTab = [...this.els.shopTabs].find(t => t.dataset.tab === this._shopCurrentTab);
+                if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            }
+        };
+
+        content.addEventListener('touchstart', onDown, { passive: true });
+        content.addEventListener('touchmove', onMove, { passive: true });
+        content.addEventListener('touchend', onUp);
+        content.addEventListener('mousedown', onDown);
+        content.addEventListener('mousemove', onMove);
+        content.addEventListener('mouseup', onUp);
+        content.addEventListener('mouseleave', onUp);
+    }
+
     _renderShop() {
         // Update coin display
         this.els.shopCoins.textContent = this.profileMgr.getCoins();
@@ -6899,7 +7044,17 @@ class Game {
         });
     }
 
-    _showMilestoneToast(milestone) {
+    _showNextMilestone() {
+        if (!this._milestoneQueue || this._milestoneQueue.length === 0) return;
+        const milestone = this._milestoneQueue.shift();
+        this._showMilestoneToast(milestone, () => {
+            if (this._milestoneQueue.length > 0) {
+                setTimeout(() => this._showNextMilestone(), 400);
+            }
+        });
+    }
+
+    _showMilestoneToast(milestone, onDone) {
         const toast = document.createElement("div");
         toast.className = "milestone-toast";
         toast.innerHTML = `
@@ -6915,7 +7070,10 @@ class Game {
             toast.classList.add("visible");
             setTimeout(() => {
                 toast.classList.remove("visible");
-                setTimeout(() => toast.remove(), 500);
+                setTimeout(() => {
+                    toast.remove();
+                    if (onDone) onDone();
+                }, 500);
             }, 2500);
         });
     }
@@ -7811,7 +7969,7 @@ class Game {
                     },
                     {
                         title: 'Hints System',
-                        desc: 'Keep an eye out for cells glowing ORANGE — these are hints! An orange glow means that cell is just ONE letter away from completing a valid word. If you can drop the right letter into that spot, the word will form instantly. Hints update in real-time as the grid changes, so check after every move. They\'re your best friend for spotting opportunities you might otherwise miss!',
+                        desc: 'Keep an eye out for cells glowing ORANGE — these are hints! An orange glow means that cell is just ONE letter away from completing a valid word. If you can drop the right letter into that spot, the word will form instantly. Hints update in real-time as the grid changes, so check after every move. Toggle hints ON or OFF with the ◈ button on the RIGHT side of the screen during gameplay. They\'re your best friend for spotting opportunities you might otherwise miss!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -7849,7 +8007,7 @@ class Game {
                 slides: [
                     {
                         title: 'Target Word',
-                        desc: 'In Target Word challenge, a specific word (3-5 letters) appears at the top of the screen. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! When you do, you earn a 200-point bonus on top of the normal word score, and a new target word is assigned. All challenges are 7 minutes long, use Normal difficulty, and are limited to 6×6, 7×7, or 8×8 grids. Your stats are tracked separately for each challenge!',
+                        desc: 'In Target Word challenge, a target word appears at the top of the screen along with your current Level. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! Each time you spell the target word, you earn a 200-point bonus and advance to the next level. Early levels give you short, common words. As you progress through hundreds of levels, words get longer and harder! Your level is saved permanently, so you pick up right where you left off. All challenges are 7 minutes long.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, 15);
                             gBg(ctx, ox, oy, cs, gs);
@@ -8373,6 +8531,222 @@ class Game {
                             ctx.font = '12px sans-serif';
                             ctx.fillStyle = '#706c58';
                             ctx.fillText(`XP multiplier: ${s.mult}`, w / 2, 170);
+                        }
+                    }
+                ]
+            },
+
+            // ═══ SHOP ═══
+            {
+                id: 'shop', icon: '●', label: 'Shop & Coins',
+                desc: 'Earn coins, buy cosmetics, and unlock upgrades',
+                slides: [
+                    {
+                        title: 'Earning Coins',
+                        desc: 'You earn coins by playing the game! Every word you find awards coins based on its length — longer words earn more. Building combos by claiming words quickly in a row adds a combo coin bonus. You also earn coins when you level up, and milestone achievements (like finding 50 unique words or reaching Level 5) award big one-time coin payouts. Check your coin balance in the top bar during gameplay or in the Shop.',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            // Coin icon
+                            const coinY = 35;
+                            ctx.beginPath(); ctx.arc(w / 2, coinY, 22, 0, Math.PI * 2);
+                            ctx.fillStyle = '#d4a060'; ctx.fill();
+                            ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
+                            gT(ctx, w / 2, coinY, '●', '#fff', 18);
+
+                            // Coin sources
+                            const sources = [
+                                { label: 'Word Found (3 letters)', val: '+2', color: '#8cb860' },
+                                { label: 'Word Found (5 letters)', val: '+6', color: '#8cb860' },
+                                { label: 'Word Found (7 letters)', val: '+12', color: '#8cb860' },
+                                { label: 'Combo Bonus (×3)', val: '+3', color: '#e2d8a6' },
+                                { label: 'Level Up (Lv. 5)', val: '+25', color: '#7eb8ff' },
+                                { label: 'Milestone: Wordsmith', val: '+30', color: '#d4a060' },
+                            ];
+                            const visCount = Math.min(Math.floor(t * 0.8) + 1, sources.length);
+                            for (let i = 0; i < visCount; i++) {
+                                const y = 72 + i * 22;
+                                ctx.font = '12px sans-serif';
+                                ctx.textAlign = 'left'; ctx.fillStyle = '#aaa';
+                                ctx.fillText(sources[i].label, 24, y);
+                                ctx.textAlign = 'right'; ctx.fillStyle = sources[i].color;
+                                ctx.fillText(sources[i].val, w - 24, y);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Browsing the Shop',
+                        desc: 'Open the Shop from the main menu. The shop has four tabs: Grid (visual themes for the game board), Blocks (letter block styles), Slots (extra bonus storage slots), and Perks (one-time starting perks for your next game). Swipe left or right on the shop content to switch between tabs, or tap the tab buttons at the top. Your current coin balance is shown in the top-right corner of the shop screen.',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            // Tab bar
+                            const tabs = ['Grid', 'Blocks', 'Slots', 'Perks'];
+                            const activeTab = Math.floor(t * 0.5) % tabs.length;
+                            const tabW = (w - 40) / tabs.length;
+                            for (let i = 0; i < tabs.length; i++) {
+                                const tx = 20 + i * tabW;
+                                const isActive = i === activeTab;
+                                ctx.fillStyle = isActive ? 'rgba(212,160,96,0.12)' : 'transparent';
+                                ctx.fillRect(tx, 10, tabW - 4, 28);
+                                if (isActive) {
+                                    ctx.strokeStyle = 'rgba(212,160,96,0.4)'; ctx.lineWidth = 1;
+                                    ctx.strokeRect(tx, 10, tabW - 4, 28);
+                                }
+                                ctx.font = `${isActive ? 'bold ' : ''}11px sans-serif`;
+                                ctx.textAlign = 'center';
+                                ctx.fillStyle = isActive ? '#d4a060' : '#888';
+                                ctx.fillText(tabs[i], tx + (tabW - 4) / 2, 28);
+                            }
+
+                            // Item cards
+                            const items = [
+                                ['Obsidian', '150'], ['Neon', '200'], ['Ocean', '175'],
+                                ['Charcoal', '125'], ['Ember', '200'], ['Amethyst', '175']
+                            ];
+                            const cardW = (w - 52) / 2, cardH = 56;
+                            for (let i = 0; i < 6; i++) {
+                                const col = i % 2, row = Math.floor(i / 2);
+                                const cx = 18 + col * (cardW + 16), cy = 50 + row * (cardH + 10);
+                                ctx.fillStyle = '#1a1a2e'; ctx.fillRect(cx, cy, cardW, cardH);
+                                ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.strokeRect(cx, cy, cardW, cardH);
+                                ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+                                ctx.fillStyle = '#ddd'; ctx.fillText(items[i][0], cx + 8, cy + 20);
+                                ctx.font = '10px sans-serif'; ctx.fillStyle = '#d4a060';
+                                ctx.fillText('● ' + items[i][1], cx + 8, cy + 38);
+                            }
+
+                            // Swipe hint
+                            const swipeAlpha = 0.4 + 0.4 * Math.sin(t * 3);
+                            ctx.save(); ctx.globalAlpha = swipeAlpha;
+                            gA(ctx, w * 0.35, h - 18, 'left', 14);
+                            gA(ctx, w * 0.65, h - 18, 'right', 14);
+                            gT(ctx, w / 2, h - 18, 'Swipe', '#e2d8a6', 11);
+                            ctx.restore();
+                        }
+                    },
+                    {
+                        title: 'Buying & Equipping',
+                        desc: 'Tap an item in the shop to see its details. If you have enough coins, tap "Buy" to purchase it. Cosmetic items (Grid Themes and Block Styles) can be equipped after buying — tap "Equip" to apply them to your game. You can only have one grid theme and one block style active at a time. Items you own show an "Owned" badge, and the one you\'re using shows "Equipped".',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            // Card preview
+                            const cardX = 40, cardY = 20, cardW = w - 80, cardH = 80;
+                            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(cardX, cardY, cardW, cardH);
+                            ctx.strokeStyle = '#d4a060'; ctx.lineWidth = 1; ctx.strokeRect(cardX, cardY, cardW, cardH);
+                            gT(ctx, w / 2, cardY + 22, 'Neon Theme', '#fff', 16);
+                            gT(ctx, w / 2, cardY + 42, 'Bright outlines, dark bg', '#888', 11);
+                            gT(ctx, w / 2, cardY + 62, '● 200 coins', '#d4a060', 13);
+
+                            // Button states cycling
+                            const cyc = t % 6;
+                            const btnY = 120, btnH = 34, btnW = 120;
+                            const btnX = (w - btnW) / 2;
+                            if (cyc < 2) {
+                                // Buy button
+                                ctx.fillStyle = '#d4a060';
+                                ctx.fillRect(btnX, btnY, btnW, btnH);
+                                ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+                                ctx.fillStyle = '#000'; ctx.fillText('Buy · 200', w / 2, btnY + 21);
+                                gTap(ctx, w / 2, btnY + 17, t);
+                            } else if (cyc < 4) {
+                                // Owned badge
+                                ctx.fillStyle = 'rgba(139,184,96,0.15)';
+                                ctx.fillRect(btnX, btnY, btnW, btnH);
+                                ctx.strokeStyle = '#8cb860'; ctx.strokeRect(btnX, btnY, btnW, btnH);
+                                ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+                                ctx.fillStyle = '#8cb860'; ctx.fillText('Equip', w / 2, btnY + 21);
+                                gTap(ctx, w / 2, btnY + 17, t);
+                            } else {
+                                // Equipped badge
+                                ctx.fillStyle = 'rgba(212,160,96,0.15)';
+                                ctx.fillRect(btnX, btnY, btnW, btnH);
+                                ctx.strokeStyle = '#d4a060'; ctx.strokeRect(btnX, btnY, btnW, btnH);
+                                ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+                                ctx.fillStyle = '#d4a060'; ctx.fillText('✓ Equipped', w / 2, btnY + 21);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Bonus Slots & Perks',
+                        desc: 'BONUS SLOTS let you store extra bonuses during gameplay instead of using them immediately. Buy up to 3 slots from the shop — they\'re permanent unlocks! During a game, when a bonus appears, you can save it in a slot for later. STARTING PERKS are one-time boosts you activate before a game — like Head Start (+200 starting points), Slow Start (slower drops for 30 seconds), or Lucky Draw (guaranteed powerful first bonus). Buy perks, and they\'ll be available to use at the start of your next game.',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            // Bonus slots visualization
+                            gT(ctx, w / 2, 20, 'Bonus Slots', '#d4a060', 16);
+                            const slotSize = 42, slotGap = 16;
+                            const totalSlotW = 3 * slotSize + 2 * slotGap;
+                            const slotStartX = (w - totalSlotW) / 2;
+                            const slotY = 36;
+                            const slotIcons = ['💣', '❄', '★'];
+                            const unlocked = Math.min(Math.floor(t * 0.4) + 1, 3);
+                            for (let i = 0; i < 3; i++) {
+                                const sx = slotStartX + i * (slotSize + slotGap);
+                                if (i < unlocked) {
+                                    ctx.fillStyle = '#2a2a3e'; ctx.fillRect(sx, slotY, slotSize, slotSize);
+                                    ctx.strokeStyle = '#d4a060'; ctx.lineWidth = 1; ctx.strokeRect(sx, slotY, slotSize, slotSize);
+                                    gT(ctx, sx + slotSize / 2, slotY + slotSize / 2, slotIcons[i], '#fff', 18);
+                                } else {
+                                    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(sx, slotY, slotSize, slotSize);
+                                    ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.strokeRect(sx, slotY, slotSize, slotSize);
+                                    gT(ctx, sx + slotSize / 2, slotY + slotSize / 2, '🔒', '#555', 16);
+                                }
+                            }
+
+                            // Perks list
+                            gT(ctx, w / 2, slotY + slotSize + 24, 'Starting Perks', '#8cb860', 14);
+                            const perks = [
+                                { name: 'Head Start', desc: '+200 pts', icon: '▲' },
+                                { name: 'Slow Start', desc: '0.5× speed 30s', icon: '◷' },
+                                { name: 'Bonus Boost', desc: '1st bonus at 500', icon: '◇' },
+                                { name: 'Lucky Draw', desc: 'Bomb/Wild/2×', icon: '★' },
+                            ];
+                            for (let i = 0; i < perks.length; i++) {
+                                const py = slotY + slotSize + 44 + i * 22;
+                                ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+                                ctx.fillStyle = '#888'; ctx.fillText(perks[i].icon + ' ' + perks[i].name, 30, py);
+                                ctx.textAlign = 'right'; ctx.fillStyle = '#8cb860';
+                                ctx.fillText(perks[i].desc, w - 30, py);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Milestones',
+                        desc: 'Milestones are one-time achievements that reward you with coins! They unlock automatically as you play — find unique words, play games, reach levels, score high, and maintain play streaks. When you earn a milestone, a gold toast notification appears with the achievement name and coin reward. Check the Leveling tutorial to learn how XP and levels work, since some milestones are tied to reaching specific levels.',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            gT(ctx, w / 2, 22, '🏆 Milestones', '#d4a060', 18);
+
+                            const milestones = [
+                                { label: 'Wordsmith', desc: '50 unique words', coins: '+30', done: true },
+                                { label: 'Getting Started', desc: 'Play 10 games', coins: '+25', done: true },
+                                { label: 'Rising Star', desc: 'Reach Level 5', coins: '+30', done: true },
+                                { label: 'Four Digits', desc: 'Score 1,000+', coins: '+25', done: false },
+                                { label: 'Dedicated', desc: 'Play 50 games', coins: '+75', done: false },
+                                { label: 'Weekly Warrior', desc: '7-day streak', coins: '+75', done: false },
+                            ];
+                            const visCount = Math.min(Math.floor(t * 0.6) + 1, milestones.length);
+                            for (let i = 0; i < visCount; i++) {
+                                const my = 42 + i * 26;
+                                const m = milestones[i];
+                                ctx.font = m.done ? 'bold 11px sans-serif' : '11px sans-serif';
+                                ctx.textAlign = 'left';
+                                ctx.fillStyle = m.done ? '#8cb860' : '#666';
+                                ctx.fillText((m.done ? '✓ ' : '○ ') + m.label, 20, my);
+                                ctx.font = '10px sans-serif';
+                                ctx.fillStyle = '#888'; ctx.fillText(m.desc, 20, my + 13);
+                                ctx.textAlign = 'right';
+                                ctx.fillStyle = m.done ? '#d4a060' : '#555';
+                                ctx.fillText(m.coins, w - 20, my + 6);
+                            }
                         }
                     }
                 ]
@@ -9205,6 +9579,8 @@ class Game {
                 && this.targetWord && group.word === this.targetWord) {
                 this.targetWordsCompleted++;
                 this.score += 200;
+                // Advance level and pick next word from the new level's pool
+                this._targetWordLevel = this.profileMgr.advanceTargetWordLevel();
                 this._pickTargetWord();
             }
 
@@ -9380,9 +9756,11 @@ class Game {
             const stats = this.profileMgr.getChallengeStats(key);
             const card = document.createElement("div");
             card.className = "challenge-card";
+            const levelInfo = key === CHALLENGE_TYPES.TARGET_WORD
+                ? `<span class="challenge-level-badge">Lv.${stats.targetWordLevel || 1}</span>` : '';
             card.innerHTML = `
                 <div class="challenge-preview"><canvas></canvas></div>
-                <div class="challenge-card-title">${meta.icon} ${meta.title}</div>
+                <div class="challenge-card-title">${meta.icon} ${meta.title} ${levelInfo}</div>
                 <div class="challenge-card-desc">${meta.description}</div>
                 <div class="challenge-card-stats">
                     <span>◎ ${stats.highScore}</span>
@@ -9811,6 +10189,7 @@ class Game {
         // After _beginNewGame sets up state, apply challenge specifics
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
             this.targetWordsCompleted = 0;
+            this._targetWordLevel = this.profileMgr.getTargetWordLevel();
             this._pickTargetWord();
             this.els.targetWordDisplay.classList.remove("hidden");
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
@@ -9835,14 +10214,48 @@ class Game {
     }
 
     _pickTargetWord() {
-        // Pick a random word from the dictionary that is 3-5 letters long
-        const candidates = [];
-        for (const word of DICTIONARY) {
-            if (word.length >= 3 && word.length <= 5) candidates.push(word);
+        _buildTargetWordPools();
+        const level = this._targetWordLevel || 1;
+        const band = _targetLevelBand(level);
+
+        if (!_targetWordPools || _targetWordPools.length === 0) {
+            // Fallback: pick any 3-5 letter word
+            const candidates = [];
+            for (const word of DICTIONARY) {
+                if (word.length >= 3 && word.length <= 5) candidates.push(word);
+            }
+            if (candidates.length === 0) return;
+            this.targetWord = candidates[Math.floor(Math.random() * candidates.length)];
+        } else {
+            const pool = _targetWordPools.slice(band.start, band.end);
+            if (pool.length === 0) {
+                this.targetWord = _targetWordPools[0].word;
+            } else {
+                // Pick randomly from the band, avoid repeating the same word
+                let pick;
+                let tries = 0;
+                do {
+                    pick = pool[Math.floor(Math.random() * pool.length)].word;
+                    tries++;
+                } while (pick === this.targetWord && pool.length > 1 && tries < 10);
+                this.targetWord = pick;
+            }
         }
-        if (candidates.length === 0) return;
-        this.targetWord = candidates[Math.floor(Math.random() * candidates.length)];
         this.els.targetWordText.textContent = this.targetWord;
+        this._updateTargetLevelDisplay();
+    }
+
+    _updateTargetLevelDisplay() {
+        const level = this._targetWordLevel || 1;
+        const display = this.els.targetWordDisplay;
+        if (!display) return;
+        let levelTag = display.querySelector('.target-level-tag');
+        if (!levelTag) {
+            levelTag = document.createElement('span');
+            levelTag.className = 'target-level-tag';
+            display.insertBefore(levelTag, display.firstChild);
+        }
+        levelTag.textContent = `Lv.${level}`;
     }
 
     _pickCategory(specificKey) {
