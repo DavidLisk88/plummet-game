@@ -564,6 +564,21 @@
         </div>
     </div>
 
+    <script>
+    // Debug: catch any fatal JS errors on mobile
+    window.onerror = function(msg, url, line, col, err) {
+        var el = document.createElement('div');
+        el.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:12px;background:red;color:#fff;font:12px monospace;z-index:99999;word-break:break-all;';
+        el.textContent = 'ERROR: ' + msg + ' (' + url + ':' + line + ')';
+        document.body.appendChild(el);
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+        var el = document.createElement('div');
+        el.style.cssText = 'position:fixed;top:40px;left:0;right:0;padding:12px;background:darkred;color:#fff;font:12px monospace;z-index:99999;word-break:break-all;';
+        el.textContent = 'PROMISE: ' + (e.reason && e.reason.message || e.reason || 'unknown');
+        document.body.appendChild(el);
+    });
+    </script>
     <script type="module" src="/script.js"></script>
 </body>
 </html>
