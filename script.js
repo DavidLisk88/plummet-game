@@ -73,8 +73,93 @@ let _totalPicks = 0;
 
 for (const ch of Object.keys(LETTER_FREQ)) _letterCounts[ch] = 0;
 
-function randomLetter() {
+// ── Grid-aware helper: find letters that would complete a word ──
+// Scans all contiguous letter runs on the grid and checks what single
+// letter, if placed at either end, would form a dictionary word.
+function _findHelpfulLetters(grid) {
+    if (!grid) return [];
+    const { rows, cols } = grid;
+    const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    const counts = {}; // letter → number of word-completions it enables
+
+    for (const [dr, dc] of dirs) {
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                // Only start at the beginning of a run in this direction
+                const pr = r - dr, pc = c - dc;
+                if (pr >= 0 && pr < rows && pc >= 0 && pc < cols && isWordLetter(grid.get(pr, pc))) continue;
+
+                // Build the full consecutive run from this start cell
+                let seq = "";
+                let cr = r, cc = c;
+                while (grid.inBounds(cr, cc) && isWordLetter(grid.get(cr, cc))) {
+                    seq += grid.get(cr, cc);
+                    cr += dr; cc += dc;
+                }
+                if (seq.length < 2) continue;
+
+                // Check all sub-sequences (forward and reversed) against dictionary
+                for (let start = 0; start < seq.length; start++) {
+                    for (let end = start + 2; end <= seq.length; end++) {
+                        const sub = seq.slice(start, end);
+                        if (sub.length > 6) continue;
+                        const rsub = sub.split("").reverse().join("");
+                        for (const s of [sub, rsub]) {
+                            // Try appending a letter (completing a prefix)
+                            for (let i = 0; i < 26; i++) {
+                                const ch = String.fromCharCode(65 + i);
+                                if (DICTIONARY.has(s + ch)) {
+                                    counts[ch] = (counts[ch] || 0) + 1;
+                                }
+                            }
+                            // Try prepending a letter (completing a suffix)
+                            for (let i = 0; i < 26; i++) {
+                                const ch = String.fromCharCode(65 + i);
+                                if (DICTIONARY.has(ch + s)) {
+                                    counts[ch] = (counts[ch] || 0) + 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Convert to array sorted by count (most useful letters first)
+    const result = [];
+    for (const [letter, count] of Object.entries(counts)) {
+        result.push({ letter, count });
+    }
+    result.sort((a, b) => b.count - a.count);
+    return result;
+}
+
+function randomLetter(grid) {
     const letters = Object.keys(LETTER_FREQ);
+
+    // ── Grid-aware helpful letter (≈25% chance) ──
+    // Scan the grid for near-complete words and sometimes give a letter
+    // that could complete one, so gameplay feels more natural.
+    if (grid && Math.random() < 0.25) {
+        const helpful = _findHelpfulLetters(grid);
+        if (helpful.length > 0) {
+            // Weight by how many words each letter could complete
+            const totalW = helpful.reduce((s, h) => s + h.count, 0);
+            let roll = Math.random() * totalW;
+            for (const h of helpful) {
+                roll -= h.count;
+                if (roll <= 0) {
+                    // Still update tracking so deficit balancing stays accurate
+                    _letterHistory.push(h.letter);
+                    if (_letterHistory.length > _HISTORY_MAX) _letterHistory.shift();
+                    _letterCounts[h.letter]++;
+                    _totalPicks++;
+                    return h.letter;
+                }
+            }
+        }
+    }
 
     // Build effective weights: base frequency, smooth cooldown, deficit/surplus balancing
     const weights = [];
@@ -5885,7 +5970,7 @@ class Game {
     _spawnBlock() {
         const centerCol = Math.floor(this.gridSize / 2);
         this.block = new FallingBlock(this.nextLetter, centerCol, this.gridSize, "letter");
-        this.nextLetter = randomLetter();
+        this.nextLetter = randomLetter(this.grid);
         this.els.nextLetter.textContent = this.nextLetter;
         this.fallTimer = 0;
         this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0 : 2.0;
@@ -10218,18 +10303,32 @@ class Game {
         const level = this._targetWordLevel || 1;
         const band = _targetLevelBand(level);
 
+        // Max word length per level tier — early levels are strictly short words
+        let maxLen;
+        if (level <= 20)       maxLen = 3;
+        else if (level <= 50)  maxLen = 4;
+        else if (level <= 100) maxLen = 5;
+        else if (level <= 180) maxLen = 6;
+        else                   maxLen = 7;
+
         if (!_targetWordPools || _targetWordPools.length === 0) {
             // Fallback: pick any 3-5 letter word
             const candidates = [];
             for (const word of DICTIONARY) {
-                if (word.length >= 3 && word.length <= 5) candidates.push(word);
+                if (word.length >= 3 && word.length <= Math.min(maxLen, 5)) candidates.push(word);
             }
             if (candidates.length === 0) return;
             this.targetWord = candidates[Math.floor(Math.random() * candidates.length)];
         } else {
-            const pool = _targetWordPools.slice(band.start, band.end);
+            // Filter the difficulty band by max word length for this level
+            const pool = _targetWordPools.slice(band.start, band.end)
+                .filter(entry => entry.len <= maxLen);
             if (pool.length === 0) {
-                this.targetWord = _targetWordPools[0].word;
+                // Fallback: find any word within length cap from the full pool
+                const fallback = _targetWordPools.filter(e => e.len <= maxLen);
+                this.targetWord = fallback.length > 0
+                    ? fallback[Math.floor(Math.random() * fallback.length)].word
+                    : _targetWordPools[0].word;
             } else {
                 // Pick randomly from the band, avoid repeating the same word
                 let pick;
