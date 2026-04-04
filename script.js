@@ -2731,6 +2731,13 @@ class MusicManager {
         this._crossfadeAudio = null;
         this._crossfading = false;
 
+        // Track when current track started playing (guards against premature crossfade
+        // caused by inaccurate duration estimates on VBR MP3s)
+        this._trackPlayStart = 0;
+
+        // AbortController for audio event listeners (enables clean removal)
+        this._listenerAborter = null;
+
         // Preloaded next track for gapless playback
         this._preloadedAudio = null;
         this._preloadedTrackId = null;
@@ -2862,9 +2869,12 @@ class MusicManager {
         this.currentTrackId = trackId;
         this._cancelCrossfade();
 
-        // Stop and discard old audio element
+        // Stop and discard old audio element (abort listeners BEFORE clearing src
+        // to prevent phantom events from src="" triggering handlers)
+        if (this._listenerAborter) this._listenerAborter.abort();
         this.audio.pause();
         this.audio.src = "";
+        this._trackPlayStart = Date.now();
 
         // Use preloaded audio if available for instant playback
         const preloaded = this._consumePreloaded(trackId);
@@ -3046,19 +3056,38 @@ class MusicManager {
     // ── Audio event listeners ──
 
     _bindAudioListeners(audioEl) {
+        // Abort previous listeners to prevent accumulation / phantom events
+        if (this._listenerAborter) this._listenerAborter.abort();
+        this._listenerAborter = new AbortController();
+        const signal = this._listenerAborter.signal;
+
         audioEl.addEventListener("ended", () => {
             if (audioEl !== this.audio) return;
             this._onTrackEnded();
-        });
+        }, { signal });
+
+        audioEl.addEventListener("error", () => {
+            if (audioEl !== this.audio) return;
+            console.warn("♪ Audio error on track", this.currentTrackId, audioEl.error);
+            // Skip to next track on load/decode errors instead of freezing
+            if (this.playing) this.next();
+        }, { signal });
+
         audioEl.addEventListener("timeupdate", () => {
             if (audioEl !== this.audio) return;
             if (this.onTimeUpdate) {
                 this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
             }
-            if (!this._crossfading && this.playing && this.audio.duration > 0
+            // Crossfade guard: require track has played at least 5 seconds to avoid
+            // premature triggers from inaccurate VBR MP3 duration estimates
+            const playedSec = this.audio.currentTime;
+            const dur = this.audio.duration;
+            const minPlayTime = Math.max(5, this._crossfadeDuration * 3);
+            if (!this._crossfading && this.playing && dur > 0
+                && playedSec >= minPlayTime
                 && this.repeatMode !== "one"
-                && this.audio.duration - this.audio.currentTime <= this._crossfadeDuration
-                && this.audio.duration > this._crossfadeDuration * 2
+                && dur - playedSec <= this._crossfadeDuration
+                && dur > this._crossfadeDuration * 2
                 && this._getEffectiveQueue().length > 1) {
                 this._startCrossfade();
             }
@@ -3067,7 +3096,7 @@ class MusicManager {
                 this._lastSavedTime = now;
                 this._saveMusicState();
             }
-        });
+        }, { signal });
     }
 
     _onTrackEnded() {
@@ -3104,10 +3133,16 @@ class MusicManager {
             // the normal ended → next() path can handle advancement
             this._crossfading = false;
             if (this._crossfadeTimer) clearInterval(this._crossfadeTimer);
+            this._crossfadeTimer = null;
             if (this._crossfadeAudio) {
                 this._crossfadeAudio.src = "";
                 this._crossfadeAudio = null;
             }
+            // Restore main audio gain (interval may have partially faded it)
+            if (this._gainNode) {
+                this._gainNode.gain.value = this.muted ? 0 : this._volume;
+            }
+            this.audio.volume = this.muted ? 0 : 1;
         });
 
         // Create a separate gain node for the crossfade audio
