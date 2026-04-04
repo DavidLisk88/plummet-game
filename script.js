@@ -74,51 +74,65 @@ let _totalPicks = 0;
 for (const ch of Object.keys(LETTER_FREQ)) _letterCounts[ch] = 0;
 
 // ── Grid-aware helper: find letters that would complete a word ──
-// Scans all contiguous letter runs on the grid and checks what single
-// letter, if placed at either end, would form a dictionary word.
+// Walks every line on the grid (rows, columns, diagonals) INCLUDING
+// empty cells, so it can find words with gaps.  e.g. F-O-_-U-S → "C"
+// would complete FOCUS.  Breaks lines at obstacles (bombs, etc.).
+// For each sub-segment of length 3-7, if there are 1-2 empty gaps,
+// it brute-forces A-Z into those gaps and checks the dictionary
+// (both forward and reversed, since the game reads words both ways).
 function _findHelpfulLetters(grid) {
     if (!grid) return [];
     const { rows, cols } = grid;
     const dirs = [[0,1],[1,0],[1,1],[1,-1]];
     const counts = {}; // letter → number of word-completions it enables
 
+    // Collect every unique line on the grid for each direction
+    const visited = new Set();
     for (const [dr, dc] of dirs) {
+        visited.clear();
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                // Only start at the beginning of a run in this direction
-                const pr = r - dr, pc = c - dc;
-                if (pr >= 0 && pr < rows && pc >= 0 && pc < cols && isWordLetter(grid.get(pr, pc))) continue;
+                // Walk backward to the start of this line
+                let sr = r, sc = c;
+                while (grid.inBounds(sr - dr, sc - dc)) { sr -= dr; sc -= dc; }
+                const lineKey = `${dr},${dc},${sr},${sc}`;
+                if (visited.has(lineKey)) continue;
+                visited.add(lineKey);
 
-                // Build the full consecutive run from this start cell
-                let seq = "";
-                let cr = r, cc = c;
-                while (grid.inBounds(cr, cc) && isWordLetter(grid.get(cr, cc))) {
-                    seq += grid.get(cr, cc);
+                // Walk the full line, collecting letters and empty cells.
+                // Obstacles (bombs, etc.) split the line into separate segments.
+                const segments = [[]];
+                let cr = sr, cc = sc;
+                while (grid.inBounds(cr, cc)) {
+                    const val = grid.get(cr, cc);
+                    if (val === null) {
+                        // Empty cell — a fillable gap
+                        segments[segments.length - 1].push(null);
+                    } else if (isWordLetter(val)) {
+                        segments[segments.length - 1].push(val);
+                    } else {
+                        // Obstacle — start a new segment
+                        if (segments[segments.length - 1].length > 0) segments.push([]);
+                    }
                     cr += dr; cc += dc;
                 }
-                if (seq.length < 2) continue;
 
-                // Check all sub-sequences (forward and reversed) against dictionary
-                for (let start = 0; start < seq.length; start++) {
-                    for (let end = start + 2; end <= seq.length; end++) {
-                        const sub = seq.slice(start, end);
-                        if (sub.length > 6) continue;
-                        const rsub = sub.split("").reverse().join("");
-                        for (const s of [sub, rsub]) {
-                            // Try appending a letter (completing a prefix)
-                            for (let i = 0; i < 26; i++) {
-                                const ch = String.fromCharCode(65 + i);
-                                if (DICTIONARY.has(s + ch)) {
-                                    counts[ch] = (counts[ch] || 0) + 1;
-                                }
+                // Scan each segment for sub-sequences with fillable gaps
+                for (const seg of segments) {
+                    if (seg.length < 3) continue;
+                    for (let start = 0; start < seg.length; start++) {
+                        for (let end = start + 3; end <= Math.min(start + 8, seg.length); end++) {
+                            const sub = seg.slice(start, end);
+                            const gaps = [];
+                            let letterCount = 0;
+                            for (let i = 0; i < sub.length; i++) {
+                                if (sub[i] === null) gaps.push(i);
+                                else letterCount++;
                             }
-                            // Try prepending a letter (completing a suffix)
-                            for (let i = 0; i < 26; i++) {
-                                const ch = String.fromCharCode(65 + i);
-                                if (DICTIONARY.has(ch + s)) {
-                                    counts[ch] = (counts[ch] || 0) + 1;
-                                }
-                            }
+                            // Need at least 2 real letters and 1-2 gaps
+                            if (gaps.length === 0 || gaps.length > 2 || letterCount < 2) continue;
+
+                            _fillGapsAndScore(sub, gaps, counts);
                         }
                     }
                 }
@@ -135,73 +149,150 @@ function _findHelpfulLetters(grid) {
     return result;
 }
 
-function randomLetter(grid) {
-    const letters = Object.keys(LETTER_FREQ);
+// Try every A-Z combination in the gap positions, check both forward
+// and reversed against the dictionary, and credit the gap-filling letters.
+function _fillGapsAndScore(sub, gaps, counts) {
+    const arr = [...sub];
+    const len = arr.length;
+    // For 2-gap segments, limit to length 5 to stay fast (676 combos × dict checks)
+    if (gaps.length === 2 && len > 5) return;
 
-    // ── Grid-aware helpful letter (≈25% chance) ──
-    // Scan the grid for near-complete words and sometimes give a letter
-    // that could complete one, so gameplay feels more natural.
-    if (grid && Math.random() < 0.25) {
-        const helpful = _findHelpfulLetters(grid);
-        if (helpful.length > 0) {
-            // Weight by how many words each letter could complete
-            const totalW = helpful.reduce((s, h) => s + h.count, 0);
-            let roll = Math.random() * totalW;
-            for (const h of helpful) {
-                roll -= h.count;
-                if (roll <= 0) {
-                    // Still update tracking so deficit balancing stays accurate
-                    _letterHistory.push(h.letter);
-                    if (_letterHistory.length > _HISTORY_MAX) _letterHistory.shift();
-                    _letterCounts[h.letter]++;
-                    _totalPicks++;
-                    return h.letter;
+    const check = () => {
+        let fwd = "";
+        for (let k = 0; k < len; k++) fwd += arr[k];
+        if (DICTIONARY.has(fwd)) {
+            for (const gi of gaps) counts[arr[gi]] = (counts[arr[gi]] || 0) + 1;
+        }
+        let rev = "";
+        for (let k = len - 1; k >= 0; k--) rev += arr[k];
+        if (rev !== fwd && DICTIONARY.has(rev)) {
+            for (const gi of gaps) {
+                const ch = arr[len - 1 - gi];
+                counts[ch] = (counts[ch] || 0) + 1;
+            }
+        }
+    };
+
+    if (gaps.length === 1) {
+        const gi = gaps[0];
+        for (let i = 0; i < 26; i++) {
+            arr[gi] = String.fromCharCode(65 + i);
+            check();
+        }
+    } else {
+        const [g1, g2] = gaps;
+        for (let i = 0; i < 26; i++) {
+            arr[g1] = String.fromCharCode(65 + i);
+            for (let j = 0; j < 26; j++) {
+                arr[g2] = String.fromCharCode(65 + j);
+                check();
+            }
+        }
+    }
+}
+
+function randomLetter(grid, targetWord) {
+    const letters = Object.keys(LETTER_FREQ);
+    const prevLetter = _letterHistory.length > 0 ? _letterHistory[_letterHistory.length - 1] : null;
+
+    // Helper: finalize a pick — update all tracking and return it.
+    // If the pick would repeat the previous letter, fall through to main selection.
+    const _commit = (ch) => {
+        _letterHistory.push(ch);
+        if (_letterHistory.length > _HISTORY_MAX) _letterHistory.shift();
+        _letterCounts[ch] = (_letterCounts[ch] || 0) + 1;
+        _totalPicks++;
+        return ch;
+    };
+
+    // ── Target Word Assistance ──
+    // When there's an active target word, periodically inject letters the player
+    // needs to spell it. This prevents "rare letter starvation" where the player
+    // waits 50+ blocks for a Q or Z.
+    if (targetWord && targetWord.length >= 3) {
+        const needed = {};
+        for (const ch of targetWord) needed[ch] = (needed[ch] || 0) + 1;
+        if (grid) {
+            for (let r = 0; r < grid.rows; r++) {
+                for (let c = 0; c < grid.cols; c++) {
+                    const val = grid.get(r, c);
+                    if (val && needed[val] && needed[val] > 0) needed[val]--;
                 }
+            }
+        }
+        const missingLetters = [];
+        for (const [ch, count] of Object.entries(needed)) {
+            for (let i = 0; i < count; i++) missingLetters.push(ch);
+        }
+        // Remove previous letter to prevent consecutive duplicates
+        const assistPool = missingLetters.filter(ch => ch !== prevLetter);
+        if (assistPool.length > 0) {
+            const assistRate = Math.min(0.50, 0.20 + missingLetters.length * 0.10);
+            if (Math.random() < assistRate) {
+                return _commit(assistPool[Math.floor(Math.random() * assistPool.length)]);
             }
         }
     }
 
-    // Build effective weights: base frequency, smooth cooldown, deficit/surplus balancing
+    // ── Grid-aware helpful letter (≈25% chance) ──
+    if (grid && Math.random() < 0.25) {
+        const helpful = _findHelpfulLetters(grid).filter(h => h.letter !== prevLetter);
+        if (helpful.length > 0) {
+            const totalW = helpful.reduce((s, h) => s + h.count, 0);
+            let roll = Math.random() * totalW;
+            for (const h of helpful) {
+                roll -= h.count;
+                if (roll <= 0) return _commit(h.letter);
+            }
+        }
+    }
+
+    // ── Main weighted random selection ──
+    // Goals: (1) NEVER repeat previous letter, (2) wide letter diversity,
+    // (3) aggressive cooldown so recent letters are visibly rare,
+    // (4) deficit correction to ensure underrepresented letters surface.
     const weights = [];
     for (const ch of letters) {
+        // Hard block: never repeat previous letter
+        if (ch === prevLetter) { weights.push(0); continue; }
+
         let w = LETTER_FREQ[ch];
 
-        // ── Smooth cooldown ──
-        // Recently picked letters get a penalty that smoothly decays
-        // using a power curve: near-zero for very recent, approaches 1.0
-        // as the letter ages out of the history window.
+        // ── Strong cooldown for recent letters ──
+        // Last 2 letters: near-zero weight. Letters 3-5 ago: heavy penalty.
+        // Letters 6+ ago: gradually recover. This ensures a WIDE variety.
         const histIdx = _letterHistory.lastIndexOf(ch);
         if (histIdx !== -1) {
-            const recency = _letterHistory.length - histIdx; // 1 = most recent
-            const cooldown = Math.pow(recency / _HISTORY_MAX, 1.5);
-            w *= Math.max(cooldown, 0.005);
+            const age = _letterHistory.length - histIdx; // 1 = most recent
+            if (age <= 2)       w *= 0.001;  // effectively blocked
+            else if (age <= 4)  w *= 0.05;   // very unlikely
+            else if (age <= 6)  w *= 0.20;   // unlikely
+            else if (age <= 8)  w *= 0.50;   // mild penalty
+            else                w *= 0.80;   // light penalty
         }
 
-        // ── Deficit / surplus balancing ──
-        // Aggressively boost underrepresented letters and dampen
-        // overrepresented ones to keep the distribution diverse.
+        // ── Aggressive deficit / surplus balancing ──
         if (_totalPicks > 8) {
             const expected = (LETTER_FREQ[ch] / _FREQ_TOTAL) * _totalPicks;
             const actual = _letterCounts[ch];
             const ratio = expected > 0 ? actual / expected : 0;
 
-            if (ratio < 0.25)      w *= 4.0;   // severely underrepresented
-            else if (ratio < 0.5)  w *= 2.8;   // very underrepresented
-            else if (ratio < 0.75) w *= 1.8;   // moderately underrepresented
-            else if (ratio < 0.9)  w *= 1.3;   // slightly underrepresented
-            else if (ratio > 2.0)  w *= 0.3;   // heavily overrepresented
-            else if (ratio > 1.5)  w *= 0.5;   // quite overrepresented
-            else if (ratio > 1.2)  w *= 0.7;   // somewhat overrepresented
+            if (ratio < 0.25)      w *= 5.0;   // severely underrepresented
+            else if (ratio < 0.5)  w *= 3.5;   // very underrepresented
+            else if (ratio < 0.75) w *= 2.0;   // moderately underrepresented
+            else if (ratio < 0.9)  w *= 1.4;   // slightly underrepresented
+            else if (ratio > 2.5)  w *= 0.10;  // extremely overrepresented
+            else if (ratio > 2.0)  w *= 0.20;  // heavily overrepresented
+            else if (ratio > 1.5)  w *= 0.35;  // quite overrepresented
+            else if (ratio > 1.2)  w *= 0.55;  // somewhat overrepresented
         }
 
         // ── Never-seen guarantee ──
-        // After enough picks, any letter that hasn't appeared at all
-        // gets a strong floor boost so it actually shows up.
         if (_totalPicks >= 20 && _letterCounts[ch] === 0) {
             w = Math.max(w, 5);
         }
 
-        weights.push(Math.max(w, 0.01)); // absolute floor
+        weights.push(Math.max(w, 0.01));
     }
 
     // Weighted random selection
@@ -213,13 +304,7 @@ function randomLetter(grid) {
         if (roll <= 0) { picked = letters[i]; break; }
     }
 
-    // Update tracking
-    _letterHistory.push(picked);
-    if (_letterHistory.length > _HISTORY_MAX) _letterHistory.shift();
-    _letterCounts[picked]++;
-    _totalPicks++;
-
-    return picked;
+    return _commit(picked);
 }
 
 const WILDCARD_SYMBOL = "★";
@@ -274,6 +359,7 @@ const CHALLENGE_TYPES = Object.freeze({
     TARGET_WORD: "target-word",
     SPEED_ROUND: "speed-round",
     WORD_CATEGORY: "word-category",
+    WORD_SEARCH: "word-search",
 });
 
 const CHALLENGE_META = Object.freeze({
@@ -291,6 +377,11 @@ const CHALLENGE_META = Object.freeze({
         title: "Word Category",
         description: "Choose a category and find matching words for bonus points! Harder categories earn more.",
         icon: "▦",
+    },
+    [CHALLENGE_TYPES.WORD_SEARCH]: {
+        title: "Word Search",
+        description: "Find hidden words in the grid! No word list — discover them yourself. Levels get harder and harder!",
+        icon: "🔍",
     },
 });
 
@@ -366,6 +457,382 @@ function _targetLevelBand(level) {
     };
 }
 
+// ────────────────────────────────────────
+// WORD SEARCH ENGINE
+// ────────────────────────────────────────
+const WORD_SEARCH_TIME_LIMIT = 7 * 60; // 7 minutes per level
+
+// Directions: right, down, down-right, down-left, left, up, up-left, up-right
+const WS_DIRECTIONS = [
+    [0, 1], [1, 0], [1, 1], [1, -1],
+    [0, -1], [-1, 0], [-1, -1], [-1, 1],
+];
+
+/**
+ * Get Word Search level parameters based on level number.
+ * Very slow difficulty progression over thousands of levels.
+ */
+function _wsLevelParams(level) {
+    let gridSize, minWords, maxWords, minWordLen, maxWordLen, allowedDirs;
+
+    if (level <= 10) {
+        // Beginner: tiny grid, only 3-letter words, right & down
+        gridSize = 8;
+        minWords = 5; maxWords = 5;
+        minWordLen = 3; maxWordLen = 3;
+        allowedDirs = [[0, 1], [1, 0]];
+    } else if (level <= 25) {
+        // Easing in: still small, introduce 4-letter words
+        gridSize = 8;
+        minWords = 5; maxWords = 6;
+        minWordLen = 3; maxWordLen = 4;
+        allowedDirs = [[0, 1], [1, 0]];
+    } else if (level <= 50) {
+        // Comfortable: add left & up directions
+        gridSize = 8;
+        minWords = 5; maxWords = 6;
+        minWordLen = 3; maxWordLen = 4;
+        allowedDirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+    } else if (level <= 80) {
+        // Slightly bigger grid, still easy words
+        gridSize = 9;
+        minWords = 5; maxWords = 6;
+        minWordLen = 3; maxWordLen = 4;
+        allowedDirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+    } else if (level <= 120) {
+        // Introduce 5-letter words, one diagonal
+        gridSize = 9;
+        minWords = 5; maxWords = 7;
+        minWordLen = 3; maxWordLen = 5;
+        allowedDirs = [[0, 1], [1, 0], [1, 1], [0, -1], [-1, 0]];
+    } else if (level <= 180) {
+        gridSize = 10;
+        minWords = 5; maxWords = 7;
+        minWordLen = 3; maxWordLen = 5;
+        allowedDirs = [[0, 1], [1, 0], [1, 1], [1, -1], [0, -1], [-1, 0]];
+    } else if (level <= 260) {
+        gridSize = 10;
+        minWords = 6; maxWords = 8;
+        minWordLen = 3; maxWordLen = 5;
+        allowedDirs = WS_DIRECTIONS;
+    } else if (level <= 380) {
+        // Introduce 6-letter words
+        gridSize = 11;
+        minWords = 6; maxWords = 9;
+        minWordLen = 4; maxWordLen = 6;
+        allowedDirs = WS_DIRECTIONS;
+    } else if (level <= 550) {
+        gridSize = 12;
+        minWords = 7; maxWords = 10;
+        minWordLen = 4; maxWordLen = 6;
+        allowedDirs = WS_DIRECTIONS;
+    } else if (level <= 800) {
+        // Introduce 7-letter words
+        gridSize = 13;
+        minWords = 8; maxWords = 12;
+        minWordLen = 4; maxWordLen = 7;
+        allowedDirs = WS_DIRECTIONS;
+    } else {
+        // Level 801+: gradual scaling
+        gridSize = Math.min(16, 13 + Math.floor((level - 800) / 500));
+        minWords = 8; maxWords = 14;
+        minWordLen = 5; maxWordLen = 7;
+        allowedDirs = WS_DIRECTIONS;
+    }
+
+    // Ultra-slow difficulty ramp for word selection within each tier
+    // Level 1 → 0%, Level 100 → ~6%, Level 500 → ~22%, Level 2000 → ~63%
+    const difficultyPct = Math.min(1.0, Math.sqrt(level / 5000));
+
+    return { gridSize, minWords, maxWords, minWordLen, maxWordLen, allowedDirs, difficultyPct };
+}
+
+/**
+ * Select words for a word search level from the dictionary.
+ * Returns array of uppercase words, sorted by length (shortest first).
+ */
+function _wsSelectWords(params) {
+    const { minWords, maxWords, minWordLen, maxWordLen, difficultyPct } = params;
+    const count = minWords + Math.floor(Math.random() * (maxWords - minWords + 1));
+
+    // Build candidate pool from dictionary filtered by length
+    const candidates = [];
+    for (const word of DICTIONARY) {
+        if (word.length >= minWordLen && word.length <= maxWordLen) {
+            candidates.push(word);
+        }
+    }
+    if (candidates.length === 0) return [];
+
+    // Sort by difficulty, then pick from appropriate difficulty window
+    candidates.sort((a, b) => _wordDifficulty(a) - _wordDifficulty(b));
+    const total = candidates.length;
+    // Tight window at low difficulty, gradually widens
+    // At difficultyPct=0: window 0-10%  (easiest words only)
+    // At difficultyPct=0.2: window 5-30%
+    // At difficultyPct=0.5: window 25-65%
+    // At difficultyPct=1.0: window 70-100%
+    const halfWidth = 0.1 + difficultyPct * 0.2; // 0.1 → 0.3
+    const center = difficultyPct * 0.85 + 0.05; // 0.05 → 0.9
+    const windowStart = Math.floor(total * Math.max(0, center - halfWidth));
+    const windowEnd = Math.min(total, Math.floor(total * Math.min(1, center + halfWidth)));
+    const pool = candidates.slice(windowStart, Math.max(windowEnd, windowStart + 20));
+
+    // Pick random unique words
+    const selected = new Set();
+    const result = [];
+    let attempts = 0;
+    while (result.length < count && attempts < count * 20) {
+        const word = pool[Math.floor(Math.random() * pool.length)];
+        attempts++;
+        if (selected.has(word)) continue;
+        selected.add(word);
+        result.push(word);
+    }
+    result.sort((a, b) => a.length - b.length);
+    return result;
+}
+
+/**
+ * Generate a word search grid with smart fill that avoids accidental words.
+ * 1. Place all requested words on the grid
+ * 2. Fill empty cells with letters that DON'T form new dictionary words
+ * 3. If a cell can't avoid all words, pick the least-conflicting letter
+ * Returns { grid: string[][], placedWords: [{word, cells: [{r,c}], dir}] }
+ */
+function _wsGenerateGrid(size, words, allowedDirs) {
+    const grid = Array.from({ length: size }, () => Array(size).fill(null));
+    const placedWords = [];
+
+    // Sort words longest first for best placement chance
+    const sorted = [...words].sort((a, b) => b.length - a.length);
+
+    for (const word of sorted) {
+        let placed = false;
+        // Try up to 300 random placements
+        for (let attempt = 0; attempt < 300 && !placed; attempt++) {
+            const dir = allowedDirs[Math.floor(Math.random() * allowedDirs.length)];
+            const [dr, dc] = dir;
+
+            // Calculate valid start range
+            let startR, startC, endR, endC;
+            if (dr > 0) { startR = 0; endR = size - word.length; }
+            else if (dr < 0) { startR = word.length - 1; endR = size - 1; }
+            else { startR = 0; endR = size - 1; }
+
+            if (dc > 0) { startC = 0; endC = size - word.length; }
+            else if (dc < 0) { startC = word.length - 1; endC = size - 1; }
+            else { startC = 0; endC = size - 1; }
+
+            if (startR > endR || startC > endC) continue;
+
+            const r = startR + Math.floor(Math.random() * (endR - startR + 1));
+            const c = startC + Math.floor(Math.random() * (endC - startC + 1));
+
+            // Check if word fits without conflicts
+            let fits = true;
+            const cells = [];
+            for (let i = 0; i < word.length; i++) {
+                const nr = r + dr * i;
+                const nc = c + dc * i;
+                if (nr < 0 || nr >= size || nc < 0 || nc >= size) { fits = false; break; }
+                const existing = grid[nr][nc];
+                if (existing !== null && existing !== word[i]) { fits = false; break; }
+                cells.push({ r: nr, c: nc });
+            }
+            if (!fits) continue;
+
+            // Place word
+            for (let i = 0; i < word.length; i++) {
+                grid[cells[i].r][cells[i].c] = word[i];
+            }
+            placedWords.push({ word, cells, dir });
+            placed = true;
+        }
+        if (!placed) {
+            console.warn(`[WS] Failed to place word "${word}" after 300 attempts`);
+        }
+    }
+
+    // ── Smart fill: avoid creating accidental dictionary words ──
+
+    // Verify all placed words are actually readable on the grid
+    for (const pw of placedWords) {
+        let readBack = "";
+        for (const { r, c } of pw.cells) readBack += grid[r][c];
+        if (readBack !== pw.word) {
+            console.error(`[WS] PLACEMENT ERROR: "${pw.word}" reads as "${readBack}"!`);
+        }
+    }
+    console.log(`[WS] Placed ${placedWords.length} words:`, placedWords.map(pw => pw.word).join(", "));
+
+    // Collect empty cells and shuffle for random fill order
+    const emptyCells = [];
+    for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+            if (grid[r][c] === null) emptyCells.push({ r, c });
+        }
+    }
+    // Shuffle
+    for (let i = emptyCells.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [emptyCells[i], emptyCells[j]] = [emptyCells[j], emptyCells[i]];
+    }
+
+    // All 8 directions for checking (we check all, not just allowedDirs,
+    // to prevent accidental words in ANY direction)
+    const allDirs = WS_DIRECTIONS;
+
+    for (const { r, c } of emptyCells) {
+        // Try 26 letters in random order, pick the one that creates fewest new words
+        const letters = [];
+        for (let i = 0; i < 26; i++) letters.push(String.fromCharCode(65 + i));
+        // Shuffle letters
+        for (let i = 25; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [letters[i], letters[j]] = [letters[j], letters[i]];
+        }
+
+        let bestLetter = letters[0];
+        let bestConflicts = Infinity;
+
+        for (const letter of letters) {
+            grid[r][c] = letter;
+            let conflicts = 0;
+
+            // Check every direction from this cell — does placing this letter
+            // complete any 3-7 letter word that passes through (r,c)?
+            for (const [dr, dc] of allDirs) {
+                // Check strings of length 3-7 that include cell (r,c)
+                for (let len = 3; len <= 7; len++) {
+                    // The word could start at offset 0..(len-1) before (r,c)
+                    for (let offset = 0; offset < len; offset++) {
+                        const sr = r - dr * offset;
+                        const sc = c - dc * offset;
+                        const er = sr + dr * (len - 1);
+                        const ec = sc + dc * (len - 1);
+                        if (sr < 0 || sr >= size || sc < 0 || sc >= size) continue;
+                        if (er < 0 || er >= size || ec < 0 || ec >= size) continue;
+                        // Build the word
+                        let w = "";
+                        let hasNull = false;
+                        for (let i = 0; i < len; i++) {
+                            const ch = grid[sr + dr * i][sc + dc * i];
+                            if (ch === null) { hasNull = true; break; }
+                            w += ch;
+                        }
+                        if (hasNull) continue;
+                        // Check if this is a placed word (don't count those as conflicts)
+                        if (DICTIONARY.has(w)) {
+                            const isPlaced = placedWords.some(pw => pw.word === w);
+                            if (!isPlaced) conflicts++;
+                        }
+                    }
+                }
+            }
+
+            if (conflicts === 0) {
+                bestLetter = letter;
+                bestConflicts = 0;
+                break; // Perfect — no accidental words
+            }
+            if (conflicts < bestConflicts) {
+                bestConflicts = conflicts;
+                bestLetter = letter;
+            }
+        }
+
+        grid[r][c] = bestLetter;
+    }
+
+    return { grid, placedWords };
+}
+
+/**
+ * Validate that a sequence of cells forms a valid dictionary word in the word search.
+ * Cells must be in a straight line (any of 8 directions).
+ */
+function _wsValidateSelection(grid, cells, allValidWords) {
+    if (!cells || cells.length < 3) return null;
+
+    // Check cells form a straight line
+    if (cells.length > 1) {
+        const dr = Math.sign(cells[1].r - cells[0].r);
+        const dc = Math.sign(cells[1].c - cells[0].c);
+        for (let i = 2; i < cells.length; i++) {
+            const eDr = Math.sign(cells[i].r - cells[i - 1].r);
+            const eDc = Math.sign(cells[i].c - cells[i - 1].c);
+            if (eDr !== dr || eDc !== dc) return null; // Not a straight line
+        }
+        // Check cells are consecutive steps
+        for (let i = 1; i < cells.length; i++) {
+            if (Math.abs(cells[i].r - cells[i - 1].r) > 1 ||
+                Math.abs(cells[i].c - cells[i - 1].c) > 1) return null;
+        }
+    }
+
+    // Build word from cells
+    let word = "";
+    for (const { r, c } of cells) {
+        word += grid[r][c];
+    }
+
+    // Only accept words that are on the board's valid word list (placed + scanned accidentals)
+    if (allValidWords && allValidWords.has(word)) return word;
+    return null;
+}
+
+/**
+ * Word Search scoring for individual words found.
+ * Longer words and rarer letters earn more points.
+ */
+function _wsScoreWord(word, level) {
+    // Use same scoring formula as the main game
+    let pts = word.length * 10 * word.length;
+
+    // Word complexity bonus: longer words get progressively more
+    // 3-letter base, 4→+15%, 5→+35%, 6→+60%, 7→+90%, 8+→+125%
+    const len = word.length;
+    if (len >= 4) {
+        const complexityMult = 1 + 0.15 * Math.pow(len - 3, 1.4);
+        pts = Math.floor(pts * complexityMult);
+    }
+
+    // Tough letter bonus: sum letter difficulty values for all letters
+    // Only letters worth >1 contribute bonus (common letters don't add extra)
+    let letterBonus = 0;
+    for (const ch of word) {
+        const val = LETTER_VALUES[ch] || 1;
+        if (val > 1) letterBonus += val * 3;
+    }
+    pts += letterBonus;
+
+    // Gentle level scaling
+    const levelMult = 1 + Math.log10(Math.max(1, level)) * 0.15;
+    return Math.floor(pts * levelMult);
+}
+
+/**
+ * Coins earned per word found in word search.
+ * WS has no combos, multipliers, or bonuses — so per-word coin rate
+ * is significantly boosted to keep earnings comparable to the main game.
+ */
+function _wsWordCoins(word) {
+    const len = word.length;
+    // Generous base: scales steeply with word length
+    // 3→5, 4→10, 5→18, 6→28, 7→40
+    const base = Math.floor(len * len - len + 2);
+    // Tough letter bonus: rare letters earn extra coins
+    let letterBonus = 0;
+    for (const ch of word) {
+        const val = LETTER_VALUES[ch] || 1;
+        if (val >= 4) letterBonus += 2;   // H,F,W,V,Y = +2 each
+        if (val >= 8) letterBonus += 3;   // J,X = +5 total each
+        if (val >= 10) letterBonus += 5;  // Q,Z = +10 total each
+    }
+    return base + letterBonus;
+}
+
 const CHALLENGE_GRID_SIZES = [6, 7, 8];
 const CHALLENGE_TIME_LIMIT = 7 * 60; // 7 minutes
 
@@ -380,7 +847,7 @@ const CATEGORY_TIERS = Object.freeze({
     technology: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
 });
 
-const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 8, 10, 15, 20];
+const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 10];
 
 const BONUS_TYPE_POOL = [
     BONUS_TYPES.LETTER_PICK,
@@ -687,6 +1154,8 @@ function calculateGameXP({ score, wordsFound, gridSize, difficulty, gameMode,
             xp = Math.floor(xp * 1.75);
         } else if (challengeType === CHALLENGE_TYPES.TARGET_WORD) {
             xp = Math.floor(xp * 1.5);
+        } else if (challengeType === CHALLENGE_TYPES.WORD_SEARCH) {
+            xp = Math.floor(xp * 1.4);
         } else {
             // Word category base — tier differentiation via §7 additive
             xp = Math.floor(xp * 1.4);
@@ -2070,7 +2539,7 @@ class Renderer {
 // Update FALLBACK_TRACKS when you add/remove music files.
 // ────────────────────────────────────────
 const FALLBACK_TRACKS = [
-    { id: "track01", title: "Red Velvet Cake", artist: "Freddy River", file: "Music/Red Velvet Cake.wav" },
+    { id: "track01", title: "LIQUID", artist: "Freddy River", file: "Music/LIQUID.mp3" },
 ];
 
 let DEFAULT_TRACKS = [...FALLBACK_TRACKS];
@@ -2989,6 +3458,36 @@ class ProfileManager {
         return cs.targetWordLevel;
     }
 
+    setTargetWordLevel(level) {
+        const p = this.getActive();
+        if (!p) return;
+        if (!p.challengeStats) p.challengeStats = {};
+        if (!p.challengeStats[CHALLENGE_TYPES.TARGET_WORD]) {
+            p.challengeStats[CHALLENGE_TYPES.TARGET_WORD] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], targetWordLevel: 1 };
+        }
+        p.challengeStats[CHALLENGE_TYPES.TARGET_WORD].targetWordLevel = level;
+        this._save();
+    }
+
+    getWordSearchLevel() {
+        const stats = this.getChallengeStats(CHALLENGE_TYPES.WORD_SEARCH);
+        return stats.wordSearchLevel || 1;
+    }
+
+    advanceWordSearchLevel() {
+        const p = this.getActive();
+        if (!p) return 1;
+        if (!p.challengeStats) p.challengeStats = {};
+        if (!p.challengeStats[CHALLENGE_TYPES.WORD_SEARCH]) {
+            p.challengeStats[CHALLENGE_TYPES.WORD_SEARCH] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], wordSearchLevel: 1 };
+        }
+        const cs = p.challengeStats[CHALLENGE_TYPES.WORD_SEARCH];
+        if (cs.wordSearchLevel === undefined) cs.wordSearchLevel = 1;
+        cs.wordSearchLevel++;
+        this._save();
+        return cs.wordSearchLevel;
+    }
+
     hasProfiles() { return this.profiles.length > 0; }
 
     /** Ensure legacy profiles have XP fields. */
@@ -3429,7 +3928,8 @@ class Game {
             pauseMusicBtn:  document.getElementById("pause-music-btn"),
             pauseShopBtn:   document.getElementById("pause-shop-btn"),
             playCoins:      document.getElementById("play-coins"),
-            quitBtn:        document.getElementById("quit-btn"),
+            quitBtn:        document.getElementById("save-quit-btn"),
+            endGameBtn:     document.getElementById("end-game-btn"),
             globalMuteBtn:  document.getElementById("global-mute-btn"),
             nextLetter:     document.getElementById("next-letter"),
             playWordsFoundBtn: document.getElementById("play-words-found-btn"),
@@ -3571,6 +4071,78 @@ class Game {
             shopContent: document.getElementById("shop-content"),
             shopTabs: document.querySelectorAll(".shop-tab"),
             menuCoins: document.getElementById("menu-coins"),
+            // Auth
+            authScreen: document.getElementById("auth-screen"),
+            authSubtitle: document.getElementById("auth-subtitle"),
+            authError: document.getElementById("auth-error"),
+            authSignin: document.getElementById("auth-signin"),
+            authSignup: document.getElementById("auth-signup"),
+            authEmail: document.getElementById("auth-email"),
+            authPassword: document.getElementById("auth-password"),
+            authSigninBtn: document.getElementById("auth-signin-btn"),
+            authGotoSignup: document.getElementById("auth-goto-signup"),
+            authGotoSignin: document.getElementById("auth-goto-signin"),
+            authForgotBtn: document.getElementById("auth-forgot-btn"),
+            authLogoutBtn: document.getElementById("auth-logout-btn"),
+            deleteAccountBtn: document.getElementById("delete-account-btn"),
+            signupEmail: document.getElementById("signup-email"),
+            signupSendCodeBtn: document.getElementById("signup-send-code-btn"),
+            signupStepEmail: document.getElementById("signup-step-email"),
+            signupStepVerify: document.getElementById("signup-step-verify"),
+            signupEmailDisplay: document.getElementById("signup-email-display"),
+            signupCodeInputs: document.getElementById("signup-code-inputs"),
+            signupCodeTimer: document.getElementById("signup-code-timer"),
+            signupVerifyCodeBtn: document.getElementById("signup-verify-code-btn"),
+            signupResendBtn: document.getElementById("signup-resend-btn"),
+            signupStepPassword: document.getElementById("signup-step-password"),
+            signupPassword: document.getElementById("signup-password"),
+            signupPasswordConfirm: document.getElementById("signup-password-confirm"),
+            signupCreateBtn: document.getElementById("signup-create-btn"),
+            // Leaderboard
+            leaderboardScreen: document.getElementById("leaderboard-screen"),
+            leaderboardBtn: document.getElementById("leaderboard-btn"),
+            lbBackBtn: document.getElementById("lb-back-btn"),
+            lbRefreshBtn: document.getElementById("lb-refresh-btn"),
+            lbTitle: document.getElementById("lb-title"),
+            lbTabs: document.querySelectorAll(".lb-tab"),
+            lbClassBtns: document.querySelectorAll(".lb-class-btn"),
+            lbMyRank: document.getElementById("lb-my-rank"),
+            lbMyRankIcon: document.getElementById("lb-my-rank-icon"),
+            lbMyRankClass: document.getElementById("lb-my-rank-class"),
+            lbMyRankPos: document.getElementById("lb-my-rank-pos"),
+            lbList: document.getElementById("lb-list"),
+            lbLoadMore: document.getElementById("lb-load-more"),
+            lbLoadMoreBtn: document.getElementById("lb-load-more-btn"),
+            myRankCard: document.getElementById("my-rank-card"),
+            myRankIcon: document.getElementById("my-rank-icon"),
+            myRankClassLabel: document.getElementById("my-rank-class-label"),
+            myRankPosition: document.getElementById("my-rank-position"),
+            myRankRating: document.getElementById("my-rank-rating"),
+            challengeLbBtns: document.querySelectorAll(".challenge-lb-btn"),
+            // Word Search
+            wsScreen: document.getElementById("ws-screen"),
+            wsCanvas: document.getElementById("ws-canvas"),
+            wsGridContainer: document.getElementById("ws-grid-container"),
+            wsScore: document.getElementById("ws-score"),
+            wsTimer: document.getElementById("ws-timer"),
+            wsLevelNum: document.getElementById("ws-level-num"),
+            wsCoins: document.getElementById("ws-coins"),
+            wsWordsFoundCount: document.getElementById("ws-words-found-count"),
+            wsWordPopup: document.getElementById("ws-word-popup"),
+            wsPauseBtn: document.getElementById("ws-pause-btn"),
+            wsPauseOverlay: document.getElementById("ws-pause-overlay"),
+            wsResumeBtn: document.getElementById("ws-resume-btn"),
+            wsMusicBtn: document.getElementById("ws-music-btn"),
+            wsQuitBtn: document.getElementById("ws-save-quit-btn"),
+            wsEndGameBtn: document.getElementById("ws-end-game-btn"),
+            wsLevelText: document.getElementById("ws-level-text"),
+            wsXpBarFill: document.getElementById("ws-xp-bar-fill"),
+            wsXpText: document.getElementById("ws-xp-text"),
+            wsMiniTitle: document.getElementById("ws-mini-title"),
+            wsMiniPrev: document.getElementById("ws-mini-prev"),
+            wsMiniToggle: document.getElementById("ws-mini-toggle"),
+            wsMiniNext: document.getElementById("ws-mini-next"),
+            wsMiniProgressFill: document.getElementById("ws-mini-progress-fill"),
         };
 
         this.state = State.MENU;
@@ -3650,6 +4222,9 @@ class Game {
         this._validatedWordGroups = []; // [{word, cells: Set of "r,c", pts}]
         this._claimAnimating = false;
 
+        // ── Word Search state ──
+        this._ws = null; // Active word search game object
+
         document.body.classList.toggle("touch-input", this.usesTouchSwipeInput);
 
         this._bindUI();
@@ -3660,6 +4235,9 @@ class Game {
         this._bindCanvasTap();
         this._bindRowDrag();
         this._bindLevelUpUI();
+        this._bindAuth();
+        this._bindLeaderboard();
+        this._bindWordSearch();
         this._initMutePref();
         this._menuPage = 1;
         this._bindMenuSwipe();
@@ -3671,7 +4249,7 @@ class Game {
         // music starts once a profile is selected.
         localStorage.setItem("wf_music_paused", "0");
         this._loadActiveProfile();
-        this._showScreen("profiles");
+        this._initStartScreen();
         this._highlightSizeButton();
         this._highlightDifficultyButton();
         this._updateDifficultySelector();
@@ -3717,6 +4295,7 @@ class Game {
                                 this._showShopToast(`${req.label} unlocked!`);
                                 this.gridSize = size;
                                 this.profileMgr.setGridSize(this.gridSize);
+                                this._syncProfileToCloud();
                                 this._highlightSizeButton();
                                 this._updateDifficultySelector();
                             } else if (result.reason === "insufficient_coins") {
@@ -3729,6 +4308,7 @@ class Game {
                 if (btn.disabled) return;
                 this.gridSize = size;
                 this.profileMgr.setGridSize(this.gridSize);
+                this._debouncedSyncProfileToCloud();
                 this._highlightSizeButton();
                 this._updateDifficultySelector();
             });
@@ -3743,6 +4323,7 @@ class Game {
                     this.gridSize = 6;
                     this.profileMgr.setGridSize(this.gridSize);
                 }
+                this._debouncedSyncProfileToCloud();
                 this._highlightDifficultyButton();
                 this._highlightSizeButton();
             });
@@ -3752,6 +4333,7 @@ class Game {
             btn.addEventListener("click", () => {
                 this.gameMode = btn.dataset.mode || GAME_MODES.SANDBOX;
                 this.profileMgr.setGameMode(this.gameMode);
+                this._debouncedSyncProfileToCloud();
                 this._highlightGameModeButton();
             });
         });
@@ -3761,6 +4343,9 @@ class Game {
         this.els.restartBtn.addEventListener("click", () => {
             if (this._gameOverChallenge) {
                 this.activeChallenge = this._gameOverChallenge;
+                if (this._gameOverChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
+                    this._selectedCategoryKey = this._gameOverCategoryKey;
+                }
                 this._gameOverChallenge = null;
                 this._gameOverCategoryKey = null;
                 this._startChallengeGame();
@@ -3770,9 +4355,10 @@ class Game {
         });
         this.els.menuBtn.addEventListener("click", () => {
             if (this._gameOverChallenge) {
+                const ct = this._gameOverChallenge;
                 this._gameOverChallenge = null;
                 this._gameOverCategoryKey = null;
-                this._showScreen("challenges");
+                this._openChallengeSetup(ct);
             } else {
                 this._showScreen("menu");
             }
@@ -3802,14 +4388,20 @@ class Game {
             this._showScreen("shop");
         });
         this.els.quitBtn.addEventListener("click", () => {
+            // Save BEFORE changing state (guard rejects State.MENU)
             this._saveGameState();
-            this.state = State.MENU;
             this.els.pauseOverlay.classList.remove("active");
-            if (this.activeChallenge) {
-                this._showScreen("challenges");
+            const wasChallenge = this.activeChallenge;
+            this.state = State.MENU;
+            if (wasChallenge) {
+                this._openChallengeSetup(wasChallenge);
             } else {
                 this._showScreen("menu");
             }
+        });
+        this.els.endGameBtn.addEventListener("click", () => {
+            this.els.pauseOverlay.classList.remove("active");
+            this._gameOver("endgame");
         });
 
         // Switch Profile
@@ -3919,6 +4511,9 @@ class Game {
             } else if (this._musicBackTarget === "challenge-setup") {
                 this._musicBackTarget = null;
                 this._showScreen("challenge-setup");
+            } else if (this._wsReturnScreen === "ws") {
+                this._wsReturnScreen = null;
+                this._showScreen("ws");
             } else {
                 this._showScreen("menu");
             }
@@ -4109,6 +4704,10 @@ class Game {
         this._setMusicControlButton(this.els.npNext, "next", "Next Track");
         this._setMusicControlButton(this.els.npMiniPrev, "prev", "Previous Track");
         this._setMusicControlButton(this.els.npMiniNext, "next", "Next Track");
+        // Word Search mini player icons
+        this._setMusicControlButton(this.els.wsMiniPrev, "prev", "Previous Track");
+        this._setMusicControlButton(this.els.wsMiniNext, "next", "Next Track");
+        this._setMusicControlButton(this.els.wsMiniToggle, "play", "Play");
 
         // Shuffle & Repeat buttons (set initial icons)
         this._setMusicControlButton(this.els.npShuffle, "shuffle", "Shuffle");
@@ -4549,6 +5148,7 @@ class Game {
     }
 
     _showScreen(name) {
+        if (this.els.authScreen) this.els.authScreen.classList.toggle("active", name === "auth");
         this.els.profilesScreen.classList.toggle("active", name === "profiles");
         this.els.menuScreen.classList.toggle("active", name === "menu");
         this.els.playScreen.classList.toggle("active", name === "play");
@@ -4558,12 +5158,15 @@ class Game {
         this.els.challengesScreen.classList.toggle("active", name === "challenges");
         this.els.challengeSetupScreen.classList.toggle("active", name === "challengesetup");
         this.els.shopScreen.classList.toggle("active", name === "shop");
+        if (this.els.leaderboardScreen) this.els.leaderboardScreen.classList.toggle("active", name === "leaderboard");
+        if (this.els.wsScreen) this.els.wsScreen.classList.toggle("active", name === "ws");
         if (name === "menu") {
             this._updateHighScoreDisplay();
             this._updateMenuStats();
             this._highlightSizeButton();
             this._updateDifficultySelector();
             this._updateLevelDisplay();
+            this._refreshMyRankOnMenu();
             const hasSaved = this._hasSavedGame(null);
             this.els.resumeGameBtn.classList.toggle("hidden", !hasSaved);
         }
@@ -4575,8 +5178,15 @@ class Game {
             this.els.challengeResumeBtn.classList.toggle("hidden", !hasSaved);
         }
         if (name === "play") this._updateMiniNowPlaying();
+        if (name === "ws") this._wsUpdateMiniPlayer();
         if (name === "profiles") this._renderProfilesList();
         if (name === "shop") this._renderShop();
+        if (name === "leaderboard") {
+            this._loadLeaderboard();
+            this._subscribeLeaderboardRealtime();
+        } else {
+            this._unsubscribeLeaderboardRealtime();
+        }
 
         // Control background animation (hide during gameplay)
         if (this.bgAnim) {
@@ -4876,6 +5486,29 @@ class Game {
         if (this.els.playCoins) {
             this.els.playCoins.textContent = this.profileMgr.getCoins();
         }
+    }
+
+    _checkBonusBtnOverlap() {
+        const btn = this.els.bonusBtn;
+        if (!btn || btn.classList.contains("hidden")) {
+            if (btn) btn.classList.remove("bonus-btn-faded");
+            return;
+        }
+        if (!this.block) {
+            btn.classList.remove("bonus-btn-faded");
+            return;
+        }
+        const r = this.renderer;
+        const cr = this.canvas.getBoundingClientRect();
+        const br = btn.getBoundingClientRect();
+        // Block screen position (canvas CSS coords → viewport coords)
+        const bx = cr.left + r.offsetX + this.block.col * r.cellSize;
+        const by = cr.top  + r.offsetY + this.block.visualRow * r.cellSize;
+        const bx2 = bx + r.cellSize;
+        const by2 = by + r.cellSize;
+        // Rectangle overlap test
+        const overlap = !(bx2 <= br.left || bx >= br.right || by2 <= br.top || by >= br.bottom);
+        btn.classList.toggle("bonus-btn-faded", overlap);
     }
 
     _updateBonusButton() {
@@ -5644,6 +6277,13 @@ class Game {
         const saved = this._loadGameState(this.activeChallenge);
         if (!saved) { this._startChallengeGame(); return; }
 
+        // Word Search uses its own resume flow
+        if (saved.type === "word-search") {
+            this._clearGameState();
+            this._wsResumeFromSave(saved);
+            return;
+        }
+
         this.gridSize = saved.gridSize;
         this.difficulty = saved.difficulty || "casual";
         if (this.difficulty === "challenging") this.difficulty = "hard";
@@ -5895,6 +6535,7 @@ class Game {
                 case "perk_bonusboost":
                     this.nextBonusScore = 500;
                     this._activePerks.bonusboost = true;
+
                     break;
                 case "perk_comboext":
                     this._activePerks.comboext = true;
@@ -5904,6 +6545,9 @@ class Game {
                     break;
             }
         }
+
+        // Sync daily streak + perk consumption to cloud (prevents data loss on crash)
+        this._debouncedSyncProfileToCloud();
 
         // Reset challenge state (activeChallenge is set before calling this for challenges)
         this.targetWord = null;
@@ -5970,7 +6614,8 @@ class Game {
     _spawnBlock() {
         const centerCol = Math.floor(this.gridSize / 2);
         this.block = new FallingBlock(this.nextLetter, centerCol, this.gridSize, "letter");
-        this.nextLetter = randomLetter(this.grid);
+        const tw = this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD ? this.targetWord : null;
+        this.nextLetter = randomLetter(this.grid, tw);
         this.els.nextLetter.textContent = this.nextLetter;
         this.fallTimer = 0;
         this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0 : 2.0;
@@ -6241,7 +6886,6 @@ class Game {
         if (this.letterChoiceActive) return;
         if (this.state === State.PLAYING) {
             this.state = State.PAUSED;
-            this.els.quitBtn.textContent = this.activeChallenge ? "Quit to Challenges" : "Quit to Menu";
             this.els.pauseOverlay.classList.add("active");
         } else if (this.state === State.PAUSED) {
             this.state = State.PLAYING;
@@ -6350,6 +6994,13 @@ class Game {
             this.timeRemainingSeconds = 0;
             this._updateTimerDisplay();
         }
+
+        // Rollback target word level on End Game (player didn't complete naturally)
+        if (reason === "endgame" && this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
+            && this._targetWordLevelAtStart != null) {
+            this.profileMgr.setTargetWordLevel(this._targetWordLevelAtStart);
+        }
+
         this.state = State.GAMEOVER;
         this.block = null;
         this.audio.gameOver();
@@ -6492,6 +7143,32 @@ class Game {
 
         // ── Show gameover screen with XP animation ──
         this._showGameOverXP(xpEarned, xpResult, wasFirstGame);
+
+        // ── Record to Supabase and update ranking (awaited so rank is ready) ──
+        this._recordGameToSupabase({
+            gameMode: this.gameMode,
+            isChallenge: !!this._gameOverChallenge,
+            challengeType: this._gameOverChallenge || null,
+            categoryKey: this._gameOverCategoryKey || null,
+            gridSize: gs,
+            difficulty: this.difficulty,
+            timeLimitSeconds: this.timeLimitSeconds || null,
+            score: this.score,
+            wordsFound: wordsCount.length || 0,
+            longestWordLength: Math.max(0, ...(wordsCount.map(w => w.length) || [0])),
+            bestCombo: this.bestCombo || 0,
+            targetWordsCompleted: this.targetWordsCompleted || 0,
+            bonusWordsCompleted: (this.categoryWordsFound || []).length,
+            timeRemainingSeconds: this.timeRemainingSeconds || null,
+            xpEarned,
+            coinsEarned: finalCoins,
+            gridFactor: gs / 8,
+            difficultyMultiplier: this.difficulty === "hard" ? 1.5 : 1.0,
+            modeMultiplier: this.gameMode === GAME_MODES.TIMED ? 1.2 : 1.0,
+        });
+
+        // ── Sync profile state (level, xp, coins, stats) to cloud ──
+        this._syncProfileToCloud();
 
         // ── Sync game-over state to Preact store ──
         gameStore.set({
@@ -6721,14 +7398,146 @@ class Game {
         });
     }
 
-    _createProfile() {
+    async _createProfile() {
+        if (this._creatingProfile) return; // prevent double-fire
         const name = this.els.profileNameInput.value.trim();
         if (!name) { this.els.profileNameInput.focus(); return; }
-        this.profileMgr.create(name);
-        this._autoplayMusicFromUserAction();
-        this.els.profileModal.classList.remove("active");
-        this._loadActiveProfile();
-        this._showScreen("menu");
+        this._creatingProfile = true;
+        this.els.profileSaveBtn.disabled = true;
+        try {
+            const localProfile = this.profileMgr.create(name);
+            this._autoplayMusicFromUserAction();
+            this.els.profileModal.classList.remove("active");
+            this._loadActiveProfile();
+            this._showScreen("menu");
+
+            // Sync to Supabase (awaited to ensure cloudId is assigned)
+            await this._syncCreateProfile(localProfile);
+        } finally {
+            this._creatingProfile = false;
+            this.els.profileSaveBtn.disabled = false;
+        }
+    }
+
+    async _syncCreateProfile(localProfile) {
+        try {
+            const { isLocalMode, createProfile } = await import('./src/lib/supabase.js');
+            if (isLocalMode || !this._authUser) return;
+            const cloud = await createProfile(this._authUser.id, localProfile.username);
+            if (cloud?.id) {
+                localProfile.cloudId = cloud.id;
+                this.profileMgr._save();
+            }
+        } catch (err) {
+            console.error('[supabase] sync create profile failed:', err);
+        }
+    }
+
+    async _syncDeleteProfile(profile) {
+        const { isLocalMode, deleteProfile } = await import('./src/lib/supabase.js');
+        if (isLocalMode || !profile.cloudId) return;
+        await deleteProfile(profile.cloudId);
+    }
+
+    /**
+     * Push the active profile's mutable state to Supabase.
+     * Called after game end, shop purchase, equip, preference change, etc.
+     * Fire-and-forget — errors are logged but don't block the UI.
+     */
+    async _syncProfileToCloud() {
+        try {
+            const { isLocalMode, updateProfile } = await import('./src/lib/supabase.js');
+            if (isLocalMode) return;
+            const p = this.profileMgr.getActive();
+            if (!p || !p.cloudId) return;
+            this.profileMgr._ensureXPFields(p);
+            this.profileMgr._ensureCoinFields(p);
+
+            await updateProfile(p.cloudId, {
+                username: p.username,
+                // Level & XP
+                level: p.level,
+                xp: p.xp,
+                total_xp: p.totalXp,
+                high_score: p.highScore,
+                games_played: p.gamesPlayed,
+                total_words: p.totalWords,
+                // Currency
+                coins: p.coins,
+                total_coins_earned: p.totalCoinsEarned,
+                // Preferences
+                preferred_grid_size: p.gridSize || 5,
+                preferred_difficulty: p.difficulty || 'casual',
+                preferred_game_mode: p.gameMode || 'sandbox',
+                // Cosmetics
+                equipped_theme: p.equipped?.gridTheme || 'theme_default',
+                equipped_block_style: p.equipped?.blockStyle || 'block_default',
+                bonus_slot_contents: p.bonusSlotContents || [null, null, null],
+                perks: p.perks || {},
+                unlocked_grids: p.unlockedGrids || {},
+                // Streak
+                last_play_date: p.lastPlayDate || null,
+                play_streak: p.playStreak || 0,
+                claimed_milestones: p.claimedMilestones || [],
+                // Unique words
+                unique_words_found: p.uniqueWordsFound || [],
+            });
+        } catch (err) {
+            console.error('[supabase] sync profile to cloud failed:', err);
+        }
+    }
+
+    /**
+     * Debounced version of _syncProfileToCloud for rapid-fire preference changes.
+     * Waits 1s of inactivity before syncing.
+     */
+    _debouncedSyncProfileToCloud() {
+        clearTimeout(this._syncDebounceTimer);
+        this._syncDebounceTimer = setTimeout(() => this._syncProfileToCloud(), 1000);
+    }
+
+    /**
+     * Push a newly purchased item to the cloud inventory table.
+     */
+    async _syncInventoryItemToCloud(itemId) {
+        try {
+            const { isLocalMode, addInventoryItem } = await import('./src/lib/supabase.js');
+            if (isLocalMode) return;
+            const p = this.profileMgr.getActive();
+            if (!p || !p.cloudId) return;
+            await addInventoryItem(p.cloudId, itemId);
+        } catch (err) {
+            console.error('[supabase] sync inventory item failed:', err);
+        }
+    }
+
+    /**
+     * Delete the user's entire account (Supabase + local data).
+     */
+    async _deleteAccount() {
+        try {
+            const { isLocalMode, deleteAccount } = await import('./src/lib/supabase.js');
+            if (!isLocalMode) {
+                await deleteAccount(); // Must succeed before clearing local data
+            }
+        } catch (err) {
+            console.error('[supabase] delete account failed:', err);
+            alert('Failed to delete account. Please try again.');
+            return; // Do NOT clear local data if cloud delete failed
+        }
+        // Cloud delete succeeded (or local mode) — now safe to clear everything
+        this.profileMgr.profiles = [];
+        this.profileMgr.activeId = null;
+        this.profileMgr._save();
+        // Clear all app-specific localStorage keys
+        const keysToRemove = [
+            'wf_playlists', 'wf_music_volume', 'wf_music_shuffle',
+            'wf_music_repeat', 'wf_music_paused', 'wf_music_state',
+            'wf_hints_enabled', 'wf_music_muted', 'plummet_verification_codes',
+        ];
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+        this._authUser = null;
+        this._showScreen("auth");
     }
 
     _loadActiveProfile() {
@@ -6787,17 +7596,23 @@ class Game {
             });
 
             // Delete profile
-            card.querySelector(".profile-delete-btn").addEventListener("click", (e) => {
+            card.querySelector(".profile-delete-btn").addEventListener("click", async (e) => {
                 e.stopPropagation();
-                if (confirm(`Delete profile "${p.username}"? This cannot be undone.`)) {
-                    this.profileMgr.delete(p.id);
-                    this._renderProfilesList();
-                    // If no profiles left, stay on profiles screen
-                    if (!this.profileMgr.hasProfiles()) return;
-                    // If active was deleted, load new active
-                    if (this.profileMgr.getActive()) {
-                        this._loadActiveProfile();
-                    }
+                if (!confirm(`Delete profile "${p.username}"? This cannot be undone.`)) return;
+                try {
+                    await this._syncDeleteProfile(p);
+                } catch (err) {
+                    console.error('[supabase] sync delete profile failed:', err);
+                    alert('Failed to delete profile from cloud. Please try again.');
+                    return;
+                }
+                this.profileMgr.delete(p.id);
+                this._renderProfilesList();
+                // If no profiles left, stay on profiles screen
+                if (!this.profileMgr.hasProfiles()) return;
+                // If active was deleted, load new active
+                if (this.profileMgr.getActive()) {
+                    this._loadActiveProfile();
                 }
             });
 
@@ -6967,6 +7782,7 @@ class Game {
         // Equip owned item
         if (owned && !isPerk) {
             this.profileMgr.equipItem(id);
+            this._syncProfileToCloud();
             this._renderShop();
             this._showShopToast(`${item.name} equipped!`);
             return;
@@ -6975,6 +7791,7 @@ class Game {
         // Free default item — just equip
         if (item.price === 0 && !owned) {
             this.profileMgr.equipItem(id);
+            this._syncProfileToCloud();
             this._renderShop();
             return;
         }
@@ -6986,6 +7803,8 @@ class Game {
             if (!isPerk) {
                 this.profileMgr.equipItem(id);
             }
+            this._syncProfileToCloud();
+            if (!isPerk) this._syncInventoryItemToCloud(id);
             this._renderShop();
             const msg = isPerk
                 ? `Bought ${item.stackSize}× ${item.name}! (${result.quantity} total)`
@@ -7079,6 +7898,8 @@ class Game {
                 const slotItemId = btn.dataset.slotId;
                 const result = this.profileMgr.purchaseItem(slotItemId);
                 if (result.success) {
+                    this._syncProfileToCloud();
+                    this._syncInventoryItemToCloud(slotItemId);
                     this._showShopToast(`${SHOP_ITEMS[slotItemId].name} unlocked!`);
                     this._renderShop();
                 } else if (result.reason === "insufficient_coins") {
@@ -7099,6 +7920,7 @@ class Game {
                 }
                 const result = this.profileMgr.fillBonusSlot(slotIdx, bonusType);
                 if (result.success) {
+                    this._syncProfileToCloud();
                     this._showShopToast(`Slot ${slotIdx + 1} filled with ${bonusLabels[bonusType]}!`);
                     this._renderShop();
                 } else if (result.reason === "insufficient_coins") {
@@ -7341,6 +8163,8 @@ class Game {
         const track = this.music.getCurrentTrack();
         this.els.npMiniTitle.textContent = track ? `♪ ${track.title} – ${track.artist}` : "♪ ---";
         this._setMusicControlButton(this.els.npMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
+        // Keep Word Search mini player in sync
+        this._wsUpdateMiniPlayer();
     }
 
     // ── Tutorial System (Sub-menu + Animated Canvas Slides) ──
@@ -9546,7 +10370,7 @@ class Game {
                 || this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY;
             if (isBonusChallenge) {
                 const isMatch = this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
-                    ? (this.targetWord && wc.word === this.targetWord)
+                    ? (this.targetWord && (wc.word === this.targetWord || wc.word.includes(this.targetWord)))
                     : (this.activeCategorySet && this.activeCategorySet.has(wc.word));
                 if (isMatch) {
                     // Bonus match: 2× base, scaled by category tier
@@ -9659,9 +10483,10 @@ class Game {
             const wordCoins = coinsForWord(group.word.length) + (this.comboCount >= 2 ? Math.min(this.comboCount, 10) * COIN_COMBO_BONUS : 0);
             this._coinsThisGame = (this._coinsThisGame || 0) + wordCoins;
 
-            // Check for target word match
+            // Check for target word match (exact or contains as substring)
             if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
-                && this.targetWord && group.word === this.targetWord) {
+                && this.targetWord
+                && (group.word === this.targetWord || group.word.includes(this.targetWord))) {
                 this.targetWordsCompleted++;
                 this.score += 200;
                 // Advance level and pick next word from the new level's pool
@@ -9832,6 +10657,17 @@ class Game {
 
     // ── Challenge methods ──
 
+    _openChallengeSetup(key) {
+        const meta = CHALLENGE_META[key];
+        if (!meta) return;
+        this.activeChallenge = key;
+        this.els.challengeSetupName.textContent = `${meta.icon} ${meta.title}`;
+        this._setupCategorySelector(key);
+        const gridSizeSel = document.getElementById("challenge-grid-size-selector");
+        if (gridSizeSel) gridSizeSel.classList.toggle("hidden", key === CHALLENGE_TYPES.WORD_SEARCH);
+        this._showScreen("challengesetup");
+    }
+
     _renderChallengesGrid() {
         const grid = this.els.challengesGrid;
         grid.innerHTML = "";
@@ -9841,8 +10677,8 @@ class Game {
             const stats = this.profileMgr.getChallengeStats(key);
             const card = document.createElement("div");
             card.className = "challenge-card";
-            const levelInfo = key === CHALLENGE_TYPES.TARGET_WORD
-                ? `<span class="challenge-level-badge">Lv.${stats.targetWordLevel || 1}</span>` : '';
+            const levelInfo = (key === CHALLENGE_TYPES.TARGET_WORD || key === CHALLENGE_TYPES.WORD_SEARCH)
+                ? `<span class="challenge-level-badge">Lv.${(key === CHALLENGE_TYPES.WORD_SEARCH ? this.profileMgr.getWordSearchLevel() : stats.targetWordLevel) || 1}</span>` : '';
             card.innerHTML = `
                 <div class="challenge-preview"><canvas></canvas></div>
                 <div class="challenge-card-title">${meta.icon} ${meta.title} ${levelInfo}</div>
@@ -9855,10 +10691,7 @@ class Game {
             `;
             card.addEventListener("click", () => {
                 this._stopChallengePreviewAnimations();
-                this.activeChallenge = key;
-                this.els.challengeSetupName.textContent = `${meta.icon} ${meta.title}`;
-                this._setupCategorySelector(key);
-                this._showScreen("challengesetup");
+                this._openChallengeSetup(key);
             });
             grid.appendChild(card);
 
@@ -10255,6 +11088,78 @@ class Game {
             this._challengePreviewAnimations.push(id);
             return;
         }
+
+        // ─── WORD SEARCH preview ──────────────────────────────────
+        if (challengeType === CHALLENGE_TYPES.WORD_SEARCH) {
+            const previewGrid = [];
+            const word = "FIND";
+            const miniSize = 6;
+            const miniCell = size / miniSize;
+            for (let r = 0; r < miniSize; r++) {
+                previewGrid[r] = [];
+                for (let c = 0; c < miniSize; c++) {
+                    previewGrid[r][c] = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+                }
+            }
+            // Place "FIND" horizontally at row 2
+            for (let i = 0; i < word.length; i++) previewGrid[2][1 + i] = word[i];
+            // Place "FUN" vertically at col 1
+            const vword = "FUN";
+            for (let i = 0; i < vword.length; i++) previewGrid[2 + i][1] = vword[i];
+
+            let tick = 0;
+            let highlightIdx = -1;
+            const draw = () => {
+                tick++;
+                ctx.fillStyle = "#2f3029";
+                ctx.fillRect(0, 0, size, size);
+
+                // Highlight the found word ("FIND") with sliding animation
+                const highlightPhase = Math.floor(tick / 15) % 3;
+                if (highlightPhase === 1) {
+                    const progress = Math.min(1, (tick % 15) / 10);
+                    const endC = Math.floor(1 + progress * (word.length - 1));
+                    ctx.fillStyle = "rgba(100, 200, 100, 0.25)";
+                    for (let c = 1; c <= endC; c++) {
+                        ctx.fillRect(c * miniCell, 2 * miniCell, miniCell, miniCell);
+                    }
+                } else if (highlightPhase === 2) {
+                    ctx.fillStyle = "rgba(100, 200, 100, 0.25)";
+                    for (let c = 1; c <= word.length; c++) {
+                        ctx.fillRect(c * miniCell, 2 * miniCell, miniCell, miniCell);
+                    }
+                }
+
+                // Grid lines
+                ctx.strokeStyle = "#4a493e";
+                ctx.lineWidth = 0.5;
+                for (let r = 0; r <= miniSize; r++) { ctx.beginPath(); ctx.moveTo(0, r * miniCell); ctx.lineTo(size, r * miniCell); ctx.stroke(); }
+                for (let c = 0; c <= miniSize; c++) { ctx.beginPath(); ctx.moveTo(c * miniCell, 0); ctx.lineTo(c * miniCell, size); ctx.stroke(); }
+
+                // Letters
+                const fs = Math.floor(miniCell * 0.55);
+                ctx.font = `bold ${fs}px 'Segoe UI', sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                for (let r = 0; r < miniSize; r++) {
+                    for (let c = 0; c < miniSize; c++) {
+                        const isWordCell = (r === 2 && c >= 1 && c < 1 + word.length);
+                        ctx.fillStyle = (isWordCell && highlightPhase === 2) ? "#80d080" : "#e2d8a6";
+                        ctx.fillText(previewGrid[r][c], c * miniCell + miniCell / 2, r * miniCell + miniCell / 2);
+                    }
+                }
+
+                // Search icon
+                ctx.fillStyle = "rgba(226, 216, 166, 0.3)";
+                ctx.font = "bold 20px sans-serif";
+                ctx.textAlign = "right";
+                ctx.fillText("🔍", size - 4, size - 6);
+            };
+            draw();
+            const id = setInterval(draw, 60);
+            this._challengePreviewAnimations.push(id);
+            return;
+        }
     }
 
     _stopChallengePreviewAnimations() {
@@ -10264,6 +11169,13 @@ class Game {
 
     _startChallengeGame() {
         this._stopChallengePreviewAnimations();
+
+        // Word Search uses its own screen and game flow
+        if (this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH) {
+            this._wsStartGame();
+            return;
+        }
+
         this.gridSize = this.challengeGridSize;
         this.difficulty = "casual";
 
@@ -10275,6 +11187,7 @@ class Game {
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
             this.targetWordsCompleted = 0;
             this._targetWordLevel = this.profileMgr.getTargetWordLevel();
+            this._targetWordLevelAtStart = this._targetWordLevel;
             this._pickTargetWord();
             this.els.targetWordDisplay.classList.remove("hidden");
         } else if (this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND) {
@@ -10290,7 +11203,7 @@ class Game {
 
     _isChallengeBonusWord(word) {
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
-            return this.targetWord && word === this.targetWord;
+            return this.targetWord && (word === this.targetWord || word.includes(this.targetWord));
         }
         if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
             return this.activeCategorySet && this.activeCategorySet.has(word);
@@ -10396,6 +11309,8 @@ class Game {
             tutorialText = "Blocks start falling at normal speed but get faster every 500 points! The fall speed keeps increasing until you can barely keep up. Game lasts 3 minutes — score as high as you can!";
         } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
             tutorialText = "Choose a category before starting. Words matching your category earn bonus points! Harder categories (Technology, Nature) earn even more points and XP. Longer, more complex words also score higher. Other words earn reduced points. Game lasts 7 minutes.";
+        } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH) {
+            tutorialText = "Find hidden words in the grid by swiping across letters! No word list is shown — you must discover valid words yourself. Words can go in any direction. Each level is timed at 5 minutes. Levels get progressively harder with larger grids and harder words. Earn points and coins for every word you find!";
         }
         this.els.challengeTutorialText.textContent = tutorialText;
 
@@ -10535,16 +11450,1770 @@ class Game {
 
             // Render
             this.renderer.draw(this.grid, this.block, dt);
+            this._checkBonusBtnOverlap();
         } else if (this.state === State.PAUSED) {
             // Still draw but don't update
             this.renderer.draw(this.grid, this.block, 0);
+            this._checkBonusBtnOverlap();
         }
 
         if (!this._destroyed) requestAnimationFrame((t) => this._loop(t));
     }
 
+    // ════════════════════════════════════════
+    // AUTH SYSTEM
+    // ════════════════════════════════════════
+
+    _initStartScreen() {
+        // In local mode (no Supabase), go straight to profiles
+        // When Supabase is configured, check for existing session
+        import('./src/lib/supabase.js').then(async ({ isLocalMode, getSession, getUser }) => {
+            if (isLocalMode) {
+                this._showScreen("profiles");
+                return;
+            }
+            try {
+                const session = await getSession();
+                if (session?.user) {
+                    // Already authenticated — load profiles and go to profile select
+                    await this._onAuthSuccess(session.user);
+                    this._showScreen("profiles");
+                } else {
+                    this._showScreen("auth");
+                }
+            } catch (err) {
+                console.error('[auth] session check failed:', err);
+                this._showScreen("auth");
+            }
+        }).catch(() => {
+            this._showScreen("profiles");
+        });
+    }
+
+    _bindAuth() {
+        if (!this.els.authScreen) return;
+
+        // Toggle between sign in / sign up
+        this.els.authGotoSignup?.addEventListener("click", () => {
+            this.els.authSignin.classList.add("hidden");
+            this.els.authSignup.classList.remove("hidden");
+            this.els.authSubtitle.textContent = "Create an account";
+            this._clearAuthError();
+        });
+        this.els.authGotoSignin?.addEventListener("click", () => {
+            this.els.authSignup.classList.add("hidden");
+            this.els.authSignin.classList.remove("hidden");
+            this.els.authSubtitle.textContent = "Sign in to play";
+            this._clearAuthError();
+            this._resetSignupSteps();
+        });
+
+        // Sign In
+        this.els.authSigninBtn?.addEventListener("click", () => this._handleSignIn());
+        this.els.authPassword?.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") this._handleSignIn();
+        });
+
+        // Sign Up Step 1: Send verification code to email
+        this.els.signupSendCodeBtn?.addEventListener("click", () => this._handleSignUpStep1());
+        this.els.signupEmail?.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") this._handleSignUpStep1();
+        });
+
+        // Sign Up Step 2: Code digit inputs
+        this._bindCodeInputs();
+
+        // Sign Up Step 2: Verify code button
+        this.els.signupVerifyCodeBtn?.addEventListener("click", () => this._handleVerifyCode());
+
+        // Sign Up Step 3: Create account with password
+        this.els.signupCreateBtn?.addEventListener("click", () => this._handleSignUpStep3());
+        this.els.signupPasswordConfirm?.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") this._handleSignUpStep3();
+        });
+
+        // Resend verification
+        this.els.signupResendBtn?.addEventListener("click", () => this._handleResendVerification());
+
+        // Forgot password
+        this.els.authForgotBtn?.addEventListener("click", () => this._handleForgotPassword());
+
+        // Logout
+        this.els.authLogoutBtn?.addEventListener("click", async () => {
+            try {
+                const { signOut } = await import('./src/lib/supabase.js');
+                await signOut();
+            } catch (e) {
+                console.error('[auth] logout error:', e);
+            }
+            this._showScreen("auth");
+        });
+
+        this.els.deleteAccountBtn?.addEventListener("click", async () => {
+            if (!confirm("Are you sure you want to delete your account? This will permanently remove all your cloud data and cannot be undone.")) return;
+            if (!confirm("This is irreversible. Type OK to confirm you want to delete your account.")) return;
+            await this._deleteAccount();
+        });
+    }
+
+    async _handleSignIn() {
+        const email = this.els.authEmail?.value?.trim();
+        const password = this.els.authPassword?.value;
+        if (!email || !password) {
+            this._showAuthError("Please enter your email and password.");
+            return;
+        }
+        this._setAuthLoading(true);
+        try {
+            const { signIn } = await import('./src/lib/supabase.js');
+            const result = await signIn(email, password);
+            const user = result.session?.user || result.user;
+            if (user) {
+                await this._onAuthSuccess(user);
+                this._showScreen("profiles");
+            }
+        } catch (err) {
+            this._showAuthError(err.message || "Sign in failed. Please check your credentials.");
+        } finally {
+            this._setAuthLoading(false);
+        }
+    }
+
+    async _handleSignUpStep1() {
+        const email = this.els.signupEmail?.value?.trim();
+        if (!email || !email.includes("@")) {
+            this._showAuthError("Please enter a valid email address.");
+            return;
+        }
+        this._setAuthLoading(true);
+        try {
+            this._signupEmail = email;
+            const { generateVerificationCode } = await import('./src/lib/verification.js');
+            const { sendVerificationCode } = await import('./src/lib/notifications.js');
+            const code = generateVerificationCode(email);
+            await sendVerificationCode(email, code);
+            // Move to code entry step
+            this.els.signupStepEmail.classList.add("hidden");
+            this.els.signupStepVerify.classList.remove("hidden");
+            this.els.signupEmailDisplay.textContent = email;
+            this._clearAuthError();
+            this._signupResendCooldown = 60;
+            this._startCodeTimers();
+            // Focus first digit
+            const first = this.els.signupCodeInputs?.querySelector('.code-digit');
+            if (first) setTimeout(() => first.focus(), 50);
+        } catch (err) {
+            this._showAuthError(err.message || "Could not send verification code.");
+        } finally {
+            this._setAuthLoading(false);
+        }
+    }
+
+    _bindCodeInputs() {
+        const container = this.els.signupCodeInputs;
+        if (!container) return;
+        const digits = container.querySelectorAll('.code-digit');
+
+        digits.forEach((input, i) => {
+            input.addEventListener("input", () => {
+                const val = input.value.replace(/\D/g, '').slice(-1);
+                input.value = val;
+                if (val && i < 4) digits[i + 1]?.focus();
+                this._updateVerifyBtnState();
+                // Auto-submit when all 5 filled
+                if (val && i === 4 && this._getCodeValue().length === 5) {
+                    this._handleVerifyCode();
+                }
+            });
+            input.addEventListener("keydown", (e) => {
+                if (e.key === "Backspace" && !input.value && i > 0) {
+                    digits[i - 1]?.focus();
+                }
+            });
+            if (i === 0) {
+                input.addEventListener("paste", (e) => {
+                    e.preventDefault();
+                    const pasted = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 5);
+                    if (!pasted) return;
+                    digits.forEach((d, j) => { d.value = pasted[j] || ''; });
+                    const nextIdx = Math.min(pasted.length, 4);
+                    digits[nextIdx]?.focus();
+                    this._updateVerifyBtnState();
+                    if (pasted.length === 5) this._handleVerifyCode();
+                });
+            }
+        });
+    }
+
+    _getCodeValue() {
+        const digits = this.els.signupCodeInputs?.querySelectorAll('.code-digit');
+        if (!digits) return '';
+        return Array.from(digits).map(d => d.value).join('');
+    }
+
+    _updateVerifyBtnState() {
+        if (this.els.signupVerifyCodeBtn) {
+            this.els.signupVerifyCodeBtn.disabled = this._getCodeValue().length < 5;
+        }
+    }
+
+    _startCodeTimers() {
+        // Clear any existing timers
+        if (this._codeTimerId) clearInterval(this._codeTimerId);
+        if (this._resendTimerId) clearInterval(this._resendTimerId);
+
+        // Code expiry countdown
+        this._codeTimerId = setInterval(async () => {
+            const { getCodeTTL } = await import('./src/lib/verification.js');
+            const ttl = getCodeTTL(this._signupEmail);
+            if (this.els.signupCodeTimer) {
+                if (ttl > 0) {
+                    const m = Math.floor(ttl / 60);
+                    const s = String(ttl % 60).padStart(2, '0');
+                    this.els.signupCodeTimer.textContent = `Code expires in ${m}:${s}`;
+                } else {
+                    this.els.signupCodeTimer.textContent = 'Code expired. Request a new one.';
+                    if (this.els.signupVerifyCodeBtn) this.els.signupVerifyCodeBtn.disabled = true;
+                    clearInterval(this._codeTimerId);
+                }
+            }
+        }, 1000);
+
+        // Resend cooldown
+        this._resendTimerId = setInterval(() => {
+            if (this._signupResendCooldown > 0) {
+                this._signupResendCooldown--;
+                if (this.els.signupResendBtn) {
+                    this.els.signupResendBtn.textContent = `Resend in ${this._signupResendCooldown}s`;
+                    this.els.signupResendBtn.disabled = true;
+                }
+            } else {
+                if (this.els.signupResendBtn) {
+                    this.els.signupResendBtn.textContent = 'Resend Code';
+                    this.els.signupResendBtn.disabled = false;
+                }
+                clearInterval(this._resendTimerId);
+            }
+        }, 1000);
+    }
+
+    _stopCodeTimers() {
+        if (this._codeTimerId) { clearInterval(this._codeTimerId); this._codeTimerId = null; }
+        if (this._resendTimerId) { clearInterval(this._resendTimerId); this._resendTimerId = null; }
+    }
+
+    async _handleVerifyCode() {
+        const code = this._getCodeValue();
+        if (code.length < 5) return;
+        try {
+            const { verifyCode } = await import('./src/lib/verification.js');
+            const result = verifyCode(this._signupEmail, code);
+            if (!result.valid) {
+                this._showAuthError(result.error);
+                return;
+            }
+            // Move to password step
+            this._stopCodeTimers();
+            this.els.signupStepVerify.classList.add("hidden");
+            this.els.signupStepPassword.classList.remove("hidden");
+            this._clearAuthError();
+            this.els.signupPassword?.focus();
+        } catch (err) {
+            this._showAuthError(err.message || "Verification failed.");
+        }
+    }
+
+    async _handleSignUpStep3() {
+        const password = this.els.signupPassword?.value;
+        const confirm = this.els.signupPasswordConfirm?.value;
+        if (!password || password.length < 8) {
+            this._showAuthError("Password must be at least 8 characters.");
+            return;
+        }
+        if (password !== confirm) {
+            this._showAuthError("Passwords don't match.");
+            return;
+        }
+        this._setAuthLoading(true);
+        try {
+            const { signUp } = await import('./src/lib/supabase.js');
+            const result = await signUp(this._signupEmail, password);
+            // Supabase may auto-confirm since we already verified email client-side
+            const user = result.session?.user || result.user;
+            if (user) {
+                await this._onAuthSuccess(user);
+                this._showScreen("profiles");
+                this._resetSignupSteps();
+                return;
+            }
+            // If no session yet, try signing in (email already verified by code)
+            const { signIn } = await import('./src/lib/supabase.js');
+            const loginResult = await signIn(this._signupEmail, password);
+            const loginUser = loginResult.session?.user || loginResult.user;
+            if (loginUser) {
+                await this._onAuthSuccess(loginUser);
+                this._showScreen("profiles");
+                this._resetSignupSteps();
+            }
+        } catch (err) {
+            if (err.message?.toLowerCase().includes("already registered")) {
+                this._showAuthError("This email is already registered. Try signing in instead.");
+            } else {
+                this._showAuthError(err.message || "Could not create account.");
+            }
+        } finally {
+            this._setAuthLoading(false);
+        }
+    }
+
+    async _handleResendVerification() {
+        if (!this._signupEmail || this._signupResendCooldown > 0) return;
+        this._setAuthLoading(true);
+        try {
+            const { generateVerificationCode } = await import('./src/lib/verification.js');
+            const { sendVerificationCode } = await import('./src/lib/notifications.js');
+            const code = generateVerificationCode(this._signupEmail);
+            await sendVerificationCode(this._signupEmail, code);
+            this._signupResendCooldown = 60;
+            this._startCodeTimers();
+            // Clear old digits
+            this.els.signupCodeInputs?.querySelectorAll('.code-digit').forEach(d => { d.value = ''; });
+            this._updateVerifyBtnState();
+            const first = this.els.signupCodeInputs?.querySelector('.code-digit');
+            if (first) first.focus();
+            this._clearAuthError();
+        } catch (err) {
+            this._showAuthError(err.message || "Could not resend code.");
+        } finally {
+            this._setAuthLoading(false);
+        }
+    }
+
+    async _handleForgotPassword() {
+        const email = this.els.authEmail?.value?.trim();
+        if (!email || !email.includes("@")) {
+            this._showAuthError("Enter your email address above, then click Forgot password.");
+            return;
+        }
+        try {
+            const { resetPassword } = await import('./src/lib/supabase.js');
+            await resetPassword(email);
+            this._showAuthError("Password reset email sent! Check your inbox.");
+        } catch (err) {
+            this._showAuthError(err.message || "Could not send reset email.");
+        }
+    }
+
+    async _onAuthSuccess(user) {
+        this._authUser = user;
+        // Load profiles from Supabase and sync with local ProfileManager
+        try {
+            const { getProfiles } = await import('./src/lib/supabase.js');
+            const cloudProfiles = await getProfiles(user.id);
+            this._syncCloudProfilesToLocal(cloudProfiles);
+        } catch (err) {
+            console.error('[auth] failed to load cloud profiles:', err);
+        }
+    }
+
+    _syncCloudProfilesToLocal(cloudProfiles) {
+        if (!cloudProfiles || cloudProfiles.length === 0) return;
+        const localProfiles = this.profileMgr.getAll();
+
+        for (const cloud of cloudProfiles) {
+            // Check if a local profile is already linked to this cloud ID
+            const linked = localProfiles.find(lp => lp.cloudId === cloud.id);
+            if (linked) {
+                // Merge cloud data into local — cloud is source of truth for progression
+                this._mergeCloudIntoLocal(linked, cloud);
+                continue;
+            }
+
+            // Check if a local profile matches by username (unlinked)
+            const byName = localProfiles.find(lp => !lp.cloudId && lp.username === cloud.username);
+            if (byName) {
+                // Link existing local profile to cloud and merge
+                byName.cloudId = cloud.id;
+                this._mergeCloudIntoLocal(byName, cloud);
+                continue;
+            }
+
+            // No matching local profile — import from cloud
+            const imported = this.profileMgr.create(cloud.username);
+            imported.cloudId = cloud.id;
+            this._mergeCloudIntoLocal(imported, cloud);
+        }
+
+        this.profileMgr._save();
+        this._renderProfilesList();
+    }
+
+    /**
+     * Merge cloud profile fields into local profile.
+     * For additive stats (score, games, words, xp, coins), take the max.
+     * For preferences/cosmetics, cloud wins.
+     */
+    _mergeCloudIntoLocal(local, cloud) {
+        local.username = cloud.username;
+        // Take max for progression stats
+        local.level = Math.max(local.level || 1, cloud.level || 1);
+        local.xp = Math.max(local.xp || 0, cloud.xp || 0);
+        local.totalXp = Math.max(local.totalXp || 0, cloud.total_xp || 0);
+        local.highScore = Math.max(local.highScore || 0, cloud.high_score || 0);
+        local.gamesPlayed = Math.max(local.gamesPlayed || 0, cloud.games_played || 0);
+        local.totalWords = Math.max(local.totalWords || 0, cloud.total_words || 0);
+        local.coins = Math.max(local.coins || 0, cloud.coins || 0);
+        local.totalCoinsEarned = Math.max(local.totalCoinsEarned || 0, cloud.total_coins_earned || 0);
+        // Preferences — cloud wins
+        if (cloud.preferred_grid_size) local.gridSize = cloud.preferred_grid_size;
+        if (cloud.preferred_difficulty) local.difficulty = cloud.preferred_difficulty;
+        if (cloud.preferred_game_mode) local.gameMode = cloud.preferred_game_mode;
+        // Cosmetics — cloud wins
+        if (cloud.equipped_theme || cloud.equipped_block_style) {
+            local.equipped = local.equipped || {};
+            if (cloud.equipped_theme) local.equipped.gridTheme = cloud.equipped_theme;
+            if (cloud.equipped_block_style) local.equipped.blockStyle = cloud.equipped_block_style;
+        }
+        if (cloud.bonus_slot_contents) local.bonusSlotContents = cloud.bonus_slot_contents;
+        if (cloud.perks) local.perks = cloud.perks;
+        if (cloud.unlocked_grids) local.unlockedGrids = cloud.unlocked_grids;
+        // Streak — take cloud if more recent
+        if (cloud.last_play_date) {
+            const cloudDate = new Date(cloud.last_play_date);
+            const localDate = local.lastPlayDate ? new Date(local.lastPlayDate) : new Date(0);
+            if (cloudDate >= localDate) {
+                local.lastPlayDate = cloud.last_play_date;
+                local.playStreak = cloud.play_streak || 0;
+            }
+        }
+        // Milestones — union of local and cloud
+        if (cloud.claimed_milestones?.length) {
+            const localMilestones = new Set(local.claimedMilestones || []);
+            for (const m of cloud.claimed_milestones) localMilestones.add(m);
+            local.claimedMilestones = [...localMilestones];
+        }
+        // Unique words — union
+        if (cloud.unique_words_found?.length) {
+            const localWords = new Set(local.uniqueWordsFound || []);
+            for (const w of cloud.unique_words_found) localWords.add(w);
+            local.uniqueWordsFound = [...localWords];
+        }
+    }
+
+    _showAuthError(msg) {
+        if (!this.els.authError) return;
+        this.els.authError.textContent = msg;
+        this.els.authError.classList.remove("hidden");
+    }
+
+    _clearAuthError() {
+        if (!this.els.authError) return;
+        this.els.authError.textContent = "";
+        this.els.authError.classList.add("hidden");
+    }
+
+    _setAuthLoading(loading) {
+        const btns = [this.els.authSigninBtn, this.els.signupSendCodeBtn, this.els.signupVerifyCodeBtn, this.els.signupCreateBtn];
+        for (const btn of btns) {
+            if (btn) btn.disabled = loading;
+        }
+    }
+
+    _resetSignupSteps() {
+        this._stopCodeTimers();
+        this.els.signupStepEmail?.classList.remove("hidden");
+        this.els.signupStepVerify?.classList.add("hidden");
+        this.els.signupStepPassword?.classList.add("hidden");
+        if (this.els.signupEmail) this.els.signupEmail.value = "";
+        if (this.els.signupPassword) this.els.signupPassword.value = "";
+        if (this.els.signupPasswordConfirm) this.els.signupPasswordConfirm.value = "";
+        this.els.signupCodeInputs?.querySelectorAll('.code-digit').forEach(d => { d.value = ''; });
+        this._updateVerifyBtnState();
+        this._signupEmail = null;
+        this._signupResendCooldown = 0;
+    }
+
+    // ════════════════════════════════════════
+    // LEADERBOARD SYSTEM
+    // ════════════════════════════════════════
+
+    _bindLeaderboard() {
+        // Main leaderboard button (on page 2 of home screen)
+        this.els.leaderboardBtn?.addEventListener("click", () => {
+            this._lbCurrentTab = "main";
+            this._lbClassFilter = null;
+            this._lbOffset = 0;
+            this._showScreen("leaderboard");
+        });
+
+        // Challenge-specific leaderboard buttons
+        this.els.challengeLbBtns?.forEach(btn => {
+            btn.addEventListener("click", () => {
+                this._lbCurrentTab = btn.dataset.challenge;
+                this._lbClassFilter = null;
+                this._lbOffset = 0;
+                this._showScreen("leaderboard");
+            });
+        });
+
+        // Back button
+        this.els.lbBackBtn?.addEventListener("click", () => {
+            this._showScreen("menu");
+            this._goToMenuPage(2); // Return to the rankings page
+        });
+
+        // Refresh button
+        this.els.lbRefreshBtn?.addEventListener("click", () => {
+            this._loadLeaderboard(true);
+        });
+
+        // Tab switching
+        this.els.lbTabs?.forEach(tab => {
+            tab.addEventListener("click", () => {
+                this._lbCurrentTab = tab.dataset.lb;
+                this._lbOffset = 0;
+                this._lbClassFilter = null;
+                this.els.lbTabs.forEach(t => t.classList.toggle("active", t === tab));
+                this.els.lbClassBtns?.forEach(b => b.classList.toggle("active", b.dataset.class === "all"));
+                this._loadLeaderboard();
+            });
+        });
+
+        // Class filter
+        this.els.lbClassBtns?.forEach(btn => {
+            btn.addEventListener("click", () => {
+                this._lbClassFilter = btn.dataset.class === "all" ? null : btn.dataset.class;
+                this._lbOffset = 0;
+                this.els.lbClassBtns.forEach(b => b.classList.toggle("active", b === btn));
+                this._loadLeaderboard();
+            });
+        });
+
+        // Load more
+        this.els.lbLoadMoreBtn?.addEventListener("click", () => {
+            this._lbOffset += 50;
+            this._loadLeaderboard(false, true);
+        });
+
+        // Swipeable tabs — swipe left/right on the leaderboard list to switch tabs
+        this._bindLeaderboardSwipe();
+    }
+
+    _bindLeaderboardSwipe() {
+        const swipeTarget = document.getElementById("leaderboard-screen");
+        if (!swipeTarget) return;
+
+        const tabOrder = ["main", "target-word", "speed-round", "word-category", "word-search"];
+        let startX = 0;
+        let startY = 0;
+        let tracking = false;
+
+        swipeTarget.addEventListener("touchstart", (e) => {
+            if (e.touches.length !== 1) return;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            tracking = true;
+        }, { passive: true });
+
+        swipeTarget.addEventListener("touchend", (e) => {
+            if (!tracking) return;
+            tracking = false;
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            const dx = endX - startX;
+            const dy = endY - startY;
+
+            // Must be primarily horizontal (|dx| > |dy|) and at least 50px
+            if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+
+            const currentTab = this._lbCurrentTab || "main";
+            const idx = tabOrder.indexOf(currentTab);
+            if (idx === -1) return;
+
+            let newIdx;
+            if (dx < 0) {
+                // Swipe left → next tab
+                newIdx = idx + 1;
+            } else {
+                // Swipe right → previous tab
+                newIdx = idx - 1;
+            }
+
+            if (newIdx < 0 || newIdx >= tabOrder.length) return;
+
+            const newTab = tabOrder[newIdx];
+            this._lbCurrentTab = newTab;
+            this._lbOffset = 0;
+            this._lbClassFilter = null;
+            this.els.lbTabs?.forEach(t => t.classList.toggle("active", t.dataset.lb === newTab));
+            this.els.lbClassBtns?.forEach(b => b.classList.toggle("active", b.dataset.class === "all"));
+
+            // Scroll the active tab into view
+            const activeTab = document.querySelector(`.lb-tab[data-lb="${newTab}"]`);
+            activeTab?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+
+            this._loadLeaderboard();
+        }, { passive: true });
+    }
+
+    async _loadLeaderboard(forceRefresh = false, append = false) {
+        const listEl = this.els.lbList;
+        if (!listEl) return;
+
+        // Sync tab highlight to current tab
+        const currentTab = this._lbCurrentTab || "main";
+        this.els.lbTabs?.forEach(t => t.classList.toggle("active", t.dataset.lb === currentTab));
+
+        if (!append) {
+            listEl.innerHTML = '<div class="lb-loading">Loading leaderboard...</div>';
+        }
+
+        try {
+            const { isLocalMode } = await import('./src/lib/supabase.js');
+            if (isLocalMode) {
+                listEl.innerHTML = '<div class="lb-empty">Leaderboards require an online connection.<br>Sign in to see rankings!</div>';
+                return;
+            }
+
+            const { fetchMainLeaderboard, fetchChallengeLeaderboard, fetchMyRank, fetchMyChallengeRank } = await import('./src/lib/leaderboard-service.js');
+
+            let entries;
+            const tab = this._lbCurrentTab || "main";
+
+            if (tab === "main") {
+                entries = await fetchMainLeaderboard({
+                    limit: 50,
+                    offset: this._lbOffset || 0,
+                    classFilter: this._lbClassFilter || null,
+                    forceRefresh,
+                });
+                this.els.lbTitle.textContent = "Leaderboards";
+            } else {
+                entries = await fetchChallengeLeaderboard(tab, {
+                    limit: 50,
+                    offset: this._lbOffset || 0,
+                    classFilter: this._lbClassFilter || null,
+                    forceRefresh,
+                });
+                const names = { 'target-word': 'Target Word', 'speed-round': 'Speed Round', 'word-category': 'Word Category', 'word-search': 'Word Search' };
+                this.els.lbTitle.textContent = names[tab] || "Leaderboard";
+            }
+
+            // Load my rank (main vs challenge-specific)
+            const myRank = tab === "main"
+                ? await fetchMyRank(forceRefresh)
+                : await fetchMyChallengeRank(tab, forceRefresh);
+            this._updateMyRankDisplay(myRank);
+
+            // Render entries
+            if (!append) listEl.innerHTML = "";
+
+            if (entries.length === 0 && !append) {
+                listEl.innerHTML = '<div class="lb-empty">No rankings yet. Play some games to get ranked!</div>';
+                this.els.lbLoadMore?.classList.add("hidden");
+                return;
+            }
+
+            for (const entry of entries) {
+                listEl.appendChild(this._createLeaderboardEntry(entry));
+            }
+
+            // Show/hide load more
+            this.els.lbLoadMore?.classList.toggle("hidden", entries.length < 50);
+
+        } catch (err) {
+            console.error('[leaderboard] load error:', err);
+            if (!append) {
+                listEl.innerHTML = '<div class="lb-empty">Could not load leaderboard. Try again later.</div>';
+            }
+        }
+    }
+
+    async _subscribeLeaderboardRealtime() {
+        if (this._lbRealtimeChannel) return; // already subscribed
+        try {
+            const { supabase, isLocalMode } = await import('./src/lib/supabase.js');
+            if (isLocalMode || !supabase) return;
+            this._lbRealtimeChannel = supabase
+                .channel('leaderboard-changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'leaderboard_rankings' }, () => {
+                    // Reload leaderboard when any ranking changes
+                    import('./src/lib/leaderboard-service.js').then(({ clearLeaderboardCache }) => {
+                        clearLeaderboardCache();
+                        this._loadLeaderboard(true);
+                    });
+                })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'challenge_leaderboards' }, () => {
+                    import('./src/lib/leaderboard-service.js').then(({ clearLeaderboardCache }) => {
+                        clearLeaderboardCache();
+                        this._loadLeaderboard(true);
+                    });
+                })
+                .subscribe();
+        } catch (e) {
+            console.warn('[leaderboard] realtime subscription failed:', e);
+        }
+    }
+
+    _unsubscribeLeaderboardRealtime() {
+        if (this._lbRealtimeChannel) {
+            import('./src/lib/supabase.js').then(({ supabase }) => {
+                supabase?.removeChannel(this._lbRealtimeChannel);
+                this._lbRealtimeChannel = null;
+            }).catch(() => { this._lbRealtimeChannel = null; });
+        }
+    }
+
+    _createLeaderboardEntry(entry) {
+        const div = document.createElement("div");
+        div.className = "lb-entry";
+
+        const classMap = { high: 'class-high', medium: 'class-medium', low: 'class-low' };
+        const classLabels = { high: 'HIGH', medium: 'MED', low: 'LOW' };
+        const classCss = classMap[entry.skill_class] || 'class-low';
+        const classLabel = classLabels[entry.skill_class] || 'LOW';
+
+        let rankCss = '';
+        if (entry.global_rank === 1) { rankCss = 'lb-rank-1'; div.classList.add('lb-top-1'); }
+        else if (entry.global_rank === 2) { rankCss = 'lb-rank-2'; div.classList.add('lb-top-2'); }
+        else if (entry.global_rank === 3) { rankCss = 'lb-rank-3'; div.classList.add('lb-top-3'); }
+
+        const rating = (entry.skill_rating || 0).toFixed(1);
+
+        div.innerHTML = `
+            <div class="lb-entry-row">
+                <span class="lb-rank ${rankCss}">#${entry.global_rank}</span>
+                <span class="lb-class-badge ${classCss}">${classLabel}</span>
+                <span class="lb-username">${this._escapeHtml(entry.username)}</span>
+                <span class="lb-rating">${rating}</span>
+                <span class="lb-entry-arrow">›</span>
+            </div>
+            <div class="lb-analysis">
+                <div class="lb-analysis-inner">
+                    <div class="lb-analysis-loading">Loading analysis...</div>
+                </div>
+            </div>
+        `;
+
+        // Click to expand/collapse analysis dropdown (JS-driven height for exact fit)
+        const row = div.querySelector(".lb-entry-row");
+        const analysisEl = div.querySelector(".lb-analysis");
+        row.addEventListener("click", async () => {
+            const wasExpanded = div.classList.contains("expanded");
+
+            // Helper: collapse a single entry's analysis
+            const collapseEntry = (entry) => {
+                const el = entry.querySelector(".lb-analysis");
+                el.classList.remove("fully-open");
+                // Snap to current height so transition has a start value
+                el.style.maxHeight = el.scrollHeight + "px";
+                // Force reflow then animate to 0
+                el.offsetHeight; // eslint-disable-line no-unused-expressions
+                el.style.maxHeight = "0";
+                entry.classList.remove("expanded");
+            };
+
+            // Collapse all others
+            div.closest(".lb-list")?.querySelectorAll(".lb-entry.expanded").forEach(e => {
+                if (e !== div) collapseEntry(e);
+            });
+
+            if (wasExpanded) {
+                collapseEntry(div);
+            } else {
+                div.classList.add("expanded");
+                analysisEl.classList.remove("fully-open");
+                analysisEl.style.maxHeight = analysisEl.scrollHeight + "px";
+
+                // Load analysis if not already loaded
+                const inner = div.querySelector(".lb-analysis-inner");
+                if (inner.querySelector(".lb-analysis-loading")) {
+                    try {
+                        const { fetchPlayerAnalysis } = await import('./src/lib/leaderboard-service.js');
+                        const currentTab = this._lbCurrentTab || "main";
+                        const challengeType = currentTab !== "main" ? currentTab : null;
+                        const html = await fetchPlayerAnalysis(entry, challengeType);
+                        inner.innerHTML = html || '<div class="lb-analysis-loading">No analysis available.</div>';
+                    } catch {
+                        inner.innerHTML = '<div class="lb-analysis-loading">Could not load analysis.</div>';
+                    }
+                    // Re-measure after content loaded
+                    analysisEl.style.maxHeight = analysisEl.scrollHeight + "px";
+                }
+
+                // After transition ends, remove max-height cap so content is never clipped
+                const onEnd = () => {
+                    if (div.classList.contains("expanded")) {
+                        analysisEl.classList.add("fully-open");
+                    }
+                    analysisEl.removeEventListener("transitionend", onEnd);
+                };
+                analysisEl.addEventListener("transitionend", onEnd);
+            }
+        });
+
+        return div;
+    }
+
+    _updateMyRankDisplay(myRank) {
+        // Update the rank card on the menu page 2
+        if (myRank) {
+            const classInfo = { high: { icon: '👑', label: 'High Class' }, medium: { icon: '⚔️', label: 'Medium Class' }, low: { icon: '🛡️', label: 'Low Class' } };
+            const info = classInfo[myRank.skill_class] || classInfo.low;
+
+            if (this.els.myRankCard) {
+                this.els.myRankCard.classList.remove("hidden");
+                this.els.myRankIcon.textContent = info.icon;
+                this.els.myRankClassLabel.textContent = info.label;
+                this.els.myRankPosition.textContent = `#${myRank.global_rank}`;
+                this.els.myRankRating.textContent = `Rating: ${(myRank.skill_rating || 0).toFixed(1)}`;
+            }
+
+            // Update the leaderboard screen mini rank bar
+            if (this.els.lbMyRank) {
+                this.els.lbMyRank.classList.remove("hidden");
+                this.els.lbMyRankIcon.textContent = info.icon;
+                this.els.lbMyRankClass.textContent = info.label;
+                this.els.lbMyRankPos.textContent = `#${myRank.global_rank}`;
+            }
+        } else {
+            this.els.myRankCard?.classList.add("hidden");
+            this.els.lbMyRank?.classList.add("hidden");
+        }
+    }
+
+    async _refreshMyRankOnMenu() {
+        try {
+            const { isLocalMode } = await import('./src/lib/supabase.js');
+            if (isLocalMode || !this._authUser) return;
+            const { fetchMyRank } = await import('./src/lib/leaderboard-service.js');
+            const myRank = await fetchMyRank(true);
+            this._updateMyRankDisplay(myRank);
+        } catch (e) {
+            // Non-critical — don't block menu rendering
+        }
+    }
+
+    _escapeHtml(str) {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ════════════════════════════════════════
+    // SUPABASE GAME SCORE RECORDING
+    // ════════════════════════════════════════
+
+    async _recordGameToSupabase(scoreData) {
+        try {
+            const { isLocalMode, recordGameScore, updateMyRanking } = await import('./src/lib/supabase.js');
+            if (isLocalMode) return;
+            const profile = this.profileMgr.getActive();
+            if (!profile || !profile.cloudId) {
+                console.warn('[supabase] Cannot record game — no cloudId. Profile:', profile?.username, 'cloudId:', profile?.cloudId);
+                return;
+            }
+
+            console.log('[supabase] Recording game score for profile:', profile.cloudId);
+            await recordGameScore({
+                profile_id: profile.cloudId,
+                game_mode: scoreData.gameMode,
+                is_challenge: scoreData.isChallenge || false,
+                challenge_type: scoreData.challengeType || null,
+                category_key: scoreData.categoryKey || null,
+                grid_size: scoreData.gridSize,
+                difficulty: scoreData.difficulty,
+                time_limit_seconds: scoreData.timeLimitSeconds || null,
+                score: scoreData.score,
+                words_found: scoreData.wordsFound,
+                longest_word_length: scoreData.longestWordLength || 0,
+                best_combo: scoreData.bestCombo || 0,
+                target_words_completed: scoreData.targetWordsCompleted || 0,
+                bonus_words_completed: scoreData.bonusWordsCompleted || 0,
+                time_remaining_seconds: scoreData.timeRemainingSeconds || null,
+                xp_earned: scoreData.xpEarned || 0,
+                coins_earned: scoreData.coinsEarned || 0,
+                grid_factor: scoreData.gridFactor || null,
+                difficulty_multiplier: scoreData.difficultyMultiplier || null,
+                mode_multiplier: scoreData.modeMultiplier || null,
+            });
+
+            // Update this user's leaderboard ranking after recording the score
+            console.log('[supabase] Game score recorded. Updating ranking...');
+            try { await updateMyRanking(); console.log('[supabase] Ranking updated successfully.'); } catch (e) {
+                console.warn('[supabase] ranking update failed:', e);
+            }
+
+            // Clear leaderboard cache and refresh my rank display immediately
+            try {
+                const { clearLeaderboardCache, fetchMyRank } = await import('./src/lib/leaderboard-service.js');
+                clearLeaderboardCache();
+                const myRank = await fetchMyRank(true);
+                console.log('[supabase] My rank:', myRank);
+                this._updateMyRankDisplay(myRank);
+            } catch (e) {
+                console.warn('[supabase] rank display refresh failed:', e);
+            }
+        } catch (err) {
+            console.error('[supabase] Failed to record game score:', err);
+        }
+    }
+
+    // ════════════════════════════════════════
+    // WORD SEARCH CHALLENGE
+    // ════════════════════════════════════════
+
+    _bindWordSearch() {
+        this.els.wsPauseBtn?.addEventListener("click", () => this._wsTogglePause());
+        this.els.wsResumeBtn?.addEventListener("click", () => this._wsTogglePause());
+        this.els.wsMusicBtn?.addEventListener("click", () => {
+            this._wsReturnScreen = "ws";
+            this._showScreen("music");
+        });
+        this.els.wsQuitBtn?.addEventListener("click", () => {
+            this._wsEndGame("save");
+        });
+        this.els.wsEndGameBtn?.addEventListener("click", () => {
+            this._wsEndGame("endgame");
+        });
+
+        // Mini music player buttons
+        this.els.wsMiniPrev?.addEventListener("click", () => this.music.prev());
+        this.els.wsMiniToggle?.addEventListener("click", () => this.music.toggle());
+        this.els.wsMiniNext?.addEventListener("click", () => this.music.next());
+
+        // Touch/mouse input on canvas
+        const canvas = this.els.wsCanvas;
+        if (!canvas) return;
+
+        let selecting = false;
+        let selectedCells = [];
+
+        const getCellFromEvent = (e) => {
+            if (!this._ws) return null;
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches ? e.touches[0] : e;
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            const cellSize = this._ws.cellSize;
+            const padding = this._ws.padding;
+            const col = Math.floor((x - padding) / cellSize);
+            const row = Math.floor((y - padding) / cellSize);
+            const gs = this._ws.gridSize;
+            if (row < 0 || row >= gs || col < 0 || col >= gs) return null;
+            return { r: row, c: col };
+        };
+
+        // Prevent touch+mouse double-firing on mobile
+        let lastTouchEnd = 0;
+
+        const onStart = (e) => {
+            if (!this._ws || this._ws.paused || this._ws.gameOver || this._ws.revealing) return;
+            if (e.type === 'mousedown' && Date.now() - lastTouchEnd < 500) return;
+            e.preventDefault();
+            const cell = getCellFromEvent(e);
+            if (!cell) return;
+            selecting = true;
+            selectedCells = [cell];
+            this._ws.selecting = selectedCells;
+            this._wsRender();
+        };
+
+        const onMove = (e) => {
+            if (!selecting || !this._ws) return;
+            if (e.type === 'mousemove' && Date.now() - lastTouchEnd < 500) return;
+            e.preventDefault();
+            const cell = getCellFromEvent(e);
+            if (!cell) return;
+
+            // Must form a straight line from first cell
+            const first = selectedCells[0];
+            const dr = Math.sign(cell.r - first.r);
+            const dc = Math.sign(cell.c - first.c);
+            if (dr === 0 && dc === 0) {
+                selectedCells = [first];
+            } else {
+                // Rebuild line from first to current
+                const newCells = [];
+                let cr = first.r, cc = first.c;
+                const gs = this._ws.gridSize;
+                while (cr >= 0 && cr < gs && cc >= 0 && cc < gs) {
+                    newCells.push({ r: cr, c: cc });
+                    if (cr === cell.r && cc === cell.c) break;
+                    // Check if we're moving towards the target
+                    const nextR = cr + dr;
+                    const nextC = cc + dc;
+                    // Check we aren't going past the target
+                    if ((dr > 0 && nextR > cell.r) || (dr < 0 && nextR < cell.r)) break;
+                    if ((dc > 0 && nextC > cell.c) || (dc < 0 && nextC < cell.c)) break;
+                    cr = nextR;
+                    cc = nextC;
+                }
+                selectedCells = newCells;
+            }
+            this._ws.selecting = selectedCells;
+            this._wsRender();
+        };
+
+        const onEnd = (e) => {
+            if (!selecting || !this._ws) return;
+            e.preventDefault();
+            if (e.type === 'touchend' || e.type === 'touchcancel') lastTouchEnd = Date.now();
+            selecting = false;
+
+            // Validate selection against the board's known valid words
+            const word = _wsValidateSelection(this._ws.grid, selectedCells, this._ws.allValidWords);
+            if (word && !this._ws.foundWords.has(word)) {
+                // Valid new word!
+                this._wsWordFound(word, selectedCells);
+            } else if (selectedCells.length >= 3) {
+                // Invalid — flash red and shake
+                this._wsFlashInvalid(selectedCells);
+            }
+
+            this._ws.selecting = null;
+            selectedCells = [];
+            this._wsRender();
+        };
+
+        canvas.addEventListener("mousedown", onStart);
+        canvas.addEventListener("mousemove", onMove);
+        canvas.addEventListener("mouseup", onEnd);
+        canvas.addEventListener("mouseleave", onEnd);
+        canvas.addEventListener("touchstart", onStart, { passive: false });
+        canvas.addEventListener("touchmove", onMove, { passive: false });
+        canvas.addEventListener("touchend", onEnd, { passive: false });
+        canvas.addEventListener("touchcancel", onEnd, { passive: false });
+    }
+
+    _wsStartGame() {
+        // Clear any stale WS save when starting fresh
+        this._clearGameState();
+
+        const level = this.profileMgr.getWordSearchLevel();
+        const params = _wsLevelParams(level);
+        const words = _wsSelectWords(params);
+        const { grid, placedWords } = _wsGenerateGrid(params.gridSize, words, params.allowedDirs);
+
+        // Build set of intentionally placed words (the completion target)
+        const placedWordSet = new Set();
+        for (const pw of placedWords) placedWordSet.add(pw.word);
+
+        // Build set of all valid words on the board (placed + accidental) for validation
+        // Only scan in the level's allowed directions to limit accidental word noise
+        const allValidWords = new Set(placedWordSet);
+        for (let r = 0; r < params.gridSize; r++) {
+            for (let c = 0; c < params.gridSize; c++) {
+                for (const [dr, dc] of params.allowedDirs) {
+                    for (let len = 3; len <= 7; len++) {
+                        const endR = r + dr * (len - 1);
+                        const endC = c + dc * (len - 1);
+                        if (endR < 0 || endR >= params.gridSize || endC < 0 || endC >= params.gridSize) break;
+                        let w = "";
+                        for (let i = 0; i < len; i++) {
+                            w += grid[r + dr * i][c + dc * i];
+                        }
+                        if (DICTIONARY.has(w)) allValidWords.add(w);
+                    }
+                }
+            }
+        }
+
+        // Log accidental words for debugging
+        const accidentalWords = [...allValidWords].filter(w => !placedWordSet.has(w));
+        console.log(`[WS] Level ${level}: ${placedWordSet.size} placed words, ${accidentalWords.length} accidental words${accidentalWords.length ? ": " + accidentalWords.join(", ") : ""}`);
+
+        this._ws = {
+            level,
+            params,
+            grid,
+            placedWords,
+            placedWordSet,
+            allValidWords,
+            foundWords: new Set(),
+            foundWordCells: [],  // [{word, cells}]
+            score: 0,
+            coins: 0,
+            timeRemaining: WORD_SEARCH_TIME_LIMIT,
+            paused: false,
+            gameOver: false,
+            selecting: null,
+            invalidFlash: null, // {cells, timer}
+            gridSize: params.gridSize,
+            cellSize: 0,
+            padding: 0,
+            wordsFound: [], // [{word, pts}] for game over
+        };
+
+        this._showScreen("ws");
+        this._wsUpdateMiniPlayer();
+
+        // Delay canvas resize until layout is computed (screen must be visible first)
+        requestAnimationFrame(() => {
+            this._wsResizeCanvas();
+            this._wsUpdateUI();
+            this._wsRender();
+
+            // Start game loop
+            this._ws._lastTime = performance.now();
+            this._ws._animId = requestAnimationFrame((t) => this._wsGameLoop(t));
+        });
+    }
+
+    _wsResizeCanvas() {
+        if (!this._ws) return;
+        const canvas = this.els.wsCanvas;
+        const container = this.els.wsGridContainer;
+        if (!canvas || !container) return;
+
+        const maxW = container.clientWidth;
+        const maxH = container.clientHeight || window.innerHeight * 0.65;
+        const availSize = Math.floor(Math.min(maxW, maxH));
+        const padding = 2;
+        const cellSize = Math.floor((availSize - padding * 2) / this._ws.gridSize);
+        const totalSize = cellSize * this._ws.gridSize + padding * 2;
+
+        canvas.width = totalSize * (window.devicePixelRatio || 1);
+        canvas.height = totalSize * (window.devicePixelRatio || 1);
+        canvas.style.width = totalSize + "px";
+        canvas.style.height = totalSize + "px";
+
+        this._ws.cellSize = cellSize;
+        this._ws.padding = padding;
+        this._ws.canvasSize = totalSize;
+    }
+
+    _wsGameLoop(now) {
+        if (!this._ws || this._ws.gameOver) return;
+
+        const dt = Math.min(0.1, (now - this._ws._lastTime) / 1000);
+        this._ws._lastTime = now;
+
+        if (!this._ws.paused) {
+            // Countdown timer
+            this._ws.timeRemaining -= dt;
+            if (this._ws.timeRemaining <= 0) {
+                this._ws.timeRemaining = 0;
+                // Enter reveal phase — show unfound words before game over
+                this._wsStartReveal();
+                return;
+            }
+
+            // Update invalid flash
+            if (this._ws.invalidFlash) {
+                this._ws.invalidFlash.timer -= dt;
+                if (this._ws.invalidFlash.timer <= 0) {
+                    this._ws.invalidFlash = null;
+                }
+            }
+
+            // Update timer display
+            this.els.wsTimer.textContent = this._formatCountdownTime(this._ws.timeRemaining);
+        }
+
+        this._wsRender();
+        this._ws._animId = requestAnimationFrame((t) => this._wsGameLoop(t));
+    }
+
+    _wsRender() {
+        if (!this._ws) return;
+        const canvas = this.els.wsCanvas;
+        const ctx = canvas.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const { grid, gridSize, cellSize, padding, foundWordCells, selecting, invalidFlash } = this._ws;
+
+        // Background
+        ctx.fillStyle = "#2f3029";
+        ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+        // Draw found word highlights (green)
+        for (const group of foundWordCells) {
+            ctx.fillStyle = "rgba(100, 200, 100, 0.25)";
+            for (const { r, c } of group.cells) {
+                ctx.fillRect(padding + c * cellSize, padding + r * cellSize, cellSize, cellSize);
+            }
+        }
+
+        // Draw revealed unfound words (yellow) during reveal phase
+        if (this._ws.revealedWords) {
+            for (const group of this._ws.revealedWords) {
+                ctx.fillStyle = "rgba(255, 210, 60, 0.35)";
+                for (const { r, c } of group.cells) {
+                    ctx.fillRect(padding + c * cellSize, padding + r * cellSize, cellSize, cellSize);
+                }
+            }
+        }
+
+        // Draw current selection highlight
+        if (selecting && selecting.length > 0) {
+            ctx.fillStyle = "rgba(226, 216, 166, 0.35)";
+            for (const { r, c } of selecting) {
+                ctx.fillRect(padding + c * cellSize, padding + r * cellSize, cellSize, cellSize);
+            }
+        }
+
+        // Draw invalid flash (red)
+        if (invalidFlash) {
+            const alpha = Math.min(1, invalidFlash.timer * 3);
+            ctx.fillStyle = `rgba(220, 50, 50, ${0.4 * alpha})`;
+            for (const { r, c } of invalidFlash.cells) {
+                ctx.fillRect(padding + c * cellSize, padding + r * cellSize, cellSize, cellSize);
+            }
+        }
+
+        // Grid lines
+        ctx.strokeStyle = "#4a493e";
+        ctx.lineWidth = 0.5;
+        for (let r = 0; r <= gridSize; r++) {
+            ctx.beginPath();
+            ctx.moveTo(padding, padding + r * cellSize);
+            ctx.lineTo(padding + gridSize * cellSize, padding + r * cellSize);
+            ctx.stroke();
+        }
+        for (let c = 0; c <= gridSize; c++) {
+            ctx.beginPath();
+            ctx.moveTo(padding + c * cellSize, padding);
+            ctx.lineTo(padding + c * cellSize, padding + gridSize * cellSize);
+            ctx.stroke();
+        }
+
+        // Letters
+        const fontSize = Math.floor(cellSize * 0.55);
+        ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // Build set of found cells for styling
+        const foundCellSet = new Set();
+        for (const group of foundWordCells) {
+            for (const { r, c } of group.cells) foundCellSet.add(`${r},${c}`);
+        }
+        // Build set of revealed cells for styling
+        const revealedCellSet = new Set();
+        if (this._ws.revealedWords) {
+            for (const group of this._ws.revealedWords) {
+                for (const { r, c } of group.cells) revealedCellSet.add(`${r},${c}`);
+            }
+        }
+
+        for (let r = 0; r < gridSize; r++) {
+            for (let c = 0; c < gridSize; c++) {
+                const cx = padding + c * cellSize + cellSize / 2;
+                const cy = padding + r * cellSize + cellSize / 2;
+                const key = `${r},${c}`;
+
+                if (foundCellSet.has(key)) {
+                    ctx.fillStyle = "#80d080"; // green for found
+                } else if (revealedCellSet.has(key)) {
+                    ctx.fillStyle = "#ffd23c"; // yellow for revealed
+                } else {
+                    ctx.fillStyle = "#e2d8a6"; // default accent
+                }
+                ctx.fillText(grid[r][c], cx, cy);
+            }
+        }
+
+        // Draw line through found words
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        for (const group of foundWordCells) {
+            const cells = group.cells;
+            if (cells.length < 2) continue;
+            ctx.strokeStyle = "rgba(100, 200, 100, 0.6)";
+            ctx.beginPath();
+            const f = cells[0];
+            ctx.moveTo(padding + f.c * cellSize + cellSize / 2, padding + f.r * cellSize + cellSize / 2);
+            const l = cells[cells.length - 1];
+            ctx.lineTo(padding + l.c * cellSize + cellSize / 2, padding + l.r * cellSize + cellSize / 2);
+            ctx.stroke();
+        }
+
+        // Draw line through revealed unfound words (yellow)
+        if (this._ws.revealedWords) {
+            for (const group of this._ws.revealedWords) {
+                const cells = group.cells;
+                if (cells.length < 2) continue;
+                ctx.strokeStyle = "rgba(255, 210, 60, 0.7)";
+                ctx.beginPath();
+                const f = cells[0];
+                ctx.moveTo(padding + f.c * cellSize + cellSize / 2, padding + f.r * cellSize + cellSize / 2);
+                const l = cells[cells.length - 1];
+                ctx.lineTo(padding + l.c * cellSize + cellSize / 2, padding + l.r * cellSize + cellSize / 2);
+                ctx.stroke();
+            }
+        }
+
+        // Draw selection line
+        if (selecting && selecting.length > 1) {
+            ctx.strokeStyle = "rgba(226, 216, 166, 0.7)";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            const sf = selecting[0];
+            ctx.moveTo(padding + sf.c * cellSize + cellSize / 2, padding + sf.r * cellSize + cellSize / 2);
+            const sl = selecting[selecting.length - 1];
+            ctx.lineTo(padding + sl.c * cellSize + cellSize / 2, padding + sl.r * cellSize + cellSize / 2);
+            ctx.stroke();
+        }
+    }
+
+    _wsWordFound(word, cells) {
+        if (!this._ws) return;
+        const isPlacedWord = this._ws.placedWordSet.has(word);
+        const pts = _wsScoreWord(word, this._ws.level);
+        const coins = _wsWordCoins(word);
+
+        this._ws.foundWords.add(word);
+        this._ws.foundWordCells.push({ word, cells: cells.map(c => ({ ...c })) });
+        this._ws.score += pts;
+        this._ws.coins += coins;
+        this._ws.wordsFound.push({ word, pts });
+
+        // Sound effect
+        this.audio.clear(word.length);
+
+        // Update UI
+        this._wsUpdateUI();
+
+        // Show word popup — mark bonus words
+        this._wsShowPopup(word, pts, !isPlacedWord);
+
+        // Check if all PLACED words have been found — early completion!
+        const placedFound = [...this._ws.placedWordSet].filter(w => this._ws.foundWords.has(w)).length;
+        if (placedFound >= this._ws.placedWordSet.size) {
+            this._wsLevelComplete(true, true); // advanceLevel=true, earlyFinish=true
+        }
+    }
+
+    _wsFlashInvalid(cells) {
+        if (!this._ws) return;
+        this._ws.invalidFlash = {
+            cells: cells.map(c => ({ ...c })),
+            timer: 0.5,
+        };
+        // Shake the grid container
+        const container = this.els.wsGridContainer;
+        if (container) {
+            container.classList.add("ws-shake");
+            setTimeout(() => container.classList.remove("ws-shake"), 400);
+        }
+        // Error sound
+        this.audio.land(true);
+    }
+
+    _wsShowPopup(word, pts, isBonus = false) {
+        const container = this.els.wsWordPopup;
+        if (!container) return;
+        const row = document.createElement("div");
+        row.className = "ws-popup-row";
+        const bonusTag = isBonus ? `<span class="ws-popup-bonus">BONUS</span>` : '';
+        row.innerHTML = `<span class="ws-popup-word">${word}</span>${bonusTag}<span class="ws-popup-pts">+${pts}</span>`;
+        container.appendChild(row);
+        setTimeout(() => {
+            row.classList.add("pop-out");
+            setTimeout(() => row.remove(), 400);
+        }, 1200);
+    }
+
+    _wsUpdateUI() {
+        if (!this._ws) return;
+        this.els.wsScore.textContent = this._ws.score;
+        this.els.wsLevelNum.textContent = this._ws.level;
+        this.els.wsCoins.textContent = this._ws.coins;
+        this.els.wsWordsFoundCount.textContent = `Words Remaining: ${Math.max(0, this._ws.placedWordSet.size - [...this._ws.placedWordSet].filter(w => this._ws.foundWords.has(w)).length)}`;
+        this.els.wsTimer.textContent = this._formatCountdownTime(this._ws.timeRemaining);
+
+        // Update Level/XP bar
+        const info = this.profileMgr.getLevelInfo();
+        const pct = info.xpRequired > 0 ? Math.min(100, (info.xp / info.xpRequired) * 100) : 0;
+        this.els.wsLevelText.textContent = `Lv. ${info.level}`;
+        this.els.wsXpBarFill.style.width = pct + "%";
+        this.els.wsXpText.textContent = `${info.xp} / ${info.xpRequired}`;
+    }
+
+    _wsUpdateMiniPlayer() {
+        if (!this.music) return;
+        const track = this.music.getCurrentTrack();
+        if (this.els.wsMiniTitle) {
+            this.els.wsMiniTitle.textContent = track ? `♪ ${track.title} – ${track.artist}` : "♪ ---";
+        }
+        this._setMusicControlButton(this.els.wsMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
+        // Sync mini progress bar
+        if (this.els.wsMiniProgressFill && this.music.audio) {
+            const d = this.music.audio.duration || 1;
+            const pct = (this.music.audio.currentTime / d) * 100;
+            this.els.wsMiniProgressFill.style.width = pct + "%";
+        }
+    }
+
+    _wsTogglePause() {
+        if (!this._ws) return;
+        this._ws.paused = !this._ws.paused;
+        this.els.wsPauseOverlay.classList.toggle("active", this._ws.paused);
+    }
+
+    /**
+     * Reveal phase: when timer runs out, highlight unfound placed words
+     * one by one with a staggered animation, then show "click to continue".
+     */
+    _wsStartReveal() {
+        if (!this._ws) return;
+        const ws = this._ws;
+
+        // Stop the game loop
+        ws.paused = true;
+        if (ws._animId) cancelAnimationFrame(ws._animId);
+
+        // Find unfound placed words
+        const unfound = ws.placedWords.filter(pw => !ws.foundWords.has(pw.word));
+
+        if (unfound.length === 0) {
+            // All placed words were found — skip reveal, go to game over
+            this._wsLevelComplete();
+            return;
+        }
+
+        // Initialize reveal state
+        ws.revealedWords = [];
+        ws.revealing = true;
+
+        // Update timer display to show 0:00
+        this.els.wsTimer.textContent = "0:00";
+        // Update words remaining
+        this._wsUpdateUI();
+
+        // Stagger reveal: one word every 600ms
+        let revealIndex = 0;
+        const revealNext = () => {
+            if (revealIndex >= unfound.length || !this._ws) {
+                // All words revealed — show "click to continue" prompt
+                this._wsShowContinuePrompt();
+                return;
+            }
+
+            const pw = unfound[revealIndex];
+            ws.revealedWords.push({ word: pw.word, cells: pw.cells });
+            revealIndex++;
+
+            // Re-render to show the new highlight
+            this._wsRender();
+
+            // Play a subtle sound
+            this.audio.land(false);
+
+            setTimeout(revealNext, 600);
+        };
+
+        // Small pause before starting reveals
+        setTimeout(revealNext, 400);
+    }
+
+    _wsShowContinuePrompt() {
+        if (!this._ws) return;
+        const wsScreen = this.els.wsScreen;
+
+        // Create the "click to continue" banner at the bottom
+        const banner = document.createElement("div");
+        banner.className = "ws-continue-banner";
+        banner.innerHTML = `<span>Tap to continue</span>`;
+        wsScreen.appendChild(banner);
+
+        // Animate in
+        requestAnimationFrame(() => banner.classList.add("active"));
+
+        // On click anywhere, remove banner and proceed to game over
+        const handler = (e) => {
+            e.preventDefault();
+            wsScreen.removeEventListener("pointerdown", handler);
+            banner.remove();
+            this._ws.revealing = false;
+            this._wsLevelComplete();
+        };
+
+        // Delay listener slightly to prevent accidental immediate taps
+        setTimeout(() => {
+            wsScreen.addEventListener("pointerdown", handler, { once: true });
+        }, 300);
+    }
+
+    _wsLevelComplete(advanceLevel = true, earlyFinish = false) {
+        if (!this._ws || this._ws.gameOver) return;
+        const ws = this._ws;
+        const wordsFoundCount = ws.foundWords.size;
+        const timeRemaining = Math.max(0, ws.timeRemaining);
+
+        // Early finish bonus: reward remaining time as extra score & coins
+        let timeBonusScore = 0;
+        let timeBonusCoins = 0;
+        if (earlyFinish && timeRemaining > 0) {
+            // Flat 500 pt bonus + small time component (1 pt per second remaining, capped at 200)
+            timeBonusScore = 500 + Math.min(200, Math.floor(timeRemaining));
+            // Flat 5 coin bonus + 1 coin per 30 seconds remaining, capped at 150
+            timeBonusCoins = Math.min(150, 5 + Math.floor(timeRemaining / 30));
+            ws.score += timeBonusScore;
+            ws.coins += timeBonusCoins;
+        }
+
+        // Clear saved state — level is done, no resume
+        this._clearGameState();
+
+        // Only advance level on natural completion (timer or all words found), not End Game
+        if (advanceLevel && wordsFoundCount > 0) {
+            this.profileMgr.advanceWordSearchLevel();
+        }
+
+        // Record this level's stats
+        const wordEntries = ws.wordsFound.map(w => ({ word: w.word, length: w.word.length }));
+
+        // Calculate XP
+        const wasFirstGame = this.profileMgr.isFirstGameEver();
+        const lvlInfo = this.profileMgr.getLevelInfo();
+        const bsKey = this.profileMgr.bestScoreKey(
+            ws.gridSize, "casual", GAME_MODES.SANDBOX,
+            true, CHALLENGE_TYPES.WORD_SEARCH);
+        const previousBest = this.profileMgr.getBestScore(bsKey);
+
+        let xpEarned;
+        if (wasFirstGame) {
+            xpEarned = xpRequiredForLevel(1);
+        } else {
+            xpEarned = calculateGameXP({
+                score: ws.score,
+                wordsFound: wordEntries,
+                gridSize: ws.gridSize,
+                difficulty: "casual",
+                gameMode: GAME_MODES.SANDBOX,
+                isChallenge: true,
+                challengeType: CHALLENGE_TYPES.WORD_SEARCH,
+                previousBest,
+                playerLevel: lvlInfo.level,
+                timeLimitSeconds: WORD_SEARCH_TIME_LIMIT,
+                timeRemainingSeconds: timeRemaining,
+                targetWordsCompleted: wordsFoundCount,
+                bonusWordsCompleted: 0,
+                categoryKey: null,
+                comboMax: 0,
+            });
+        }
+
+        // Record to profile
+        this.profileMgr.recordChallengeGame(CHALLENGE_TYPES.WORD_SEARCH, ws.score, wordEntries);
+        this.profileMgr.updateBestScore(bsKey, ws.score);
+        const xpResult = this.profileMgr.awardXP(xpEarned);
+
+        // Calculate coins
+        const gameCoins = calculateGameCoins({
+            score: ws.score,
+            wordsFound: wordEntries,
+            isNewHighScore: ws.score > 0 && ws.score >= previousBest,
+            isChallenge: true,
+            challengeType: CHALLENGE_TYPES.WORD_SEARCH,
+            comboMax: 0,
+            playerLevel: lvlInfo.level,
+            isFirstGameToday: false,
+            playStreak: 0,
+        });
+        const totalCoins = ws.coins + gameCoins;
+        let levelUpCoins = 0;
+        if (xpResult.leveled) {
+            for (let lv = xpResult.oldLevel + 1; lv <= xpResult.newLevel; lv++) {
+                levelUpCoins += COIN_LEVEL_UP_BASE + lv * COIN_LEVEL_UP_PER_LEVEL;
+            }
+        }
+        const finalCoins = totalCoins + levelUpCoins;
+        this.profileMgr.addCoins(finalCoins);
+
+        // Check milestones
+        this.profileMgr.checkMilestones();
+
+        // Compute placed vs bonus words for analytics
+        const placedWordsFound = [...ws.placedWordSet].filter(w => ws.foundWords.has(w)).length;
+        const bonusWordsFound = wordsFoundCount - placedWordsFound;
+
+        // Record to Supabase
+        this._recordGameToSupabase({
+            gameMode: GAME_MODES.SANDBOX,
+            isChallenge: true,
+            challengeType: CHALLENGE_TYPES.WORD_SEARCH,
+            categoryKey: null,
+            gridSize: ws.gridSize,
+            difficulty: "casual",
+            timeLimitSeconds: WORD_SEARCH_TIME_LIMIT,
+            score: ws.score,
+            wordsFound: wordsFoundCount,
+            longestWordLength: Math.max(0, ...ws.wordsFound.map(w => w.word.length)),
+            bestCombo: 0,
+            targetWordsCompleted: wordsFoundCount,
+            bonusWordsCompleted: bonusWordsFound,
+            timeRemainingSeconds: Math.round(timeRemaining),
+            xpEarned,
+            coinsEarned: finalCoins,
+            gridFactor: ws.gridSize / 8,
+            difficultyMultiplier: 1.0,
+            modeMultiplier: 1.0,
+        });
+        this._syncProfileToCloud();
+
+        // Auto-advance to next level after a brief delay
+        ws.gameOver = true;
+        if (ws._animId) cancelAnimationFrame(ws._animId);
+
+        // Show level complete overlay, then start next level
+        this._wsShowLevelComplete(wordsFoundCount, ws.score, xpEarned, finalCoins, earlyFinish, timeBonusScore, timeBonusCoins, advanceLevel, xpResult);
+    }
+
+    _wsShowLevelComplete(wordsFound, score, xpEarned, coins, earlyFinish = false, timeBonusScore = 0, timeBonusCoins = 0, levelAdvanced = true, xpResult = null) {
+        const overlay = document.createElement("div");
+        overlay.className = "ws-level-complete-overlay";
+        const currentLevel = this._ws ? this._ws.level : "?";
+        const totalWords = this._ws ? this._ws.placedWordSet.size : wordsFound;
+        const earlyBonusHtml = earlyFinish ? `
+                    <div class="ws-early-bonus">🌟 All Words Found! 🌟</div>
+                    <div>Time Bonus: <strong>+${timeBonusScore} pts, +${timeBonusCoins} coins</strong></div>
+        ` : '';
+        const title = levelAdvanced ? `Level ${currentLevel} Complete!` : `Game Over — Level ${currentLevel}`;
+        const nextLevelBtn = levelAdvanced
+            ? `<button class="primary-btn ws-next-level-btn">Next Level →</button>`
+            : '';
+        overlay.innerHTML = `
+            <div class="ws-level-complete-card">
+                <h2>${title}</h2>
+                <div class="ws-level-stats">
+                    ${earlyBonusHtml}
+                    <div>Words Found: <strong>${wordsFound} / ${totalWords}</strong></div>
+                    <div>Score: <strong>${score}</strong></div>
+                    <div>XP Earned: <strong>+${xpEarned}</strong></div>
+                    <div>Coins: <strong>+${coins}</strong></div>
+                </div>
+                ${nextLevelBtn}
+                <button class="secondary-btn ws-quit-to-challenges-btn">Back to Challenges</button>
+            </div>
+        `;
+
+        const wsScreen = this.els.wsScreen;
+        wsScreen.appendChild(overlay);
+
+        // Prevent phantom clicks from the touch event that triggered completion
+        const card = overlay.querySelector(".ws-level-complete-card");
+        if (card) card.style.pointerEvents = "none";
+        setTimeout(() => {
+            if (card) card.style.pointerEvents = "";
+        }, 600);
+
+        // Show level-up popup if player leveled up
+        if (xpResult && xpResult.leveled) {
+            setTimeout(() => {
+                this._showLevelUpPopup(xpResult.newLevel, xpResult.newXp, xpResult.newXpReq);
+            }, 800);
+        }
+
+        const nextBtn = overlay.querySelector(".ws-next-level-btn");
+        if (nextBtn) {
+            nextBtn.addEventListener("click", () => {
+                overlay.remove();
+                this._ws = null;
+                this.activeChallenge = CHALLENGE_TYPES.WORD_SEARCH;
+                this._wsStartGame();
+            });
+        }
+
+        overlay.querySelector(".ws-quit-to-challenges-btn").addEventListener("click", () => {
+            overlay.remove();
+            this._ws = null;
+            this._openChallengeSetup(CHALLENGE_TYPES.WORD_SEARCH);
+        });
+    }
+
+    _wsSaveState() {
+        const key = this._saveKey();
+        if (!key || !this._ws || this._ws.gameOver) return;
+        const ws = this._ws;
+        const state = {
+            version: 2,
+            type: "word-search",
+            level: ws.level,
+            gridSize: ws.gridSize,
+            grid: ws.grid,
+            placedWords: ws.placedWords,
+            placedWordSet: Array.from(ws.placedWordSet),
+            allValidWords: Array.from(ws.allValidWords),
+            foundWords: Array.from(ws.foundWords),
+            foundWordCells: ws.foundWordCells,
+            score: ws.score,
+            coins: ws.coins,
+            timeRemaining: ws.timeRemaining,
+            wordsFound: ws.wordsFound,
+        };
+        localStorage.setItem(key, JSON.stringify(state));
+    }
+
+    _wsResumeFromSave(saved) {
+        const level = saved.level;
+        const params = _wsLevelParams(level);
+
+        this._ws = {
+            level,
+            params,
+            grid: saved.grid,
+            placedWords: saved.placedWords,
+            placedWordSet: new Set(saved.placedWordSet || saved.placedWords.map(pw => pw.word)),
+            allValidWords: new Set(saved.allValidWords),
+            foundWords: new Set(saved.foundWords),
+            foundWordCells: saved.foundWordCells || [],
+            score: saved.score || 0,
+            coins: saved.coins || 0,
+            timeRemaining: saved.timeRemaining || WORD_SEARCH_TIME_LIMIT,
+            paused: false,
+            gameOver: false,
+            selecting: null,
+            invalidFlash: null,
+            gridSize: saved.gridSize || params.gridSize,
+            cellSize: 0,
+            padding: 0,
+            wordsFound: saved.wordsFound || [],
+        };
+
+        this._showScreen("ws");
+        this._wsUpdateMiniPlayer();
+
+        requestAnimationFrame(() => {
+            this._wsResizeCanvas();
+            this._wsUpdateUI();
+            this._wsRender();
+            this._ws._lastTime = performance.now();
+            this._ws._animId = requestAnimationFrame((t) => this._wsGameLoop(t));
+        });
+    }
+
+    _wsEndGame(reason = "save") {
+        if (!this._ws) return;
+        const ws = this._ws;
+
+        // Close pause if open
+        this.els.wsPauseOverlay.classList.remove("active");
+
+        if (reason === "endgame") {
+            // Clear saved state — game is ending, no resume
+            this._clearGameState();
+            // Stop game loop first, then run scoring without level advancement
+            if (ws._animId) cancelAnimationFrame(ws._animId);
+            this._wsLevelComplete(false); // false = don't advance level
+            return;
+        }
+
+        // Save & Quit: save WS state, stop game loop, return to setup
+        this._wsSaveState();
+        if (ws._animId) cancelAnimationFrame(ws._animId);
+
+        this._ws = null;
+        this._openChallengeSetup(CHALLENGE_TYPES.WORD_SEARCH);
+    }
+
     destroy() {
         this._destroyed = true;
+        if (this._ws && this._ws._animId) cancelAnimationFrame(this._ws._animId);
+        this._ws = null;
         if (this.music) {
             this.music.pause();
             this.music._cancelCrossfade();
@@ -10565,6 +13234,7 @@ window.addEventListener("resize", () => {
         if (g && g.state !== State.MENU && g.state !== State.GAMEOVER && g.grid) {
             g.renderer.resize(g.grid.rows, g.grid.cols);
         }
+        if (g && g._ws) g._wsResizeCanvas();
         if (g && g.bgAnim) g.bgAnim._resize();
     }, 150);
 });
@@ -10578,6 +13248,9 @@ document.addEventListener("touchmove", (e) => {
     if (game?.state === State.PLAYING && target.closest("#play-screen")) {
         e.preventDefault();
     }
+    if (game?._ws && !game._ws.gameOver && target.closest("#ws-screen")) {
+        e.preventDefault();
+    }
 }, { passive: false });
 
 // Auto-save when the user navigates away or closes the tab
@@ -10586,6 +13259,10 @@ document.addEventListener("visibilitychange", () => {
         const g = window._game;
         if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
             g._saveGameState();
+        }
+        // Also save Word Search state if active
+        if (g && g._ws && !g._ws.gameOver) {
+            g._wsSaveState();
         }
         if (g && g.music) g.music._saveMusicState();
     } else if (document.visibilityState === "visible") {
@@ -10597,6 +13274,10 @@ window.addEventListener("beforeunload", () => {
     const g = window._game;
     if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
         g._saveGameState();
+    }
+    // Also save Word Search state if active
+    if (g && g._ws && !g._ws.gameOver) {
+        g._wsSaveState();
     }
     if (g && g.music) g.music._saveMusicState();
 });

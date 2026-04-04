@@ -33,13 +33,63 @@
         <canvas id="bg-canvas"></canvas>
         <!-- Global music mute button (visible on all screens) -->
         <button id="global-mute-btn" class="global-mute-btn" title="Toggle Music">♪</button>
-        <!-- PROFILES SCREEN (shown on launch) -->
-        <div id="profiles-screen" class="screen active">
+        <!-- AUTH SCREEN (shown on launch when not logged in) -->
+        <div id="auth-screen" class="screen active">
+            <h1 class="title">PLUMMET</h1>
+            <p class="subtitle auth-subtitle" id="auth-subtitle">Sign in to play</p>
+            <div id="auth-error" class="auth-error hidden"></div>
+
+            <!-- Sign In Form -->
+            <div id="auth-signin" class="auth-form">
+                <input type="email" id="auth-email" class="text-input" placeholder="Email address" autocomplete="email">
+                <input type="password" id="auth-password" class="text-input" placeholder="Password" autocomplete="current-password" minlength="8">
+                <button id="auth-signin-btn" class="primary-btn" style="width:100%;max-width:280px">Sign In</button>
+                <p class="auth-switch">Don't have an account? <button id="auth-goto-signup" class="link-btn">Sign Up</button></p>
+                <button id="auth-forgot-btn" class="link-btn auth-forgot">Forgot password?</button>
+            </div>
+
+            <!-- Sign Up Form (multi-step: Email → Code → Password) -->
+            <div id="auth-signup" class="auth-form hidden">
+                <!-- Step 1: Email -->
+                <div id="signup-step-email" class="signup-step">
+                    <input type="email" id="signup-email" class="text-input" placeholder="Email address" autocomplete="email">
+                    <p class="auth-info auth-info-small">We'll send a 5-digit code to verify your email</p>
+                    <button id="signup-send-code-btn" class="primary-btn" style="width:100%;max-width:280px">Send Verification Code →</button>
+                </div>
+                <!-- Step 2: 5-digit Verification Code -->
+                <div id="signup-step-verify" class="signup-step hidden">
+                    <p class="auth-info">Enter the 5-digit code sent to<br><strong id="signup-email-display"></strong></p>
+                    <div id="signup-code-inputs" class="code-inputs">
+                        <input type="text" inputmode="numeric" maxlength="1" class="code-digit" data-idx="0" autocomplete="off">
+                        <input type="text" inputmode="numeric" maxlength="1" class="code-digit" data-idx="1" autocomplete="off">
+                        <input type="text" inputmode="numeric" maxlength="1" class="code-digit" data-idx="2" autocomplete="off">
+                        <input type="text" inputmode="numeric" maxlength="1" class="code-digit" data-idx="3" autocomplete="off">
+                        <input type="text" inputmode="numeric" maxlength="1" class="code-digit" data-idx="4" autocomplete="off">
+                    </div>
+                    <p id="signup-code-timer" class="auth-info auth-info-small"></p>
+                    <button id="signup-verify-code-btn" class="primary-btn" style="width:100%;max-width:280px" disabled>Verify →</button>
+                    <button id="signup-resend-btn" class="link-btn">Resend Code</button>
+                </div>
+                <!-- Step 3: Create Password -->
+                <div id="signup-step-password" class="signup-step hidden">
+                    <p class="auth-info">Email verified! Now create your password.</p>
+                    <input type="password" id="signup-password" class="text-input" placeholder="Create a password (8+ characters)" autocomplete="new-password" minlength="8">
+                    <input type="password" id="signup-password-confirm" class="text-input" placeholder="Confirm password" autocomplete="new-password" minlength="8">
+                    <button id="signup-create-btn" class="primary-btn" style="width:100%;max-width:280px">Create Account →</button>
+                </div>
+                <p class="auth-switch">Already have an account? <button id="auth-goto-signin" class="link-btn">Sign In</button></p>
+            </div>
+        </div>
+
+        <!-- PROFILES SCREEN (shown after auth, select/create profile) -->
+        <div id="profiles-screen" class="screen">
             <h1 class="title">PLUMMET</h1>
             <p class="subtitle">Select or create a profile</p>
             <button id="tutorial-btn-profiles" class="tutorial-btn tutorial-btn-large">? TUTORIAL</button>
             <div id="profiles-list"></div>
             <button id="new-profile-btn" class="secondary-btn">+ New Profile</button>
+            <button id="auth-logout-btn" class="link-btn auth-logout">Sign Out</button>
+            <button id="delete-account-btn" class="link-btn auth-logout" style="color:#e74c3c;margin-top:0.5rem">Delete Account</button>
         </div>
 
         <!-- New Profile Modal -->
@@ -141,9 +191,47 @@
                             <p class="stat-text">Unique Words: <span id="menu-total-words">0</span></p>
                         </div>
                     </div>
-                    <!-- Page 2: Extra (future features) -->
-                    <div class="menu-page">
-                        <p class="menu-page-placeholder">More coming soon…</p>
+                    <!-- Page 2: Leaderboards & Rankings -->
+                    <div class="menu-page menu-page-leaderboards">
+                        <div class="leaderboard-page-content">
+                            <h2 class="leaderboard-page-title">Rankings</h2>
+                            <p class="leaderboard-page-subtitle">See where you stand</p>
+
+                            <div id="my-rank-card" class="my-rank-card hidden">
+                                <div class="my-rank-class">
+                                    <span id="my-rank-icon" class="rank-class-icon"></span>
+                                    <span id="my-rank-class-label" class="rank-class-label"></span>
+                                </div>
+                                <div class="my-rank-details">
+                                    <span id="my-rank-position" class="rank-position">#—</span>
+                                    <span id="my-rank-rating" class="rank-rating">—</span>
+                                </div>
+                            </div>
+
+                            <button id="leaderboard-btn" class="secondary-btn leaderboard-btn-glow">
+                                <span class="leaderboard-btn-icon">🏆</span>
+                                <span class="leaderboard-btn-text">Leaderboards</span>
+                            </button>
+
+                            <div class="challenge-lb-buttons">
+                                <button class="challenge-lb-btn" data-challenge="target-word">
+                                    <span class="clb-icon">◎</span>
+                                    <span class="clb-text">Target Word</span>
+                                </button>
+                                <button class="challenge-lb-btn" data-challenge="speed-round">
+                                    <span class="clb-icon">▲</span>
+                                    <span class="clb-text">Speed Round</span>
+                                </button>
+                                <button class="challenge-lb-btn" data-challenge="word-category">
+                                    <span class="clb-icon">▦</span>
+                                    <span class="clb-text">Word Category</span>
+                                </button>
+                                <button class="challenge-lb-btn" data-challenge="word-search">
+                                    <span class="clb-icon">🔍</span>
+                                    <span class="clb-text">Word Search</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -175,6 +263,48 @@
                 <button class="shop-tab" data-tab="starting_perks">Perks</button>
             </div>
             <div id="shop-content"></div>
+        </div>
+
+        <!-- LEADERBOARD SCREEN -->
+        <div id="leaderboard-screen" class="screen">
+            <div id="lb-sticky-top">
+                <div id="lb-header">
+                    <button id="lb-back-btn" class="icon-btn back-btn">←</button>
+                    <h2 id="lb-title">Leaderboards</h2>
+                    <button id="lb-refresh-btn" class="icon-btn" title="Refresh">⟳</button>
+                </div>
+                <div id="lb-tabs">
+                    <button class="lb-tab active" data-lb="main">Main</button>
+                    <button class="lb-tab" data-lb="target-word">Target Word</button>
+                    <button class="lb-tab" data-lb="speed-round">Speed Round</button>
+                    <button class="lb-tab" data-lb="word-category">Word Category</button>
+                    <button class="lb-tab" data-lb="word-search">Word Search</button>
+                </div>
+            </div>
+            <div id="lb-class-filter">
+                <button class="lb-class-btn active" data-class="all">All</button>
+                <button class="lb-class-btn" data-class="high">
+                    <span class="class-dot class-dot-high"></span> High
+                </button>
+                <button class="lb-class-btn" data-class="medium">
+                    <span class="class-dot class-dot-medium"></span> Medium
+                </button>
+                <button class="lb-class-btn" data-class="low">
+                    <span class="class-dot class-dot-low"></span> Low
+                </button>
+            </div>
+            <div id="lb-my-rank" class="lb-my-rank hidden">
+                <span class="lb-my-rank-label">Your Rank:</span>
+                <span id="lb-my-rank-icon" class="rank-class-icon"></span>
+                <span id="lb-my-rank-class"></span>
+                <span id="lb-my-rank-pos">#—</span>
+            </div>
+            <div id="lb-list" class="lb-list">
+                <div class="lb-loading">Loading leaderboard...</div>
+            </div>
+            <div id="lb-load-more" class="hidden">
+                <button id="lb-load-more-btn" class="link-btn">Load More</button>
+            </div>
         </div>
 
         <!-- MUSIC SCREEN -->
@@ -307,6 +437,66 @@
             <button id="challenge-main-menu-btn" class="secondary-btn">Main Menu</button>
         </div>
 
+        <!-- WORD SEARCH SCREEN -->
+        <div id="ws-screen" class="screen">
+            <div id="ws-word-popup" aria-live="polite"></div>
+            <!-- Level / XP bar (matches #level-bar) -->
+            <div id="ws-level-bar">
+                <span id="ws-level-text">Lv. 1</span>
+                <div id="ws-xp-bar-track"><div id="ws-xp-bar-fill"></div></div>
+                <span id="ws-xp-text">0 / 100</span>
+            </div>
+            <!-- Score/Timer/Coins bar (matches #score-bar) -->
+            <div id="ws-score-bar">
+                <div class="score-item">
+                    <span class="score-label">Score</span>
+                    <span id="ws-score" class="score-value">0</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">Time</span>
+                    <span id="ws-timer" class="score-value">5:00</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">Level</span>
+                    <span id="ws-level-num" class="score-value">1</span>
+                </div>
+                <div class="score-item coin-score-item">
+                    <span class="score-label">Coins</span>
+                    <span id="ws-coins" class="score-value coin-value">0</span>
+                </div>
+            </div>
+            <!-- Pause button (matches play-screen pause) -->
+            <button id="ws-pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏐⏐</button>
+            <!-- Music mini player (matches #now-playing-mini) -->
+            <div id="ws-mini-player">
+                <div id="ws-mini-progress"><div id="ws-mini-progress-fill"></div></div>
+                <span id="ws-mini-title">♪ ---</span>
+                <div id="ws-mini-controls">
+                    <button id="ws-mini-prev" class="icon-btn np-mini-btn" title="Previous Track" aria-label="Previous Track"></button>
+                    <button id="ws-mini-toggle" class="icon-btn np-mini-btn np-mini-toggle-btn" title="Play or Pause Music" aria-label="Play"></button>
+                    <button id="ws-mini-next" class="icon-btn np-mini-btn" title="Next Track" aria-label="Next Track"></button>
+                </div>
+            </div>
+            <!-- The grid (matches #canvas-wrapper) -->
+            <div id="ws-grid-container">
+                <canvas id="ws-canvas"></canvas>
+            </div>
+            <!-- Words found count -->
+            <div id="ws-words-found-bar">
+                <span id="ws-words-found-count">Words Found: 0</span>
+            </div>
+            <!-- Pause overlay -->
+            <div id="ws-pause-overlay" class="pause-overlay">
+                <div class="overlay-content">
+                    <h2>Paused</h2>
+                    <button id="ws-resume-btn" class="primary-btn">Resume</button>
+                    <button id="ws-music-btn" class="secondary-btn">Music</button>
+                    <button id="ws-end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
+                    <button id="ws-save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
+                </div>
+            </div>
+        </div>
+
         <!-- PLAYING SCREEN -->
         <div id="play-screen" class="screen">
             <div id="word-popup" aria-live="polite"></div>
@@ -344,7 +534,6 @@
                 </div>
             </div>
             <button id="hints-btn" class="icon-btn play-fab-btn play-hint-btn" title="Toggle Hints" aria-label="Toggle Hints">◈</button>
-            <button id="bonus-btn" class="bonus-btn hidden" title="Use Bonus Letter">Bonus!</button>
             <div id="bonus-popup-overlay" class="bonus-popup-overlay hidden">
                 <div id="bonus-popup-card" class="bonus-popup-card">
                     <div id="bonus-popup-icon" class="bonus-popup-icon"></div>
@@ -365,6 +554,7 @@
                 </div>
             </div>
             <div id="canvas-wrapper">
+                <button id="bonus-btn" class="bonus-btn hidden" title="Use Bonus Letter">Bonus!</button>
                 <canvas id="game-canvas"></canvas>
             </div>
             <div id="chain-banner" class="hidden"></div>
@@ -401,7 +591,8 @@
                 <button id="pause-words-found-btn" class="secondary-btn">Words So Far</button>
                 <button id="pause-music-btn" class="secondary-btn">Music</button>
                 <button id="pause-shop-btn" class="secondary-btn">Shop</button>
-                <button id="quit-btn" class="secondary-btn">Quit to Menu</button>
+                <button id="end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
+                <button id="save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
             </div>
         </div>
 

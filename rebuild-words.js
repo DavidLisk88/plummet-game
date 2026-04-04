@@ -163,6 +163,7 @@ son sop sot sow spa spy sty sub sue sum sun sup tab tad tag tan tap tar tat tax 
 ten the tie tin tip toe ton too top tot tow toy try tub tug tun two urn use van vat
 vet vex vie vim vow wad war was wax way web wed wet who wig win wit woe wok won woo
 wow yak yam yap yaw yea yen yet yew you zap zeal zen zero zest zinc zip zone zoo
+bib bra cam cob cog cur fad fen fib fir gig gob hex max nib nub sax sis
 able acid ally also area army aunt auto axis axle babe baby back bail bait bake ball
 band bang bank bare bark barn base bath beam bean bear beat beef been beer bell belt
 bend bike bill bind bird bite blow blue blur boar boat body bold bolt bomb bond bone
@@ -552,7 +553,12 @@ wardrobe warehouse warranty watchful waterfall waterfront watermelon weasel
 webcam wednesday wetland whale whippet whirlpool whistle wholesale wholesome
 widget wifi wilderness wildfire windshield wireless wolverine woodpecker
 workforce workout workplace workshop wrist yacht yearbook yearly yogurt
-zebra zucchini`.split(/\s+/).filter(w => w.length >= 3);
+zebra zucchini
+bile brat carp chow clamp cloak crate crumb crypt felt flask fury gig gist grub gums
+hex hinge lever lobe lull max mess molt mush nave nook oats pore rein rind romp rump
+scab shawl slag slob snag soot spec sway tact tarp tier tint torch trench turf welt
+womb wrench yolk clasp flint plume pouch prism sheath cuff crux daub daze fowl jinx
+bluff notch pants`.split(/\s+/).filter(w => w.length >= 3);
 
 const VERBS = `
 ace act add age aid aim air ask ate ban bar bat bay bed bet bid bit boo bow bug bum
@@ -672,11 +678,17 @@ specify splash stabilize standardize stimulate straighten strategize strengthen
 subscribe summarize supervise supplement surrender suspend symbolize terminate
 terrify thicken thread thrive tighten tolerate transport treasure troubleshoot
 underline undertake unfold unify unpack upload utilize validate verify violate
-visualize weaken`.split(/\s+/).filter(w => w.length >= 3);
+visualize weaken
+ail caw coo ebb eke irk lop nix rue balk bilk blab etch faze gird gnaw laud laze
+loot lope maim molt pout brace churn clamp clasp cramp crave curse deter graze grope
+grunt heave mangle notch nudge poach poise pounce purge quash repel ripen savor scold
+scoop scour scrub shove shriek shrug skimp slant slash smear spool splat squat stoop
+stroll strut swerve taunt thaw topple trample unwind vouch wallow whisk wince wrench
+mess fib torch hex max`.split(/\s+/).filter(w => w.length >= 3);
 
 const ADJECTIVES = `
 bad big dry done dull due far fat few fit fun gay hot ill key mad new odd old raw red sad
-shy wet fit
+shy wet fit apt coy icy lax mum wan
 able aged airy arid avid bald bare best blue bold both busy calm cold cool damp dark
 dead deaf dear deep dire drab drug dual dull dumb each easy edgy epic even evil faint
 fair fake fast flat fond fond foul free full glad glib good gray grim half hard high
@@ -832,7 +844,14 @@ ever everyone everyone myself nowhere off per themselves via whom why
 ample anyone anywhere away beneath decimal eighteen eighty else forty fourteen
 fraction gallon gram handful kilo mega minimal nineteen ninety numerous ounce
 ourselves pint remainder seventeen seventy sixteen theirs thirteen twenty
-underneath whoever yep zilch`.split(/\s+/).filter(w => w.length >= 3);
+underneath whoever yep zilch
+deft hazy moot oily rosy soggy bland gaudy grimy gruff hefty lanky leafy lusty meaty
+mushy musty nutty obese pasty plush pushy rowdy sandy scant shaky showy sleek slick
+snowy snug tacky dreary flashy flimsy folksy frosty homely jaunty limber mangy misty
+morbid snooty stale steamy stocky stormy stout stubby sultry supple swanky touchy
+trendy tricky filthy grumpy prissy quirky queasy ragged rancid rugged scarce sleazy
+snappy sordid terse thorny tipsy vulgar wacky wobbly woolly wordy wiry woody zany
+cranky crispy evasive brainy`.split(/\s+/).filter(w => w.length >= 3);
 
 // Common irregular plurals
 const IRREGULAR_PLURALS = {
@@ -961,6 +980,45 @@ const IRREGULAR_VERBS = {
     wind: ['winds', 'wound', 'winding'],
     withdraw: ['withdraws', 'withdrew', 'withdrawn', 'withdrawing'],
     wring: ['wrings', 'wrung', 'wringing'],
+    bear: ['bears', 'bore', 'borne', 'bearing'],
+    bend: ['bends', 'bent', 'bending'],
+    bet: ['bets', 'betting'],
+    burst: ['bursts', 'bursting'],
+    cast: ['casts', 'casting'],
+    cling: ['clings', 'clung', 'clinging'],
+    cost: ['costs', 'costing'],
+    dream: ['dreams', 'dreamt', 'dreamed', 'dreaming'],
+    dwell: ['dwells', 'dwelt', 'dwelling'],
+    feel: ['feels', 'felt', 'feeling'],
+    fling: ['flings', 'flung', 'flinging'],
+    forbid: ['forbids', 'forbade', 'forbidden', 'forbidding'],
+    forget: ['forgets', 'forgot', 'forgotten', 'forgetting'],
+    forgive: ['forgives', 'forgave', 'forgiven', 'forgiving'],
+    hit: ['hits', 'hitting'],
+    hurt: ['hurts', 'hurting'],
+    kneel: ['kneels', 'knelt', 'kneeling'],
+    lend: ['lends', 'lent', 'lending'],
+    overcome: ['overcomes', 'overcame', 'overcoming'],
+    prove: ['proves', 'proved', 'proven', 'proving'],
+    quit: ['quits', 'quitting'],
+    rid: ['rids', 'ridding'],
+    shed: ['sheds', 'shedding'],
+    shut: ['shuts', 'shutting'],
+    sling: ['slings', 'slung', 'slinging'],
+    smell: ['smells', 'smelt', 'smelled', 'smelling'],
+    sneak: ['sneaks', 'snuck', 'sneaking'],
+    speed: ['speeds', 'sped', 'speeding'],
+    spell: ['spells', 'spelt', 'spelled', 'spelling'],
+    spill: ['spills', 'spilt', 'spilled', 'spilling'],
+    spit: ['spits', 'spat', 'spitting'],
+    spoil: ['spoils', 'spoilt', 'spoiled', 'spoiling'],
+    stink: ['stinks', 'stank', 'stunk', 'stinking'],
+    stride: ['strides', 'strode', 'stridden', 'striding'],
+    string: ['strings', 'strung', 'stringing'],
+    thrust: ['thrusts', 'thrusting'],
+    tread: ['treads', 'trod', 'trodden', 'treading'],
+    undo: ['undoes', 'undid', 'undone', 'undoing'],
+    upset: ['upsets', 'upsetting'],
 };
 
 // ─── Banned words filter ────────────────────────────────────────────
