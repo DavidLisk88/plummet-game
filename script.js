@@ -9012,6 +9012,252 @@ class Game {
                                     Math.floor(cs * 0.4), clamp((cyc - 2.5) * 3, 0, 1));
                             }
                         }
+                    },
+                    {
+                        title: 'Word Search',
+                        desc: 'Word Search is a completely different game mode! Instead of falling blocks, you get a grid filled with letters and must find hidden words by swiping across them. No word list is shown — you discover valid words yourself! Words can go horizontally, vertically, or diagonally. Each level is timed at 7 minutes. As you progress through hundreds of levels, grids get larger, words get longer and harder, and more directions are introduced. Your level is saved permanently!',
+                        draw(ctx, w, h, t) {
+                            const gs = 8, { cs, ox, oy } = gL(w, h, gs, 10);
+                            gBg(ctx, ox, oy, cs, gs);
+
+                            // Fill grid with letters
+                            const gridLetters = [
+                                'CATSLPWE',
+                                'RVBHOGMN',
+                                'AXDIFKUT',
+                                'FLRUNZEP',
+                                'TEAQJWSY',
+                                'SMOKNBDG',
+                                'WIREPLXH',
+                                'GHTOVFCA'
+                            ];
+                            for (let r = 0; r < gs; r++) for (let c = 0; c < gs; c++)
+                                gC(ctx, ox, oy, cs, r, c, gridLetters[r][c], '#3a3933');
+
+                            // Animate swiping over hidden words
+                            const words = [
+                                { cells: [[0,0],[0,1],[0,2]], label: 'CAT', dir: '→' },
+                                { cells: [[1,4],[2,4],[3,4],[4,4]], label: 'OFJW', dir: '↓' },
+                                { cells: [[3,0],[3,1],[3,2],[3,3]], label: 'FLRU', dir: '→' },
+                                { cells: [[6,0],[6,1],[6,2],[6,3]], label: 'WIRE', dir: '→' }
+                            ];
+                            const realWords = [
+                                { cells: [[0,0],[0,1],[0,2]], label: 'CAT' },
+                                { cells: [[6,0],[6,1],[6,2],[6,3]], label: 'WIRE' }
+                            ];
+                            const cyc = t % 6;
+                            const wi = Math.floor(cyc / 3) % 2;
+                            const word = realWords[wi];
+                            const swipeProgress = clamp((cyc % 3) / 1.5, 0, 1);
+                            const litCount = Math.floor(swipeProgress * word.cells.length);
+
+                            for (let i = 0; i < litCount; i++) {
+                                const [r, c] = word.cells[i];
+                                gC(ctx, ox, oy, cs, r, c, gridLetters[r][c], '#4a5c38', '#8cb860');
+                            }
+
+                            // Show swipe finger
+                            if (swipeProgress < 1 && litCount < word.cells.length) {
+                                const [cr, cc] = word.cells[Math.min(litCount, word.cells.length - 1)];
+                                gTap(ctx, ox + cc * cs + cs / 2, oy + cr * cs + cs / 2, t);
+                            }
+
+                            if ((cyc % 3) > 2) {
+                                gT(ctx, w / 2, oy - cs * 0.7, '"' + word.label + '" found!', '#8cb860', Math.floor(cs * 0.4));
+                            } else {
+                                gT(ctx, w / 2, oy - cs * 0.7, '🔍 Swipe to find words!', '#e2d8a6', Math.floor(cs * 0.35));
+                            }
+
+                            // Level badge
+                            gT(ctx, w / 2, oy + gs * cs + cs * 0.5, 'Lv. 1 — 7:00', '#b0a878', Math.floor(cs * 0.3));
+                        }
+                    }
+                ]
+            },
+
+            // ═══ LEADERBOARD ═══
+            {
+                id: 'leaderboard', icon: '⬡', label: 'Leaderboard',
+                desc: 'Compete for skill-based rankings across every game mode',
+                slides: [
+                    {
+                        title: 'Skill-Based Rankings',
+                        desc: 'The leaderboard ranks players by a SKILL RATING — not just high scores. Your rating is calculated from multiple factors: scoring consistency, word quality, combo efficiency, and how many games you\'ve played. The more you play and improve, the higher your rating climbs. Ratings range from 0 to 10,000 and are updated after every game. You need at least 15 games before your rating stabilizes.',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            gT(ctx, w / 2, 24, '⬡ Leaderboard', '#e2d8a6', 18);
+
+                            // Animated ranks
+                            const players = [
+                                { name: 'ProPlayer', rating: 8742, cls: 'high' },
+                                { name: 'WordNinja', rating: 6281, cls: 'high' },
+                                { name: 'LetterDrop', rating: 3105, cls: 'medium' },
+                                { name: 'NewPlayer', rating: 890, cls: 'low' },
+                                { name: 'You', rating: 2450, cls: 'medium' },
+                            ];
+                            const rowH = 28;
+                            for (let i = 0; i < players.length; i++) {
+                                const py = 48 + i * rowH;
+                                const p = players[i];
+                                const isYou = p.name === 'You';
+                                const clsColor = p.cls === 'high' ? '#e2d8a6' : p.cls === 'medium' ? '#7eb8ff' : '#888';
+
+                                if (isYou) {
+                                    ctx.fillStyle = 'rgba(226,216,166,0.08)';
+                                    ctx.fillRect(16, py - 10, w - 32, rowH);
+                                }
+
+                                ctx.font = isYou ? 'bold 13px sans-serif' : '12px sans-serif';
+                                ctx.textAlign = 'left';
+                                ctx.fillStyle = isYou ? '#e2d8a6' : '#aaa';
+                                ctx.fillText(`${i + 1}. ${p.name}`, 24, py);
+
+                                // Rating bar
+                                const barX = w - 110, barW = 60, barH = 8;
+                                const fill = p.rating / 10000;
+                                ctx.fillStyle = '#1a2a3e';
+                                ctx.fillRect(barX, py - 4, barW, barH);
+                                ctx.fillStyle = clsColor;
+                                ctx.fillRect(barX, py - 4, barW * fill, barH);
+
+                                ctx.font = '10px sans-serif';
+                                ctx.textAlign = 'right';
+                                ctx.fillStyle = clsColor;
+                                ctx.fillText(p.rating.toLocaleString(), w - 24, py);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Classes & Tabs',
+                        desc: 'Players are grouped into three classes based on their skill rating: HIGH CLASS (top tier, gold), MEDIUM CLASS (mid tier, blue), and LOW CLASS (still climbing). Filter the leaderboard by class to see where you stand among similar players. The leaderboard has tabs for OVERALL ranking plus separate tabs for each challenge mode — Target Word, Speed Round, Word Category, and Word Search — each with its own independent skill rating!',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            // Tabs
+                            const tabs = ['Overall', 'Target', 'Speed', 'Category', 'Search'];
+                            const activeTab = Math.floor(t * 0.4) % tabs.length;
+                            const tabW = (w - 20) / tabs.length;
+                            for (let i = 0; i < tabs.length; i++) {
+                                const tx = 10 + i * tabW;
+                                const isActive = i === activeTab;
+                                ctx.fillStyle = isActive ? 'rgba(226,216,166,0.15)' : 'transparent';
+                                ctx.fillRect(tx, 12, tabW - 2, 22);
+                                if (isActive) {
+                                    ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 1;
+                                    ctx.strokeRect(tx, 12, tabW - 2, 22);
+                                }
+                                ctx.font = `${isActive ? 'bold ' : ''}9px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.fillStyle = isActive ? '#e2d8a6' : '#888';
+                                ctx.fillText(tabs[i], tx + (tabW - 2) / 2, 27);
+                            }
+
+                            // Class filter buttons
+                            const classes = [
+                                { label: 'All', color: '#aaa' },
+                                { label: 'High', color: '#e2d8a6' },
+                                { label: 'Medium', color: '#7eb8ff' },
+                                { label: 'Low', color: '#888' }
+                            ];
+                            const clsW = (w - 40) / classes.length;
+                            const activeCls = Math.floor(t * 0.3) % classes.length;
+                            for (let i = 0; i < classes.length; i++) {
+                                const cx = 20 + i * clsW;
+                                const isA = i === activeCls;
+                                ctx.fillStyle = isA ? classes[i].color : 'transparent';
+                                if (isA) ctx.fillRect(cx, 42, clsW - 4, 18);
+                                ctx.font = `${isA ? 'bold ' : ''}10px sans-serif`;
+                                ctx.textAlign = 'center';
+                                ctx.fillStyle = isA ? '#111' : classes[i].color;
+                                ctx.fillText(classes[i].label, cx + (clsW - 4) / 2, 55);
+                            }
+
+                            // Mini leaderboard rows
+                            const rows = [
+                                { rank: 1, name: 'Champion', rating: 9100, cls: '#e2d8a6' },
+                                { rank: 2, name: 'Contender', rating: 7800, cls: '#e2d8a6' },
+                                { rank: 3, name: 'Climber', rating: 5200, cls: '#e2d8a6' },
+                            ];
+                            for (let i = 0; i < rows.length; i++) {
+                                const ry = 74 + i * 24;
+                                const r = rows[i];
+                                ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+                                ctx.fillStyle = '#aaa';
+                                ctx.fillText(`${r.rank}. ${r.name}`, 24, ry);
+                                ctx.textAlign = 'right';
+                                ctx.fillStyle = r.cls;
+                                ctx.fillText(r.rating.toLocaleString(), w - 24, ry);
+                            }
+
+                            // "Your rank" highlight
+                            const yourY = 74 + 3 * 24;
+                            ctx.fillStyle = 'rgba(226,216,166,0.08)';
+                            ctx.fillRect(16, yourY - 12, w - 32, 24);
+                            ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+                            ctx.fillStyle = '#e2d8a6';
+                            ctx.fillText('15. You', 24, yourY);
+                            ctx.textAlign = 'right';
+                            ctx.fillText('2,450', w - 24, yourY);
+                        }
+                    },
+                    {
+                        title: 'Player Analysis',
+                        desc: 'Tap any player on the leaderboard to see their detailed skill analysis! The analysis shows performance breakdowns: consistency, scoring trends, average word length, combo efficiency, and more. Use this to understand your strengths and identify areas to improve. Each challenge tab has its own analysis showing challenge-specific stats like target words hit, speed round survival, or category accuracy.',
+                        draw(ctx, w, h, t) {
+                            ctx.fillStyle = '#0d1117';
+                            ctx.fillRect(0, 0, w, h);
+
+                            gT(ctx, w / 2, 22, 'Player Analysis', '#e2d8a6', 16);
+
+                            // Analysis card
+                            const cardX = 16, cardY = 38, cardW = w - 32;
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(cardX, cardY, cardW, h - 56);
+                            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                            ctx.strokeRect(cardX, cardY, cardW, h - 56);
+
+                            // Stats grid
+                            const stats = [
+                                { label: 'Consistency', val: '87%', color: '#8cb860' },
+                                { label: 'Avg Word Len', val: '4.2', color: '#7eb8ff' },
+                                { label: 'Combo Rate', val: '34%', color: '#e2d8a6' },
+                                { label: 'Games', val: '52', color: '#b0a878' },
+                            ];
+                            const sgW = (cardW - 24) / 2;
+                            for (let i = 0; i < stats.length; i++) {
+                                const col = i % 2, row = Math.floor(i / 2);
+                                const sx = cardX + 12 + col * sgW;
+                                const sy = cardY + 18 + row * 40;
+                                const s = stats[i];
+
+                                ctx.font = 'bold 18px sans-serif';
+                                ctx.textAlign = 'center';
+                                ctx.fillStyle = s.color;
+                                ctx.fillText(s.val, sx + sgW / 2, sy);
+
+                                ctx.font = '9px sans-serif';
+                                ctx.fillStyle = '#888';
+                                ctx.fillText(s.label, sx + sgW / 2, sy + 14);
+                            }
+
+                            // Trend line
+                            const trendY = cardY + 105;
+                            gT(ctx, w / 2, trendY, 'Rating Trend', '#888', 10);
+                            ctx.beginPath();
+                            ctx.strokeStyle = '#8cb860'; ctx.lineWidth = 2;
+                            const pts = [0.2, 0.25, 0.3, 0.28, 0.35, 0.42, 0.5, 0.48, 0.55, 0.6, 0.65, 0.7];
+                            const lineW = cardW - 40, lineH = 40;
+                            const lineX = cardX + 20, lineY2 = trendY + 14;
+                            for (let i = 0; i < pts.length; i++) {
+                                const px = lineX + (i / (pts.length - 1)) * lineW;
+                                const py = lineY2 + lineH - pts[i] * lineH;
+                                if (i === 0) ctx.moveTo(px, py);
+                                else ctx.lineTo(px, py);
+                            }
+                            ctx.stroke();
+                        }
                     }
                 ]
             },
@@ -11310,7 +11556,7 @@ class Game {
         } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
             tutorialText = "Choose a category before starting. Words matching your category earn bonus points! Harder categories (Technology, Nature) earn even more points and XP. Longer, more complex words also score higher. Other words earn reduced points. Game lasts 7 minutes.";
         } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH) {
-            tutorialText = "Find hidden words in the grid by swiping across letters! No word list is shown — you must discover valid words yourself. Words can go in any direction. Each level is timed at 5 minutes. Levels get progressively harder with larger grids and harder words. Earn points and coins for every word you find!";
+            tutorialText = "Find hidden words in the grid by swiping across letters! No word list is shown — you must discover valid words yourself. Words can go in any direction. Each level is timed at 7 minutes. Levels get progressively harder with larger grids and harder words. Earn points and coins for every word you find!";
         }
         this.els.challengeTutorialText.textContent = tutorialText;
 
