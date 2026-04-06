@@ -146,7 +146,7 @@ function adjectiveForms(adj) {
 // Organized by part of speech for proper inflection
 
 const NOUNS = `
-act age air aim ant ape arc arm art ash axe bag ban bar bat bay bed bet bid bin bit
+act age air aim ant ape arc arp arm art ash axe bag ban bar bat bay bed bet bid bin bit
 bow box boy bud bug bun bus cab can cap car cat cow cry cub cup cut dam day den dew
 dig dip dog dot dub dud due dug dun duo dye ear eat egg elk elm emu end era eve ewe
 eye fan fat fax fed fig fin fit fix flu fly foe fog for fox fry fun fur gag gal gam
@@ -183,7 +183,7 @@ fool foot ford fore fork form fort foul four free frog from fuel full fume fund 
 fuss gain gait gale game gang gape garb gash gate gave gaze gear gift girl give glad
 glen glow glue goat goes gold golf gone good gown grab gray grew grid grim grin grip
 grit grow gulf gust hail hair half hall halt hand hang hare harm harp have hawk haze
-head heal heap hear heat heel help herb herd here hero hide high hike hill hilt hint
+head heal heap hear heat heel help herb herd here hero hide high hike hill hilt hint hive
 hire hold hole home hood hook hope horn hose host hour howl hull hump hung hunt hurl
 hurt hymn icon idea inch info into iris iron isle item jack jade jail jake jamb jazz
 jean jeer jell jerk jest joke jolt jump june jury just keen keep kelp kegs keys kick
@@ -195,7 +195,7 @@ luck lump lung lure lurk lush mace made maid mail main make male mall malt mane 
 mark mask mass mast mate math maze mead meal mean meat meet melt memo mend menu mere
 mesh mild mile milk mill mime mind mine mint miss mist mitt moat mock mode mold mole
 mood moon moor more moss most moth move much muck mule muse musk must myth nail name
-navy near neat neck need nest news next nice nine node none noon norm nose note noun
+navy near neat neck nerd need nest news next nice nine node none noon norm nose note noun
 obey odor oink omen once only onto open oral oven over pace pack page paid pail pain
 pair pale palm pane pang park part pass past path pave peak peal pear peat peck peek
 peel peer pelt pent perk pest pick pier pile pill pine pink pipe plan play plea plot plow
@@ -586,7 +586,7 @@ fast fawn fear feat feed feel file fill find fine fire fish fist flag flat flaw 
 flew flip flit flog flow foam fold foil fool foot ford forge fork form foul free fuel
 fume fund fuse fuss gain gait gape gash gate gave gaze gift give glad glow glue grab
 grade grin grip grit grow gush hack hail halt hand hang haul have hawk haze haul heal
-heap hear heat heed heel help herd hide hike hint hire hiss hitch hold hole home hone
+heap hear heat heed heel help herd hide hike hint hire hiss hitch hive hold hole home hone
 hook hope host howl huff hunt hurl hurt hush iron jack jail jest jilt join joke jolt
 judge jump keep kick kill kind kiss kneel knew knit know lace lack land last lash lead
 lean leap lend lick lift like limp line link list live load loan lock long look loop
@@ -693,7 +693,7 @@ able aged airy arid avid bald bare best blue bold both busy calm cold cool damp 
 dead deaf dear deep dire drab drug dual dull dumb each easy edgy epic even evil faint
 fair fake fast flat fond fond foul free full glad glib good gray grim half hard high
 holy huge hurt idle just keen kind lame last late lazy left like live lone long lost
-loud main male mass mean mere mild more much mute near neat next nice nude numb only
+loud main male mass mean mere mild more much mute near neat nerdy next nice nude numb only
 open oral over pale past pink plan plus poor pure quiet rank rare raw real rich ripe
 rock rude safe same self shot shut sick slim slow soft sole some sore such sure tall
 tame taut tense that thin tiny torn true ugly used vain vast very warm weak wide wild

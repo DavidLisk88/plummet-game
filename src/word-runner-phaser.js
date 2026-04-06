@@ -48,7 +48,7 @@ const APEX_GRAVITY_MULT = 0.45;      // gravity multiplier at jump apex (hang ti
 const COYOTE_TIME = 0.08;
 const JUMP_BUFFER_TIME = 0.1;
 const JUMP_CUT_MULT = 0.5;   // unused, kept for reference
-const AIR_JUMPS_MAX = 1;
+const AIR_JUMPS_MAX = 4;      // 5 total jumps: 1 ground + 4 air
 
 // Chrome Dino monochrome palette
 const COLOR_FG = 0x535353;
@@ -505,6 +505,13 @@ class WRGameScene extends Phaser.Scene {
     }
 
     _addPlatformSprite(worldX, worldY, w, h) {
+        // ── HARD CLAMP: floating platforms must stay high ──────────────
+        // If platform is above ground (floating), enforce max Y (min height).
+        // Bridges/stepping-stones at/below groundY are exempt.
+        const MAX_FLOAT_Y = this.groundY - 250; // absolute ceiling: at least 250px above ground
+        if (worldY < this.groundY - 30 && worldY > MAX_FLOAT_Y) {
+            worldY = MAX_FLOAT_Y; // clamp up
+        }
         const go = this.add.zone(worldX + w / 2, worldY + h / 2, w, h);
         this.physics.add.existing(go, true);
         go.body.setSize(w, h, false);
@@ -556,6 +563,36 @@ class WRGameScene extends Phaser.Scene {
     }
 
     _addLetterSprite(worldX, worldY, letter, bobPhase) {
+        // ── HARD ENFORCEMENT: letters must be far from all obstacles & gaps ──
+        const HARD_OBSTACLE_DIST = 150;
+        const HARD_GAP_DIST = 140;
+        // Check rocks
+        let blocked = false;
+        this.rockGroup.children.iterate(r => {
+            if (!r || blocked) return;
+            if (Math.abs(worldX - r.x) < HARD_OBSTACLE_DIST) blocked = true;
+        });
+        // Check gaps (ground-level letters only)
+        if (!blocked && worldY > this.groundY - 100) {
+            const groundSegs = [];
+            this.groundGroup.children.iterate(g => {
+                if (!g) return;
+                groundSegs.push({ endX: g.body.position.x + g.body.width, startX: g.body.position.x });
+            });
+            groundSegs.sort((a, b) => a.startX - b.startX);
+            for (let i = 0; i < groundSegs.length - 1; i++) {
+                const gapStart = groundSegs[i].endX;
+                const gapEnd = groundSegs[i + 1].startX;
+                if (gapEnd - gapStart > 5) {
+                    if (worldX > gapStart - HARD_GAP_DIST && worldX < gapEnd + HARD_GAP_DIST) {
+                        blocked = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (blocked) return null; // refuse to place this letter
+
         const textureKey = "letter_" + letter;
         const hasTexture = this.textures.exists(textureKey);
         const sprite = this.letterGroup.create(worldX, worldY, hasTexture ? textureKey : "dust_particle")
@@ -1045,26 +1082,51 @@ class WRGameScene extends Phaser.Scene {
     // -- Spawning -------------------------------------------------------------
 
     _spawnContent() {
-        const spawnTo = this.worldW + 800;  // Screen-space: spawn ahead of right edge
+        const spawnTo = this.worldW + 800;
         const speed = Math.max(this.scrollSpeed, 140);
         const jumpVy = Math.abs(JUMP_VY);
         const airTime = (2 * jumpVy) / GRAVITY;
         const maxJumpDist = speed * airTime;
 
-        const MIN_LETTER_GAP = speed * 0.9;
-        const MIN_LETTER_GAP_Y = 50;
-        const ROCK_CLEARANCE = 70;
+        // ── Spacing constraints (all distances enforced) ────────────────
+        const MIN_LETTER_GAP = speed * 0.9;           // Horizontal between letters
+        const MIN_LETTER_GAP_Y = 50;                  // Vertical between letters
+        const OBSTACLE_LETTER_CLEARANCE = 150;        // Letters far from rocks/spikes
+        const GAP_LETTER_CLEARANCE = 140;             // Letters far from hole edges
         const REST_GAP = speed * 1.8;
-        const LOW_STEP = 35;
-        const MID_JUMP = 70;
-        const HIGH_JUMP = 100;
 
+        // ── Floating platform heights (must require double jump) ────────
+        // Single jump peak ≈ 128px. Platforms at 250-350px require multi-jump
+        const MIN_FLOAT_HEIGHT = 250;
+        const MAX_FLOAT_HEIGHT = 350;
+        const PLATFORM_GAP_BUFFER = 60;               // No floating platforms within this of gap edges
+
+        // ── Ground-level traversal (bridges, not "floating") ────────────
+        const BRIDGE_HEIGHT = 15;
+
+        // ── Track recent letters ────────────────────────────────────────
         const recentLetters = [];
         for (const ls of this.letterSprites) {
             if (ls._collected || !ls.active) continue;
             recentLetters.push({ x: ls.x, y: ls._baseY });
         }
 
+        // ── Track gap/hole positions from existing ground segments ──────
+        const recentGaps = [];
+        const groundSegs = [];
+        this.groundGroup.children.iterate(g => {
+            if (!g) return;
+            groundSegs.push({ startX: g.body.position.x, endX: g.body.position.x + g.body.width });
+        });
+        groundSegs.sort((a, b) => a.startX - b.startX);
+        for (let i = 0; i < groundSegs.length - 1; i++) {
+            const gs = groundSegs[i].endX;
+            const ge = groundSegs[i + 1].startX;
+            if (ge - gs > 5) recentGaps.push({ startX: gs, endX: ge });
+        }
+        const _addGap = (startX, endX) => { recentGaps.push({ startX, endX }); };
+
+        // ── Validation helpers ──────────────────────────────────────────
         const _letterOk = (x, y) => {
             for (const l of recentLetters) {
                 if (Math.abs(x - l.x) < MIN_LETTER_GAP && Math.abs(y - l.y) < MIN_LETTER_GAP_Y) return false;
@@ -1076,41 +1138,59 @@ class WRGameScene extends Phaser.Scene {
             let ok = true;
             this.rockGroup.children.iterate(r => {
                 if (!r || !ok) return;
-                if (Math.abs(x - r.x) < ROCK_CLEARANCE && Math.abs(y - r.y) < ROCK_CLEARANCE) ok = false;
+                // Always enforce horizontal clearance from obstacles
+                if (Math.abs(x - r.x) < OBSTACLE_LETTER_CLEARANCE) ok = false;
             });
             return ok;
+        };
+
+        const _clearOfGaps = (x, y) => {
+            // Skip check only for letters very high up (on floating platforms)
+            if (y < this.groundY - 100) return true;
+            for (const gap of recentGaps) {
+                if (x > gap.startX - GAP_LETTER_CLEARANCE && x < gap.endX + GAP_LETTER_CLEARANCE) return false;
+            }
+            return true;
         };
 
         const _tryLetter = (worldX, worldY) => {
             if (!_letterOk(worldX, worldY)) return false;
             if (!_clearOfRocks(worldX, worldY)) return false;
+            if (!_clearOfGaps(worldX, worldY)) return false;
             this._addLetterSprite(worldX, worldY, this.randomLetterFn(), Math.random() * Math.PI * 2);
             recentLetters.push({ x: worldX, y: worldY });
             return true;
         };
 
+        // Check if a floating platform's X range overlaps any gap
+        const _platformOverlapsGap = (platX, platW) => {
+            for (const gap of recentGaps) {
+                if (platX < gap.endX + PLATFORM_GAP_BUFFER && platX + platW > gap.startX - PLATFORM_GAP_BUFFER) return true;
+            }
+            return false;
+        };
+
         while (this.nextSpawnX < spawnTo) {
-            // Distance-based difficulty: harder phrases more likely over time
-            const difficulty = Math.min(1.0, this.distance / 8000);  // 0→1 over ~8000px
+            const difficulty = Math.min(1.0, this.distance / 8000);
             const roll = Math.random();
 
             // Phrase weights shift with distance:
-            //   Early: Open Run (40%), Staircase (25%), Gap Bridge (15%), Sky Route (10%), Valley (5%), Sprint (5%)
+            //   Early: Open Run (40%), Staircase (25%), Gap Bridge (15%), Sky Route (10%), Valley (5%), Ruins (5%)
             //   Late:  Open Run (15%), Staircase (15%), Gap Bridge (20%), Sky Route (20%), Valley (15%), Ruins (15%)
             const openRunCut   = 0.40 - difficulty * 0.25;
             const stairCut     = openRunCut + 0.25 - difficulty * 0.10;
             const gapBridgeCut = stairCut + 0.15 + difficulty * 0.05;
             const skyRouteCut  = gapBridgeCut + 0.10 + difficulty * 0.10;
             const valleyCut    = skyRouteCut + 0.05 + difficulty * 0.10;
-            // remainder = Ruins (sprint zone)
 
             if (roll < openRunCut) {
-                // Open Run
+                // ── Open Run ────────────────────────────────────────────
                 const segLen = 400 + Math.random() * 300;
                 const gStart = this.nextSpawnX;
                 const gEnd = gStart + segLen;
                 this._addGround(gStart, segLen);
 
+                // Rocks spaced wider to leave room for letters with clearance
                 let rx = gStart + 120 + Math.random() * 80;
                 while (rx < gEnd - 80) {
                     if (Math.random() < 0.50) {
@@ -1118,7 +1198,7 @@ class WRGameScene extends Phaser.Scene {
                         const rw = 20 + Math.random() * 14;
                         this._addRockSprite(rx, this.groundY - rh, rw, rh);
                     }
-                    rx += 140 + Math.random() * 160;
+                    rx += 180 + Math.random() * 180;
                 }
 
                 const numLetters = 2 + (Math.random() < 0.4 ? 1 : 0);
@@ -1131,31 +1211,41 @@ class WRGameScene extends Phaser.Scene {
                 this.nextSpawnX = gEnd + 60 + Math.random() * 40;
 
             } else if (roll < stairCut) {
-                // Staircase
-                const gLen1 = 200 + Math.random() * 150;
+                // ── Staircase ───────────────────────────────────────────
+                // Floating platform above ground (requires double jump),
+                // NOT above the gap between ground segments
+                const gLen1 = 250 + Math.random() * 150;
                 const g1Start = this.nextSpawnX;
                 const g1End = g1Start + gLen1;
                 this._addGround(g1Start, gLen1);
-                if (Math.random() < 0.60) _tryLetter(g1Start + 80 + Math.random() * 40, this.groundY - 44);
 
-                const gap1 = 35 + Math.random() * 25;
+                // Floating platform centered over Ground 1 (away from gap)
                 const platW = 90 + Math.random() * 50;
-                const platX = g1End + gap1;
-                const heights = [LOW_STEP, MID_JUMP];
-                const platH = heights[Math.floor(Math.random() * heights.length)];
-                const platY = this.groundY - platH;
-                this._addPlatformSprite(platX, platY, platW, 12);
-                if (Math.random() < 0.65) _tryLetter(platX + platW / 2, platY - 26);
+                const floatH = MIN_FLOAT_HEIGHT + Math.random() * (MAX_FLOAT_HEIGHT - MIN_FLOAT_HEIGHT);
+                const platX = g1Start + 80 + Math.random() * Math.max(10, gLen1 - platW - 160);
+                const platY = this.groundY - floatH;
+                if (platX > g1Start + 40 && platX + platW < g1End - 60) {
+                    this._addPlatformSprite(platX, platY, platW, 12);
+                    if (Math.random() < 0.70) _tryLetter(platX + platW / 2, platY - 26);
+                }
 
-                const gap2 = 30 + Math.random() * 20;
+                // Ground letter well before the gap
+                if (Math.random() < 0.55) _tryLetter(g1Start + 80 + Math.random() * 40, this.groundY - 44);
+
+                // Gap between ground segments
+                const gapW = 50 + Math.random() * 30;
+                _addGap(g1End, g1End + gapW);
+
                 const gLen2 = 200 + Math.random() * 150;
-                const g2Start = platX + platW + gap2;
+                const g2Start = g1End + gapW;
                 this._addGround(g2Start, gLen2);
-                if (Math.random() < 0.45) _tryLetter(g2Start + 100 + Math.random() * 60, this.groundY - 44);
+                if (Math.random() < 0.45) _tryLetter(g2Start + 120 + Math.random() * 60, this.groundY - 44);
                 this.nextSpawnX = g2Start + gLen2 + 50 + Math.random() * 40;
 
             } else if (roll < gapBridgeCut) {
-                // Gap Bridge
+                // ── Gap Bridge ──────────────────────────────────────────
+                // Bridge platform at ground level (traversal aid, NOT floating)
+                // No letters on the bridge — too close to hole
                 const gLen = 250 + Math.random() * 200;
                 const gStart = this.nextSpawnX;
                 const gEnd = gStart + gLen;
@@ -1164,19 +1254,23 @@ class WRGameScene extends Phaser.Scene {
 
                 const maxSafe = Math.min(maxJumpDist * 0.75, 140);
                 const gapLen = 60 + Math.random() * Math.max(20, maxSafe - 60);
+                _addGap(gEnd, gEnd + gapLen);
+
                 const bridgeW = 70 + Math.random() * 30;
                 const bridgeX = gEnd + (gapLen - bridgeW) / 2;
-                const bridgeY = this.groundY - 15 - Math.random() * 20;
+                const bridgeY = this.groundY - BRIDGE_HEIGHT - Math.random() * 20;
                 this._addPlatformSprite(bridgeX, bridgeY, bridgeW, 12);
-                if (Math.random() < 0.55) _tryLetter(bridgeX + bridgeW / 2, bridgeY - 26);
+                // No letter on bridge — gap clearance enforced
 
                 const g2Len = 200 + Math.random() * 200;
                 const g2Start = gEnd + gapLen;
                 this._addGround(g2Start, g2Len);
-                if (Math.random() < 0.40) _tryLetter(g2Start + 90 + Math.random() * 60, this.groundY - 44);
+                if (Math.random() < 0.40) _tryLetter(g2Start + 120 + Math.random() * 60, this.groundY - 44);
                 this.nextSpawnX = g2Start + g2Len + 40 + Math.random() * 40;
 
             } else if (roll < skyRouteCut) {
+                // ── Sky Route ───────────────────────────────────────────
+                // High floating platform requires double jump
                 const gLen = 350 + Math.random() * 250;
                 const gStart = this.nextSpawnX;
                 const gEnd = gStart + gLen;
@@ -1187,61 +1281,69 @@ class WRGameScene extends Phaser.Scene {
                 }
                 if (Math.random() < 0.55) _tryLetter(gStart + 80 + Math.random() * 60, this.groundY - 44);
 
+                // Floating platform (double-jump height, not above any gap)
                 const skyW = 80 + Math.random() * 50;
                 const skyX = gStart + gLen * 0.4 + Math.random() * gLen * 0.2;
-                const skyY = this.groundY - HIGH_JUMP - Math.random() * 15;
-                if (skyX + skyW < gEnd - 40) {
+                const floatH = MIN_FLOAT_HEIGHT + Math.random() * (MAX_FLOAT_HEIGHT - MIN_FLOAT_HEIGHT);
+                const skyY = this.groundY - floatH;
+                if (skyX + skyW < gEnd - 40 && !_platformOverlapsGap(skyX, skyW)) {
                     this._addPlatformSprite(skyX, skyY, skyW, 12);
                     if (Math.random() < 0.70) _tryLetter(skyX + skyW / 2, skyY - 26);
                 }
                 this.nextSpawnX = gEnd + 50 + Math.random() * 50;
 
             } else if (roll < valleyCut) {
-                // Valley — ground dips down with platforms stepping into a gap, letters below
+                // ── Valley ─────────────────────────────────────────────
+                // Stepping stones descend into gap (ground-level traversal)
                 const gLen1 = 200 + Math.random() * 120;
                 const g1Start = this.nextSpawnX;
                 this._addGround(g1Start, gLen1);
                 if (Math.random() < 0.45) _tryLetter(g1Start + 60 + Math.random() * 50, this.groundY - 44);
 
-                // Gap (the valley) — wider than normal, with stepping-stone platforms descending
                 const valleyWidth = 180 + Math.random() * 100;
+                // Place stepping stones BEFORE registering gap
+                // so their letters aren't blocked by gap clearance
                 const numStones = 2 + (Math.random() < 0.5 ? 1 : 0);
                 const stoneSpacing = valleyWidth / (numStones + 1);
                 for (let i = 1; i <= numStones; i++) {
                     const sx = g1Start + gLen1 + stoneSpacing * i - 30;
-                    const sy = this.groundY + 10 + i * 18;  // descending steps
+                    const sy = this.groundY + 10 + i * 18;
                     const sw = 55 + Math.random() * 25;
                     this._addPlatformSprite(sx, sy, sw, 12);
                     if (Math.random() < 0.60) _tryLetter(sx + sw / 2, sy - 26);
                 }
+                // Register valley gap after stepping stone letters
+                _addGap(g1Start + gLen1, g1Start + gLen1 + valleyWidth);
 
                 const g2Start = g1Start + gLen1 + valleyWidth;
                 const gLen2 = 200 + Math.random() * 150;
                 this._addGround(g2Start, gLen2);
-                if (Math.random() < 0.40) _tryLetter(g2Start + 80 + Math.random() * 50, this.groundY - 44);
+                if (Math.random() < 0.40) _tryLetter(g2Start + 100 + Math.random() * 50, this.groundY - 44);
                 this.nextSpawnX = g2Start + gLen2 + 40 + Math.random() * 40;
 
             } else {
-                // Ruins — stacked platforms with letters, like a crumbling tower
+                // ── Ruins ──────────────────────────────────────────────
+                // Stacked floating platforms (all require double jump)
                 const gLen = 300 + Math.random() * 200;
                 const gStart = this.nextSpawnX;
                 const gEnd = gStart + gLen;
                 this._addGround(gStart, gLen);
 
-                // 2-3 platforms stacked at different heights, clustered together
                 const numPlats = 2 + (Math.random() < 0.4 ? 1 : 0);
                 const clusterX = gStart + gLen * 0.25 + Math.random() * gLen * 0.3;
                 for (let i = 0; i < numPlats; i++) {
                     const pw = 60 + Math.random() * 40;
                     const px = clusterX + i * (pw * 0.6 + 15 + Math.random() * 20);
-                    const py = this.groundY - LOW_STEP - i * (MID_JUMP * 0.6 + Math.random() * 15);
-                    if (px + pw < gEnd - 30) {
+                    // Each platform at least MIN_FLOAT_HEIGHT, stacking upward
+                    const floatH = MIN_FLOAT_HEIGHT + i * (30 + Math.random() * 20);
+                    const py = this.groundY - floatH;
+                    if (px + pw < gEnd - 30 && !_platformOverlapsGap(px, pw)) {
                         this._addPlatformSprite(px, py, pw, 12);
                         if (Math.random() < 0.70) _tryLetter(px + pw / 2, py - 26);
                     }
                 }
 
-                // Rocks guarding the ground level
+                // Rocks guarding ground level
                 if (Math.random() < 0.55) {
                     const rx = gStart + 80 + Math.random() * 60;
                     this._addRockSprite(rx, this.groundY - 30 - Math.random() * 15, 22, 30 + Math.random() * 15);

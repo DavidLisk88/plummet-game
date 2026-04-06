@@ -104,6 +104,8 @@ export async function getProfiles(accountId) {
     return data || [];
 }
 
+const MAX_PROFILES_PER_ACCOUNT = 3;
+
 export async function createProfile(accountId, username) {
     if (isLocalMode) return null;
     // Check if profile with same name already exists (prevent duplicates)
@@ -114,6 +116,16 @@ export async function createProfile(accountId, username) {
         .eq('username', username)
         .maybeSingle();
     if (existing) return existing;
+
+    // Enforce profile limit
+    const { count, error: countErr } = await supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId);
+    if (countErr) throw countErr;
+    if (count >= MAX_PROFILES_PER_ACCOUNT) {
+        throw new Error(`Maximum ${MAX_PROFILES_PER_ACCOUNT} profiles per account`);
+    }
 
     const { data, error } = await supabase
         .from('profiles')
@@ -143,6 +155,23 @@ export async function deleteProfile(profileId) {
         .delete()
         .eq('id', profileId);
     if (error) throw error;
+}
+
+/**
+ * Check if a username is already taken by any active profile (across all accounts).
+ * Uses a SECURITY DEFINER RPC to bypass RLS (which normally restricts reads to own account).
+ * @param {string} username - The username to check
+ * @param {string|null} excludeProfileId - Cloud profile ID to exclude from the check
+ * @returns {Promise<boolean>} true if available, false if taken
+ */
+export async function checkUsernameAvailable(username, excludeProfileId = null) {
+    if (isLocalMode) return true;
+    const { data, error } = await supabase.rpc('check_username_available', {
+        p_username: username,
+        p_exclude_profile_id: excludeProfileId,
+    });
+    if (error) throw error;
+    return data === true;
 }
 
 // ════════════════════════════════════════

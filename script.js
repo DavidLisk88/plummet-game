@@ -354,6 +354,40 @@ const CHALLENGE_TYPES = Object.freeze({
     WORD_RUNNER: "word-runner",
 });
 
+// ─── Username validation ───────────────────────────────────────────
+const MAX_PROFILES_PER_ACCOUNT = 3;
+const USERNAME_MAX_LENGTH = 20;
+const USERNAME_REGEX = /^[A-Za-z0-9_]+$/;
+const BANNED_USERNAMES = new Set([
+    'FAGGOT','VAGINA','RETARD','RETARDED','BITCH','FUCK','FUCKER','HITLER','NAZI',
+    'NIGGER','NIGGA','MIDGET','WHORE','CUM','PENIS','BITCHES','HOES','HOE','JIZZ',
+    'WEEWEE','DICK','DICKS','PENISES','WHORES','SLUTTY','PUSSY','PUSSIES','KIKE',
+    'SHIT','SHITTER','SHITTY','SLUT','CUNT','CUNTS','ARSE','ARSES','WANKER','TWAT',
+    'BOLLOCKS','COCKSUCKER','MOTHERFUCKER','ASSHOLE','ASS','DAMN','BASTARD','PISS',
+    'CRAP','TITS','BOOBS','HOOKER','PIMP','DILDO','ORGASM','ANAL','RAPE','RAPED',
+    'RAPING','RAPIST','MOLEST','PEDOPHILE','INCEST','FAG','FAGS','DYKE','HOMO',
+    'QUEER','LESBO','PERVERT','PEDO','NEGRO','SPIC','CHINK','GOOK','WETBACK',
+    'BEANER','COON','DARKIE','HONKY','GRINGO','JAP','TRANNY','HEIL','SLITS',
+    'FUCKED','FUCKING','FUCKS','SHITS','SHITTING','BITCHING','CUNTING','RAPES',
+    'PISSED','PISSING','ASSES','SLUTS','WHORED','WHORING','SEX','SEXY','PORN',
+    'PORNHUB','XXX','EROTIC','FETISH','HENTAI','NUDE','NAKED',
+]);
+
+/**
+ * Validate a username. Returns null if valid, or an error message string.
+ */
+function validateUsername(name) {
+    if (!name || name.length === 0) return 'Username cannot be empty';
+    if (name.length > USERNAME_MAX_LENGTH) return `Max ${USERNAME_MAX_LENGTH} characters`;
+    if (!USERNAME_REGEX.test(name)) return 'Letters, numbers, and underscores only';
+    // Check if the name contains any banned word as a substring
+    const upper = name.toUpperCase();
+    for (const bad of BANNED_USERNAMES) {
+        if (upper.includes(bad)) return 'That name is not allowed';
+    }
+    return null;
+}
+
 const CHALLENGE_META = Object.freeze({
     [CHALLENGE_TYPES.TARGET_WORD]: {
         title: "Target Word",
@@ -984,35 +1018,35 @@ const SHOP_CATEGORIES = {
 };
 
 const SHOP_ITEMS = {
-    // ── Grid Themes (cosmetic — prices doubled) ──
-    theme_default:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Classic",    price: 0,   preview: "Default olive tones",     owned: true },
-    theme_obsidian:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Obsidian",   price: 700, preview: "Dark glass, subtle glow" },
-    theme_charcoal:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Charcoal",   price: 550, preview: "Smoky graphite, amber ink" },
-    theme_neon:      { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Neon",       price: 900, preview: "Bright outlines, dark bg" },
-    theme_ocean:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ocean",      price: 800, preview: "Blue tones, wave clears" },
-    theme_ember:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ember",      price: 900, preview: "Warm reds, fire particles" },
-    theme_amethyst:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Amethyst",   price: 800, preview: "Deep crystal violet glow" },
-    theme_darkoak:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Dark Oak",   price: 800, preview: "Rich dark wood grain" },
+    // ── Grid Themes (cosmetic) ──
+    theme_default:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Classic",    price: 0,    preview: "Default olive tones",     owned: true },
+    theme_obsidian:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Obsidian",   price: 1050, preview: "Dark glass, subtle glow" },
+    theme_charcoal:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Charcoal",   price: 825,  preview: "Smoky graphite, amber ink" },
+    theme_neon:      { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Neon",       price: 1350, preview: "Bright outlines, dark bg" },
+    theme_ocean:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ocean",      price: 1200, preview: "Blue tones, wave clears" },
+    theme_ember:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ember",      price: 1350, preview: "Warm reds, fire particles" },
+    theme_amethyst:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Amethyst",   price: 1200, preview: "Deep crystal violet glow" },
+    theme_darkoak:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Dark Oak",   price: 1200, preview: "Rich dark wood grain" },
 
-    // ── Letter Block Styles (cosmetic — prices doubled) ──
-    block_default:   { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Standard",   price: 0,   preview: "Default clean letters",    owned: true },
-    block_scrabble:  { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Scrabble",   price: 450, preview: "Wooden tiles with points" },
-    block_bubble:    { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Bubble",     price: 350, preview: "Rounded, bouncy feel" },
-    block_typewriter:{ category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Typewriter",  price: 550, preview: "Monospace, inked look" },
-    block_pixel:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Pixel",      price: 650, preview: "Retro 8-bit blocks" },
-    block_glass:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Glass",      price: 750, preview: "Translucent refractions" },
+    // ── Letter Block Styles (cosmetic) ──
+    block_default:   { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Standard",   price: 0,    preview: "Default clean letters",    owned: true },
+    block_scrabble:  { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Scrabble",   price: 675,  preview: "Wooden tiles with points" },
+    block_bubble:    { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Bubble",     price: 525,  preview: "Rounded, bouncy feel" },
+    block_typewriter:{ category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Typewriter",  price: 825,  preview: "Monospace, inked look" },
+    block_pixel:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Pixel",      price: 975,  preview: "Retro 8-bit blocks" },
+    block_glass:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Glass",      price: 1125, preview: "Translucent refractions" },
 
-    // ── Bonus Slots (permanent, sequential unlock — prices doubled) ──
-    bonus_slot_1:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 1",     price: 2000, preview: "First bonus slot",  unique: true },
-    bonus_slot_2:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 2",     price: 4000, preview: "Second bonus slot", unique: true },
-    bonus_slot_3:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 3",     price: 6000, preview: "Third bonus slot",  unique: true },
+    // ── Bonus Slots (permanent, sequential unlock) ──
+    bonus_slot_1:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 1",     price: 3000, preview: "First bonus slot",  unique: true },
+    bonus_slot_2:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 2",     price: 6000, preview: "Second bonus slot", unique: true },
+    bonus_slot_3:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 3",     price: 9000, preview: "Third bonus slot",  unique: true },
 
-    // ── Starting Perks (consumable — prices doubled) ──
-    perk_headstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Head Start",     price: 450, preview: "+200 bonus points at start",       stackSize: 1 },
-    perk_slowstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Slow Start",     price: 650, preview: "0.5× fall speed for 30s",          stackSize: 1 },
-    perk_bonusboost: { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Bonus Boost",    price: 750, preview: "First bonus at 500 pts",           stackSize: 1 },
-    perk_comboext:   { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Combo Extender", price: 650, preview: "+4s combo window this game",       stackSize: 1 },
-    perk_luckydraw:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Lucky Draw",     price: 850, preview: "First bonus = bomb/wild/2×",      stackSize: 1 },
+    // ── Starting Perks (consumable) ──
+    perk_headstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Head Start",     price: 675,  preview: "+200 bonus points at start",       stackSize: 1 },
+    perk_slowstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Slow Start",     price: 975,  preview: "0.5× fall speed for 30s",          stackSize: 1 },
+    perk_bonusboost: { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Bonus Boost",    price: 1125, preview: "First bonus at 500 pts",           stackSize: 1 },
+    perk_comboext:   { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Combo Extender", price: 975,  preview: "+4s combo window this game",       stackSize: 1 },
+    perk_luckydraw:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Lucky Draw",     price: 1275, preview: "First bonus = bomb/wild/2×",      stackSize: 1 },
 };
 
 // ── Grid size gating (level + coin cost to unlock) ──
@@ -3462,6 +3496,15 @@ class ProfileManager {
         this._save();
     }
 
+    rename(id, newUsername) {
+        const p = this.profiles.find(p => p.id === id);
+        if (p) {
+            p.username = newUsername;
+            this._save();
+        }
+        return p;
+    }
+
     // Update stats for the active profile after a game ends
     recordGame(score, wordsFound) {
         const p = this.getActive();
@@ -3967,6 +4010,7 @@ class Game {
             profileModal:   document.getElementById("profile-modal"),
             profileModalTitle: document.getElementById("profile-modal-title"),
             profileNameInput: document.getElementById("profile-name-input"),
+            profileNameError: document.getElementById("profile-name-error"),
             profileSaveBtn: document.getElementById("profile-save-btn"),
             profileCancelBtn: document.getElementById("profile-cancel-btn"),
             menuScreen:     document.getElementById("menu-screen"),
@@ -7692,39 +7736,165 @@ class Game {
 
     _bindProfiles() {
         this.els.newProfileBtn.addEventListener("click", () => {
-            this.els.profileNameInput.value = "";
-            this.els.profileModal.classList.add("active");
-            this.els.profileNameInput.focus();
+            if (this.profileMgr.getAll().length >= MAX_PROFILES_PER_ACCOUNT) {
+                alert(`You can have up to ${MAX_PROFILES_PER_ACCOUNT} profiles.`);
+                return;
+            }
+            this._openProfileModal('create');
         });
-        this.els.profileSaveBtn.addEventListener("click", () => this._createProfile());
+        this.els.profileSaveBtn.addEventListener("click", () => this._submitProfileModal());
         this.els.profileCancelBtn.addEventListener("click", () => {
-            this.els.profileModal.classList.remove("active");
+            this._closeProfileModal();
         });
         // Allow Enter to submit
         this.els.profileNameInput.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") this._createProfile();
+            if (e.key === "Enter") this._submitProfileModal();
+        });
+        // Clear error when user types
+        this.els.profileNameInput.addEventListener("input", () => {
+            this.els.profileNameError.style.display = "none";
+        });
+        // Auto-convert spaces to underscores
+        this.els.profileNameInput.addEventListener("keydown", (e) => {
+            if (e.key === " ") {
+                e.preventDefault();
+                const input = this.els.profileNameInput;
+                const start = input.selectionStart;
+                const end = input.selectionEnd;
+                const val = input.value;
+                if (val.length - (end - start) < USERNAME_MAX_LENGTH) {
+                    input.value = val.slice(0, start) + '_' + val.slice(end);
+                    input.selectionStart = input.selectionEnd = start + 1;
+                    input.dispatchEvent(new Event('input'));
+                }
+            }
+        });
+        // Tap profile name on home screen to edit
+        this.els.menuProfileName.style.cursor = "pointer";
+        this.els.menuProfileName.addEventListener("click", () => {
+            const profile = this.profileMgr.getActive();
+            if (profile) this._openProfileModal('edit', profile);
         });
     }
 
-    async _createProfile() {
-        if (this._creatingProfile) return; // prevent double-fire
+    /**
+     * Open the profile modal in 'create' or 'edit' mode.
+     * @param {'create'|'edit'} mode
+     * @param {object} [profile] - The profile being edited (edit mode only)
+     */
+    _openProfileModal(mode, profile = null) {
+        this._profileModalMode = mode;
+        this._profileModalTarget = profile;
+        this.els.profileNameError.style.display = "none";
+        if (mode === 'edit' && profile) {
+            this.els.profileModalTitle.textContent = "Edit Profile";
+            this.els.profileNameInput.value = profile.username;
+            this.els.profileSaveBtn.textContent = "Save";
+        } else {
+            this.els.profileModalTitle.textContent = "New Profile";
+            this.els.profileNameInput.value = "";
+            this.els.profileSaveBtn.textContent = "Create";
+        }
+        this.els.profileModal.classList.add("active");
+        this.els.profileNameInput.focus();
+    }
+
+    _closeProfileModal() {
+        this.els.profileModal.classList.remove("active");
+        this._profileModalMode = null;
+        this._profileModalTarget = null;
+    }
+
+    _showProfileNameError(msg) {
+        this.els.profileNameError.textContent = msg;
+        this.els.profileNameError.style.display = "block";
+        this.els.profileNameInput.focus();
+    }
+
+    async _submitProfileModal() {
+        if (this._profileModalBusy) return;
         const name = this.els.profileNameInput.value.trim();
         if (!name) { this.els.profileNameInput.focus(); return; }
-        this._creatingProfile = true;
+
+        // Client-side validation (format, length, profanity)
+        const validationError = validateUsername(name);
+        if (validationError) {
+            this._showProfileNameError(validationError);
+            return;
+        }
+
+        // If editing and name hasn't changed, just close
+        if (this._profileModalMode === 'edit' && this._profileModalTarget &&
+            name === this._profileModalTarget.username) {
+            this._closeProfileModal();
+            return;
+        }
+
+        this._profileModalBusy = true;
         this.els.profileSaveBtn.disabled = true;
         try {
-            const localProfile = this.profileMgr.create(name);
-            this._autoplayMusicFromUserAction();
-            this.els.profileModal.classList.remove("active");
-            this._loadActiveProfile();
-            this._showScreen("menu");
+            // Check name uniqueness against cloud
+            const available = await this._checkUsernameAvailable(name,
+                this._profileModalMode === 'edit' ? this._profileModalTarget?.cloudId : null);
+            if (!available) {
+                this._showProfileNameError("Name already taken");
+                return;
+            }
 
-            // Sync to Supabase (awaited to ensure cloudId is assigned)
-            await this._syncCreateProfile(localProfile);
+            if (this._profileModalMode === 'edit') {
+                await this._renameProfile(this._profileModalTarget, name);
+            } else {
+                await this._createProfile(name);
+            }
+            this._closeProfileModal();
         } finally {
-            this._creatingProfile = false;
+            this._profileModalBusy = false;
             this.els.profileSaveBtn.disabled = false;
         }
+    }
+
+    /**
+     * Check if a username is available (cloud + local fallback).
+     * @param {string} username
+     * @param {string|null} excludeCloudId - Exclude this profile's cloud ID from the check
+     * @returns {Promise<boolean>}
+     */
+    async _checkUsernameAvailable(username, excludeCloudId = null) {
+        try {
+            const { isLocalMode, checkUsernameAvailable } = await import('./src/lib/supabase.js');
+            if (!isLocalMode) {
+                return await checkUsernameAvailable(username, excludeCloudId);
+            }
+        } catch (err) {
+            console.error('[supabase] username check failed:', err);
+        }
+        // Local fallback: check against local profiles
+        const lower = username.toLowerCase();
+        return !this.profileMgr.getAll().some(p => {
+            if (excludeCloudId && p.cloudId === excludeCloudId) return false;
+            return p.username.toLowerCase() === lower;
+        });
+    }
+
+    async _createProfile(name) {
+        const localProfile = this.profileMgr.create(name);
+        this._autoplayMusicFromUserAction();
+        this._loadActiveProfile();
+        this._showScreen("menu");
+
+        // Sync to Supabase (awaited to ensure cloudId is assigned)
+        await this._syncCreateProfile(localProfile);
+    }
+
+    async _renameProfile(profile, newName) {
+        this.profileMgr.rename(profile.id, newName);
+        this._updateMenuStats();
+        // Re-render profiles list if visible
+        if (this.els.profilesScreen.classList.contains('active')) {
+            this._renderProfilesList();
+        }
+        // Sync to cloud
+        this._syncProfileToCloud();
     }
 
     async _syncCreateProfile(localProfile) {
@@ -7875,6 +8045,11 @@ class Game {
         list.innerHTML = "";
         const profiles = this.profileMgr.getAll();
 
+        // Disable "New Profile" button when at limit
+        const atLimit = profiles.length >= MAX_PROFILES_PER_ACCOUNT;
+        this.els.newProfileBtn.disabled = atLimit;
+        this.els.newProfileBtn.title = atLimit ? `Max ${MAX_PROFILES_PER_ACCOUNT} profiles` : 'Create a new profile';
+
         if (profiles.length === 0) {
             list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">No profiles yet. Create one to get started!</p>';
             return;
@@ -7891,16 +8066,23 @@ class Game {
                     <div class="profile-name">${p.username} <span class="profile-level">Lv.${lvl}</span></div>
                     <div class="profile-stats">High Score: ${p.highScore} · Games: ${p.gamesPlayed} · Words: ${p.totalWords}</div>
                 </div>
+                <button class="profile-edit-btn" title="Edit profile">✏️</button>
                 <button class="profile-delete-btn" title="Delete profile">🗑</button>
             `;
 
             // Select profile
             card.addEventListener("click", (e) => {
-                if (e.target.closest(".profile-delete-btn")) return;
+                if (e.target.closest(".profile-delete-btn") || e.target.closest(".profile-edit-btn")) return;
                 this.profileMgr.select(p.id);
                 this._autoplayMusicFromUserAction();
                 this._loadActiveProfile();
                 this._showScreen("menu");
+            });
+
+            // Edit profile
+            card.querySelector(".profile-edit-btn").addEventListener("click", (e) => {
+                e.stopPropagation();
+                this._openProfileModal('edit', p);
             });
 
             // Delete profile
@@ -9554,21 +9736,6 @@ class Game {
                         desc: 'Word Runner is a side-scrolling action mode! Your character runs automatically through a neon-lit procedural world. TAP or PRESS SPACE to jump — you get up to 5 jumps (1 ground + 4 air). Dodge spike obstacles and leap over gaps — falling into a hole or hitting spikes ends the game! Floating letters appear in the air — run into them to collect and fill your word boxes. Press the VALIDATE button (or tap a filled box) to submit your word. Valid words earn big points and bonus coins; invalid words shake and clear. Choose your target word length (3-8) before starting. Speed increases the further you go!',
                         _spineState: null,
                         draw(ctx, w, h, t) {
-                            // Initialize Spine skeleton lazily on first draw
-                            if (!this._spineState) {
-                                try {
-                                    const skData = createProceduralSkeleton('tutorial-wr-runner');
-                                    buildHumanoidAnimations(skData);
-                                    this._spineState = {
-                                        skeleton: spineCreateSkeleton(skData),
-                                        animState: spineCreateAnimState(skData),
-                                        lastT: t,
-                                    };
-                                    this._spineState.animState.setAnimation(0, 'run', true);
-                                } catch (e) {
-                                    this._spineState = { fallback: true };
-                                }
-                            }
 
                             const groundY = h * 0.72;
                             const scrollX = t * 40;
@@ -9687,76 +9854,94 @@ class Game {
                                 ctx.restore();
                             }
 
-                            // Spine character or fallback stick figure
+                            // Animated neon stick figure
                             const charX = w * 0.25;
                             const jumpCyc = t % 3;
                             const charY = jumpCyc > 1.5 && jumpCyc < 2.3
                                 ? groundY - Math.sin((jumpCyc - 1.5) / 0.8 * Math.PI) * 30
                                 : groundY;
+                            const airborne = charY < groundY;
 
-                            if (this._spineState && !this._spineState.fallback) {
-                                const sk = this._spineState.skeleton;
-                                const anim = this._spineState.animState;
-                                const dt = t - this._spineState.lastT;
-                                this._spineState.lastT = t;
+                            {
+                                const phase = airborne ? 0 : t * 8; // freeze pose in air, run on ground
+                                const headR = 6;
+                                const headY = charY - 30;
+                                const neckY = headY + headR;
+                                const shoulderY = neckY + 2;
+                                const hipY = charY - 8;
+                                const torsoMidY = (shoulderY + hipY) / 2;
 
-                                const airborne = charY < groundY;
-                                const cur = anim.getCurrent(0)?.animation?.name;
-                                if (airborne && cur !== 'jump') anim.setAnimation(0, 'jump', false);
-                                else if (!airborne && cur === 'jump') anim.setAnimation(0, 'run', true);
-
-                                try {
-                                    anim.update(Math.max(0.016, dt));
-                                    anim.apply(sk);
-                                    sk.x = charX;
-                                    sk.y = charY;
-                                    sk.scaleX = 1.2;
-                                    sk.scaleY = 1.2;
-                                    sk.update(Math.max(0.016, dt));
-                                    sk.updateWorldTransform(spineCore.Physics.update);
-                                } catch { /* Spine frame skip */ }
-
-                                const bones = sk.bones;
                                 ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-                                for (let bi = 1; bi < bones.length; bi++) {
-                                    const bone = bones[bi], parent = bone.parent;
-                                    if (!parent) continue;
+                                ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 8;
+
+                                // Head (circle)
+                                ctx.beginPath();
+                                ctx.arc(charX, headY, headR, 0, Math.PI * 2);
+                                ctx.fillStyle = '#ffaa00';
+                                ctx.fill();
+                                ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                ctx.stroke();
+
+                                // Torso (neck to hip)
+                                ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2.5;
+                                ctx.beginPath();
+                                ctx.moveTo(charX, neckY);
+                                ctx.lineTo(charX, hipY);
+                                ctx.stroke();
+
+                                // Arms — swing while running, spread in air
+                                const armLen = 10;
+                                if (airborne) {
+                                    // Arms up and out (jump pose)
+                                    ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                                    ctx.lineTo(charX - 10, shoulderY - 8); ctx.stroke();
+                                    ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                                    ctx.lineTo(charX + 10, shoulderY - 8); ctx.stroke();
+                                } else {
+                                    // Running arm swing
+                                    const armSwing = Math.sin(phase) * 0.8;
+                                    ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                                    ctx.lineTo(charX + Math.sin(armSwing) * armLen, shoulderY + Math.cos(armSwing) * 8);
+                                    ctx.stroke();
+                                    ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                                    ctx.lineTo(charX + Math.sin(-armSwing) * armLen, shoulderY + Math.cos(-armSwing) * 8);
+                                    ctx.stroke();
+                                }
+
+                                // Legs — run cycle or tucked in air
+                                const legLen = 10;
+                                if (airborne) {
+                                    // Tucked legs (jump pose)
+                                    ctx.beginPath(); ctx.moveTo(charX, hipY);
+                                    ctx.lineTo(charX - 5, hipY + 6);
+                                    ctx.lineTo(charX - 3, hipY + legLen + 2); ctx.stroke();
+                                    ctx.beginPath(); ctx.moveTo(charX, hipY);
+                                    ctx.lineTo(charX + 5, hipY + 6);
+                                    ctx.lineTo(charX + 3, hipY + legLen + 2); ctx.stroke();
+                                } else {
+                                    // Running leg swing
+                                    const legSwing = Math.sin(phase) * 0.9;
+                                    ctx.beginPath(); ctx.moveTo(charX, hipY);
+                                    ctx.lineTo(charX + Math.sin(-legSwing) * 8, hipY + Math.cos(-legSwing) * legLen);
+                                    ctx.stroke();
+                                    ctx.beginPath(); ctx.moveTo(charX, hipY);
+                                    ctx.lineTo(charX + Math.sin(legSwing) * 8, hipY + Math.cos(legSwing) * legLen);
+                                    ctx.stroke();
+                                }
+
+                                // Neon glow trail behind runner
+                                ctx.globalAlpha = 0.3;
+                                ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 1;
+                                for (let trail = 1; trail <= 3; trail++) {
+                                    const tx = charX - trail * 5;
+                                    const ta = 0.3 - trail * 0.08;
+                                    ctx.globalAlpha = ta;
                                     ctx.beginPath();
-                                    ctx.moveTo(parent.worldX, parent.worldY);
-                                    ctx.lineTo(bone.worldX, bone.worldY);
+                                    ctx.arc(tx, headY, headR - 1, 0, Math.PI * 2);
                                     ctx.stroke();
-                                    ctx.beginPath(); ctx.fillStyle = '#ffd700';
-                                    ctx.arc(bone.worldX, bone.worldY, 2.5, 0, Math.PI * 2);
-                                    ctx.fill();
+                                    ctx.beginPath(); ctx.moveTo(tx, neckY); ctx.lineTo(tx, hipY); ctx.stroke();
                                 }
-                                const headBone = sk.findBone('head');
-                                if (headBone) {
-                                    ctx.beginPath(); ctx.fillStyle = '#ffaa00';
-                                    ctx.arc(headBone.worldX, headBone.worldY - 7, 7, 0, Math.PI * 2);
-                                    ctx.fill();
-                                    ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 8;
-                                    ctx.beginPath(); ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
-                                    ctx.arc(headBone.worldX, headBone.worldY - 7, 7, 0, Math.PI * 2);
-                                    ctx.stroke();
-                                    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-                                }
-                            } else {
-                                // Fallback neon stick figure
-                                const phase = t * 6;
-                                ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-                                ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 6;
-                                ctx.beginPath(); ctx.arc(charX, charY - 20, 5, 0, Math.PI * 2); ctx.stroke();
-                                ctx.beginPath(); ctx.moveTo(charX, charY - 15); ctx.lineTo(charX, charY - 4); ctx.stroke();
-                                const aS = Math.sin(phase) * 0.6;
-                                ctx.beginPath(); ctx.moveTo(charX, charY - 12);
-                                ctx.lineTo(charX + Math.sin(aS) * 8, charY - 12 + Math.cos(aS) * 6); ctx.stroke();
-                                ctx.beginPath(); ctx.moveTo(charX, charY - 12);
-                                ctx.lineTo(charX + Math.sin(-aS) * 8, charY - 12 + Math.cos(-aS) * 6); ctx.stroke();
-                                const lS = Math.sin(phase) * 0.7;
-                                ctx.beginPath(); ctx.moveTo(charX, charY - 4);
-                                ctx.lineTo(charX + Math.sin(-lS) * 7, charY - 4 + Math.cos(-lS) * 8); ctx.stroke();
-                                ctx.beginPath(); ctx.moveTo(charX, charY - 4);
-                                ctx.lineTo(charX + Math.sin(lS) * 7, charY - 4 + Math.cos(lS) * 8); ctx.stroke();
+                                ctx.globalAlpha = 1;
                                 ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
                             }
 
@@ -12489,8 +12674,8 @@ class Game {
 
         // Draw a small preview
         const canvas = this.els.challengeTutorialCanvas;
-        canvas.width = 200;
-        canvas.height = 200;
+        canvas.width = 150;
+        canvas.height = 150;
         const ctx = canvas.getContext("2d");
 
         // Use Spine animated character for Word Runner; static icon for others
@@ -12499,83 +12684,209 @@ class Game {
             this._challengeTutorialSpine = null;
         }
         if (this.activeChallenge === CHALLENGE_TYPES.WORD_RUNNER) {
-            // Neon WR scene background
-            const grd = ctx.createLinearGradient(0, 0, 0, 200);
-            grd.addColorStop(0, '#0a0e1a');
-            grd.addColorStop(1, '#111830');
-            ctx.fillStyle = grd;
-            ctx.fillRect(0, 0, 200, 200);
-
-            // Ground
-            const gy = 155;
-            ctx.fillStyle = '#1a3040';
-            ctx.fillRect(0, gy, 200, 45);
-            ctx.strokeStyle = '#00ccaa'; ctx.lineWidth = 1.5;
-            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(200, gy); ctx.stroke();
-
-            // Gap in ground
-            ctx.fillStyle = '#0a0e1a';
-            ctx.fillRect(130, gy, 25, 45);
-
-            // Spikes
-            ctx.fillStyle = '#ff4444';
-            for (const sx of [80, 90, 100]) {
-                ctx.beginPath();
-                ctx.moveTo(sx - 4, gy);
-                ctx.lineTo(sx, gy - 10);
-                ctx.lineTo(sx + 4, gy);
-                ctx.closePath();
-                ctx.fill();
-            }
-
-            // Floating letters
-            const neonLetters = [
-                { ch: 'P', x: 40, y: 100, color: '#00ddff' },
-                { ch: 'L', x: 75, y: 85, color: '#00ddff' },
-                { ch: 'U', x: 120, y: 95, color: '#ffaa00' },
-                { ch: 'M', x: 165, y: 80, color: '#00ddff' },
+            // Animated WR scene with stick figure (same as tutorial page)
+            const w = 150, h = 150;
+            const gy = 118;
+            const scrollSpeed = 40; // px per second
+            const neonLettersDef = [
+                { ch: 'P', baseX: 200, y: 75, color: '#00ddff' },
+                { ch: 'L', baseX: 260, y: 63, color: '#00ddff' },
+                { ch: 'U', baseX: 330, y: 70, color: '#ffaa00' },
+                { ch: 'M', baseX: 400, y: 60, color: '#00ddff' },
             ];
-            ctx.font = 'bold 16px sans-serif';
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            for (const lt of neonLetters) {
-                ctx.shadowColor = lt.color; ctx.shadowBlur = 8;
-                ctx.fillStyle = lt.color;
-                ctx.fillText(lt.ch, lt.x, lt.y);
-            }
-            ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+            const spikeBaseXs = [280, 290, 300];
+            const gapBaseX = 360;
+            const gapW = 20;
+            let startTime = null;
+            let rafId = 0;
+            let collected = 0;
 
-            // Word boxes at top
-            const boxW = 28, boxH = 22;
-            const startX = (200 - 4 * (boxW + 4)) / 2;
-            for (let i = 0; i < 4; i++) {
-                const bx = startX + i * (boxW + 4), by = 12;
-                ctx.fillStyle = i < 2 ? 'rgba(0,204,170,0.2)' : 'rgba(255,255,255,0.05)';
-                ctx.fillRect(bx, by, boxW, boxH);
-                ctx.strokeStyle = i < 2 ? '#00ccaa' : '#334';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(bx, by, boxW, boxH);
-                if (i < 2) {
-                    ctx.fillStyle = '#fff';
-                    ctx.font = 'bold 12px sans-serif';
-                    ctx.fillText(['P','L'][i], bx + boxW / 2, by + boxH / 2);
+            const drawFrame = (timestamp) => {
+                if (!startTime) startTime = timestamp;
+                const t = (timestamp - startTime) / 1000;
+                const scroll = (t * scrollSpeed) % 500; // wrap every 500px
+
+                ctx.clearRect(0, 0, w, h);
+
+                // Background
+                const grd = ctx.createLinearGradient(0, 0, 0, h);
+                grd.addColorStop(0, '#0a0e1a');
+                grd.addColorStop(1, '#111830');
+                ctx.fillStyle = grd;
+                ctx.fillRect(0, 0, w, h);
+
+                // Ground (scrolling segments with gap)
+                ctx.fillStyle = '#1a3040';
+                ctx.fillRect(0, gy, w, h - gy);
+                // Neon ground edge
+                ctx.strokeStyle = '#00ccaa'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+
+                // Scrolling gap
+                const gapX = ((gapBaseX - scroll) % 500 + 500) % 500 - 50;
+                if (gapX > -gapW && gapX < w) {
+                    ctx.fillStyle = '#0a0e1a';
+                    ctx.fillRect(gapX, gy, gapW, h - gy);
+                    // Redraw ground edge with gap
+                    ctx.strokeStyle = '#00ccaa'; ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(0, gy); ctx.lineTo(gapX, gy);
+                    ctx.moveTo(gapX + gapW, gy); ctx.lineTo(w, gy);
+                    ctx.stroke();
                 }
-            }
 
-            // Spine character on top of the neon scene
-            this._challengeTutorialSpine = createChallengePreviewCharacter(canvas, 'run', {
-                scale: 2.5,
-                x: 35,
-                y: gy - 2,
-                boneStyle: { color: '#ffaa00', headColor: '#ffd700', lineWidth: 3, headRadius: 9 },
-            });
+                // Scrolling spikes
+                ctx.fillStyle = '#ff4444';
+                for (const sbx of spikeBaseXs) {
+                    const sx = ((sbx - scroll) % 500 + 500) % 500 - 50;
+                    if (sx > -10 && sx < w + 10) {
+                        ctx.beginPath();
+                        ctx.moveTo(sx - 4, gy);
+                        ctx.lineTo(sx, gy - 10);
+                        ctx.lineTo(sx + 4, gy);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                }
+
+                // Scrolling floating letters
+                collected = Math.floor(t / 2.5) % 5; // cycle 0-4 collected
+                const ltrs = ['P', 'L', 'U', 'M'];
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                for (let i = 0; i < neonLettersDef.length; i++) {
+                    if (i < collected) continue; // "collected" letters disappear
+                    const lt = neonLettersDef[i];
+                    const lx = ((lt.baseX - scroll) % 500 + 500) % 500 - 50;
+                    if (lx > -10 && lx < w + 10) {
+                        const bobY = lt.y + Math.sin(t * 3 + i) * 4;
+                        ctx.shadowColor = lt.color; ctx.shadowBlur = 8;
+                        ctx.fillStyle = lt.color;
+                        ctx.fillText(lt.ch, lx, bobY);
+                    }
+                }
+                ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+
+                // Word boxes at top
+                const boxW = 22, boxH = 17;
+                const startX = (w - 4 * (boxW + 3)) / 2;
+                for (let i = 0; i < 4; i++) {
+                    const bx = startX + i * (boxW + 3), by = 8;
+                    ctx.fillStyle = i < collected ? 'rgba(0,204,170,0.2)' : 'rgba(255,255,255,0.05)';
+                    ctx.fillRect(bx, by, boxW, boxH);
+                    ctx.strokeStyle = i < collected ? '#00ccaa' : '#334';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(bx, by, boxW, boxH);
+                    if (i < collected) {
+                        ctx.fillStyle = '#fff';
+                        ctx.font = 'bold 10px sans-serif';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(ltrs[i], bx + boxW / 2, by + boxH / 2);
+                    }
+                }
+
+                // Animated neon stick figure
+                const charX = w * 0.2;
+                const jumpCyc = t % 3;
+                const charY = jumpCyc > 1.5 && jumpCyc < 2.3
+                    ? gy - Math.sin((jumpCyc - 1.5) / 0.8 * Math.PI) * 22
+                    : gy;
+                const airborne = charY < gy;
+
+                {
+                    const phase = airborne ? 0 : t * 8;
+                    const headR = 5;
+                    const headY = charY - 23;
+                    const neckY = headY + headR;
+                    const shoulderY = neckY + 2;
+                    const hipY = charY - 6;
+
+                    ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+                    ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 6;
+
+                    // Head
+                    ctx.beginPath();
+                    ctx.arc(charX, headY, headR, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    // Torso
+                    ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(charX, neckY);
+                    ctx.lineTo(charX, hipY);
+                    ctx.stroke();
+
+                    // Arms
+                    const armLen = 8;
+                    if (airborne) {
+                        ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                        ctx.lineTo(charX - 8, shoulderY - 6); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                        ctx.lineTo(charX + 8, shoulderY - 6); ctx.stroke();
+                    } else {
+                        const armSwing = Math.sin(phase) * 0.8;
+                        ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                        ctx.lineTo(charX + Math.sin(armSwing) * armLen, shoulderY + Math.cos(armSwing) * 6);
+                        ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(charX, shoulderY);
+                        ctx.lineTo(charX + Math.sin(-armSwing) * armLen, shoulderY + Math.cos(-armSwing) * 6);
+                        ctx.stroke();
+                    }
+
+                    // Legs
+                    const legLen = 8;
+                    if (airborne) {
+                        ctx.beginPath(); ctx.moveTo(charX, hipY);
+                        ctx.lineTo(charX - 4, hipY + 5);
+                        ctx.lineTo(charX - 2, hipY + legLen + 2); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(charX, hipY);
+                        ctx.lineTo(charX + 4, hipY + 5);
+                        ctx.lineTo(charX + 2, hipY + legLen + 2); ctx.stroke();
+                    } else {
+                        const legSwing = Math.sin(phase) * 0.9;
+                        ctx.beginPath(); ctx.moveTo(charX, hipY);
+                        ctx.lineTo(charX + Math.sin(-legSwing) * 6, hipY + Math.cos(-legSwing) * legLen);
+                        ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(charX, hipY);
+                        ctx.lineTo(charX + Math.sin(legSwing) * 6, hipY + Math.cos(legSwing) * legLen);
+                        ctx.stroke();
+                    }
+
+                    // Neon glow trail
+                    ctx.globalAlpha = 0.3;
+                    ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 1;
+                    for (let trail = 1; trail <= 3; trail++) {
+                        const tx = charX - trail * 4;
+                        ctx.globalAlpha = 0.3 - trail * 0.08;
+                        ctx.beginPath();
+                        ctx.arc(tx, headY, headR - 1, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(tx, neckY); ctx.lineTo(tx, hipY); ctx.stroke();
+                    }
+                    ctx.globalAlpha = 1;
+                    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+                }
+
+                rafId = requestAnimationFrame(drawFrame);
+            };
+
+            rafId = requestAnimationFrame(drawFrame);
+
+            // Store cleanup handle (compatible with existing _closeChallengeTutorial)
+            this._challengeTutorialSpine = {
+                destroy() { cancelAnimationFrame(rafId); },
+            };
         } else {
             ctx.fillStyle = "#2f3029";
-            ctx.fillRect(0, 0, 200, 200);
+            ctx.fillRect(0, 0, 150, 150);
             ctx.fillStyle = "#e2d8a6";
-            ctx.font = "bold 60px sans-serif";
+            ctx.font = "bold 50px sans-serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillText(meta.icon, 100, 100);
+            ctx.fillText(meta.icon, 75, 75);
         }
 
         this.els.challengeTutorialOverlay.classList.add("active");

@@ -101,7 +101,8 @@
                     <button id="profile-cancel-btn" class="modal-panel-close">✕</button>
                 </div>
                 <div class="modal-panel-body">
-                    <input type="text" id="profile-name-input" class="text-input" placeholder="Enter username..." maxlength="20">
+                    <input type="text" id="profile-name-input" class="text-input" placeholder="Enter username..." maxlength="20" pattern="[A-Za-z0-9_]+" autocomplete="off" autocorrect="off" spellcheck="false">
+                    <p id="profile-name-error" style="color:#e74c3c;font-size:0.85rem;margin:0 0 8px;display:none;text-align:center;"></p>
                     <button id="profile-save-btn" class="primary-btn" style="width:100%;max-width:280px">Create</button>
                 </div>
             </div>

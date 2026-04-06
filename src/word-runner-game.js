@@ -935,19 +935,68 @@ class WRScene {
 
     // ── Platforms ────────────────────────────────────────────────────────────
 
+    // Check if a world-X position is above a hole (no ground within range)
+    _isAboveHole(wx, halfSpan) {
+        halfSpan = halfSpan || 20;
+        for (let x = wx - halfSpan; x <= wx + halfSpan; x += CFG.COL_W) {
+            const ci = Math.floor(x / CFG.COL_W);
+            const col = this.columns.get(ci);
+            if (!col || col.groundY === null) return true;
+        }
+        return false;
+    }
+
+    // Check if a world-X is near a spike within `dist` pixels
+    _isNearSpike(wx, dist) {
+        const colRange = Math.ceil(dist / CFG.COL_W);
+        const centerCol = Math.floor(wx / CFG.COL_W);
+        for (let c = centerCol - colRange; c <= centerCol + colRange; c++) {
+            const col = this.columns.get(c);
+            if (col && col.spikeBox) {
+                if (Math.abs(wx - (col.spikeBox.x + col.spikeBox.w / 2)) < dist) return true;
+            }
+        }
+        return false;
+    }
+
+    // Check if a world-X is near a hole edge within `dist` pixels
+    _isNearHole(wx, dist) {
+        const colRange = Math.ceil(dist / CFG.COL_W) + 1;
+        const centerCol = Math.floor(wx / CFG.COL_W);
+        for (let c = centerCol - colRange; c <= centerCol + colRange; c++) {
+            const col = this.columns.get(c);
+            // Only count actual generated columns with no ground as holes
+            // Ungenerated columns (!col) are NOT holes — just not loaded yet
+            if (col && col.groundY === null) {
+                const holeX = c * CFG.COL_W + CFG.COL_W / 2;
+                if (Math.abs(wx - holeX) < dist) return true;
+            }
+        }
+        return false;
+    }
+
     _spawnPlatforms() {
         const rightEdge = this.cameraX + this.screenW + CFG.SPAWN_AHEAD;
+        // Forced minimum height: platforms must be HIGH (require multi-jump)
+        // Single jump peak ≈ VY²/(2g) ≈ 136px → min 180px forces double jump
+        const MIN_PLAT_ELEVATION = 90;
+        const MAX_PLAT_ELEVATION = 140;
+
         while (this._nextPlatX < rightEdge) {
             const diff = clamp(this.distance / 10000, 0, 1);
             if (this.chance.bool({ likelihood: 30 + diff * 20 })) {
                 const groundY = this._getGroundAt(this._nextPlatX);
                 if (groundY !== null) {
-                    const pw = 60 + this.chance.floating({ min: 0, max: 50 });
+                    // FORCE: no floating platform above holes
+                    const pw = 90 + this.chance.floating({ min: 0, max: 60 });
                     const ph = 10;
-                    const heights = [35, 55, 75, 95];
-                    const weights = [3, 4, 2, 1];
-                    const elevation = this.chance.weighted(heights, weights);
-                    this._addPlatform(this._nextPlatX, groundY - elevation, pw, ph);
+
+                    if (!this._isAboveHole(this._nextPlatX, pw / 2 + 30)) {
+                        // FORCE: elevation always between MIN and MAX (high up)
+                        const elevation = MIN_PLAT_ELEVATION +
+                            this.chance.floating({ min: 0, max: MAX_PLAT_ELEVATION - MIN_PLAT_ELEVATION });
+                        this._addPlatform(this._nextPlatX, groundY - elevation, pw, ph);
+                    }
                 }
             }
             this._nextPlatX += 180 + this.chance.floating({ min: 0, max: 150 });
@@ -970,34 +1019,51 @@ class WRScene {
 
     _spawnLetters() {
         const rightEdge = this.cameraX + this.screenW + CFG.SPAWN_AHEAD;
+        const SPIKE_CLEARANCE = 100;   // letters must be this far from any spike
+        const HOLE_CLEARANCE = 80;     // letters must be this far from any hole edge
+
         while (this._nextLetterX < rightEdge) {
             let targetY = null;
+            let blocked = false;
 
-            // Try ground first
-            const groundY = this._getGroundAt(this._nextLetterX);
-            if (groundY !== null) {
-                const ci = Math.floor(this._nextLetterX / CFG.COL_W);
-                const col = this.columns.get(ci);
-                if (!col || !col.spikeBox) {
-                    targetY = groundY - 30 - Math.random() * 10;
-                }
+            // Check spike proximity — if too close, jump past the spike zone in one step
+            if (this._isNearSpike(this._nextLetterX, SPIKE_CLEARANCE)) {
+                blocked = true;
             }
 
-            // Or place on a platform
-            if (targetY === null || this.chance.bool({ likelihood: 35 })) {
-                for (const plat of this.platforms) {
-                    if (Math.abs(plat.worldX + plat.w / 2 - this._nextLetterX) < plat.w / 2 + 20) {
-                        targetY = plat.y - 26;
-                        break;
+            // Check hole proximity for ground-level placement
+            const nearHole = !blocked && this._isNearHole(this._nextLetterX, HOLE_CLEARANCE);
+
+            if (!blocked) {
+                // Try ground first (only if not near a hole)
+                if (!nearHole) {
+                    const groundY = this._getGroundAt(this._nextLetterX);
+                    if (groundY !== null) {
+                        const ci = Math.floor(this._nextLetterX / CFG.COL_W);
+                        const col = this.columns.get(ci);
+                        if (!col || !col.spikeBox) {
+                            targetY = groundY - 30 - Math.random() * 10;
+                        }
                     }
                 }
+
+                // Or place on a platform (safe regardless of holes — platforms are high up)
+                if (targetY === null || this.chance.bool({ likelihood: 50 })) {
+                    for (const plat of this.platforms) {
+                        if (Math.abs(plat.worldX + plat.w / 2 - this._nextLetterX) < plat.w / 2 + 20) {
+                            targetY = plat.y - 26;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetY !== null) {
+                    const letter = this.randomLetterFn();
+                    this._addLetter(this._nextLetterX, targetY, letter);
+                }
             }
 
-            if (targetY !== null) {
-                const letter = this.randomLetterFn();
-                this._addLetter(this._nextLetterX, targetY, letter);
-            }
-
+            // Always advance by the normal gap — no micro-stepping
             const baseGap = Math.max(160, this.scrollSpeed * 0.9);
             this._nextLetterX += baseGap + this.chance.floating({ min: 0, max: baseGap * 0.6 });
         }
