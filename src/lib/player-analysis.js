@@ -334,6 +334,7 @@ export function generateChallengeAnalysis(data) {
         'speed-round': 'Speed Round',
         'word-category': 'Word Category',
         'word-search': 'Word Search',
+        'word-runner': 'Word Runner',
     };
     const name = challengeNames[challenge_type] || 'Challenge';
 
@@ -485,6 +486,31 @@ function _getChallengeSpecificHtml(data, seed) {
             html += `</div>`;
             const wsInsight = getWsInsight(ws, seed);
             if (wsInsight) html += `<p class="analysis-desc ws-insight">${wsInsight}</p>`;
+            html += `</div>`;
+        }
+    }
+
+    if (ct === 'word-runner') {
+        if (data.games_played >= 1) {
+            html += `<div class="analysis-section"><h4 class="analysis-heading ws-heading">Word Runner Stats</h4>`;
+            html += `<div class="analysis-ws-grid">`;
+            if (data.high_score != null) html += `<span class="ws-stat-item"><b>${data.high_score.toLocaleString()}</b> high score</span>`;
+            if (data.avg_words != null) html += `<span class="ws-stat-item"><b>${data.avg_words.toFixed(1)}</b> avg words/run</span>`;
+            if (data.best_combo != null && data.best_combo > 0) html += `<span class="ws-stat-item"><b>${data.best_combo}x</b> best word streak</span>`;
+            html += `</div>`;
+
+            const insights = [];
+            if ((data.high_score || 0) >= 2000) {
+                insights.push('A distance demon — pushing deep into the procedural world with exceptional reflexes.');
+                insights.push('Elite runner who makes the ever-increasing speed look effortless.');
+            } else if ((data.high_score || 0) >= 800) {
+                insights.push('Solid runner with good instincts — reading the terrain and snagging letters consistently.');
+                insights.push('A capable platformer who balances letter collection with survival well.');
+            } else {
+                insights.push('Still finding the rhythm — focus on timing jumps early and learning spike patterns.');
+                insights.push('Building runner confidence — try shorter word lengths first to bank easy points.');
+            }
+            html += `<p class="analysis-desc ws-insight">${insights[Math.abs(seed) % insights.length]}</p>`;
             html += `</div>`;
         }
     }

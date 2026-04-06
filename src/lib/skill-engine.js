@@ -130,6 +130,7 @@ export function computeSkillRating(playerData) {
         'target-word': 1.5,
         'word-category': 1.3,
         'word-search': 2.0,
+        'word-runner': 1.8,
     };
     let chalNumerator = 0, chalCount = 0;
     let wsBlend = 0;

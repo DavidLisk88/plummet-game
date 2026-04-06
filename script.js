@@ -1,10 +1,80 @@
 /* ========================================
    PLUMMET - Game Logic
    Vanilla JS core + Preact UI layer.
+   Enhanced with: Chance.js, Howler.js, Weighted, Math.js,
+   OpenSkill, Trie-Search, Zustand, Loot-Table, Juice effects
    ======================================== */
 import { gameStore } from './src/gameStore.js';
 import { mountPreactUI } from './src/app.jsx';
 import './src/preact.css';
+import { WordRunnerGame } from './src/word-runner-game.js';
+
+// ── Enhanced library imports ──
+import {
+    randomLetter as chanceRandomLetter,
+    weightedPick, shuffle as chanceShuffle,
+    randInt, randFloat, randBool, pickOne, pickN,
+    createGameEngine, destroyGameEngine, getLetterTracker, destroyLetterTracker,
+    LETTER_FREQ as CHANCE_LETTER_FREQ, FREQ_TOTAL as CHANCE_FREQ_TOTAL,
+} from './src/lib/chance-engine.js';
+import { HowlerAudioManager } from './src/lib/howler-audio.js';
+import {
+    getDifficultyTier, DynamicDifficulty, LootTable,
+    createBonusLootTable, createTerrainLootTable,
+    getTerrainWeights, DIFFICULTY_TIERS,
+} from './src/lib/difficulty-engine.js';
+import {
+    buildTrie, checkPrefix, getCompletions, getSwipeHint,
+    selectWords as wsSelectWords, generateGrid as wsGenerateGrid,
+    validateSelection as wsValidateSelection, wordDifficulty as wsWordDifficulty,
+} from './src/lib/wordsearch-engine.js';
+import {
+    calculateWordScore, calculateWSWordScore, calculateXP, calculateCoins,
+    computeEnhancedSkillRating, processGameResults, createRating,
+    math as mathjs,
+} from './src/lib/scoring-engine.js';
+import {
+    ScreenShake, scorePop, flashEffect, wordCelebration, failureEffect,
+} from './src/lib/juice-effects.js';
+import {
+    screenTransition, scorePopup as gsapScorePopup, chainBannerEntrance, chainBannerExit,
+    letterAssemble, wordPopupExit, bonusUnlockSequence,
+    particleBurst, wordCelebrationGSAP, failureFlash, levelUpCelebration,
+    addButtonJuice, juiceAllButtons, challengeGridEntrance, gsapShake,
+    confettiRain, numberRoll, gameoverStatsReveal, freezeIndicatorPulse,
+    challengePreviewOverlay, killAnimations as gsapKillAnimations, gsap,
+} from './src/lib/gsap-engine.js';
+import {
+    createProceduralSkeleton, buildHumanoidAnimations,
+    createSkeleton as spineCreateSkeleton, createAnimationState as spineCreateAnimState,
+    createChallengePreviewCharacter, createTutorialAnimation,
+    SpineCanvasRenderer, spine as spineCore,
+} from './src/lib/spine-engine.js';
+import {
+    initPhysicsWorld, updatePhysics, spawnDebris, spawnExplosion,
+    spawnConfettiPhysics, spawnDustImplosion, spawnFallingLetter,
+    spawnImpactRing, clearAllBodies, destroyPhysicsWorld,
+} from './src/lib/matter-physics.js';
+import {
+    initPixiOverlay, isPixiReady, resizePixiOverlay,
+    pixiConfettiBurst, pixiDustBurst, pixiSparkleBurst,
+    pixiFloatingLetters, pixiStarBurst, clearPixiParticles, destroyPixiOverlay,
+} from './src/lib/pixi-particles.js';
+import {
+    KaboomEase, scheduleTimer, scheduleLoop, cancelAllTimers,
+    screenShakeOffset, rectOverlap, circleRectOverlap,
+    lerp as kLerp, mapRange, wave, rand, clamp, dist as kDist,
+    lerpColor, randomColor, on as kOn, emit as kEmit, destroyKaboomUtils,
+} from './src/lib/kaboom-utils.js';
+import {
+    generateQuickPuzzle, crossValidateGrid, generateThemedPuzzle,
+} from './src/lib/wordsearch-gen-adapter.js';
+import {
+    loadSpineCanvas, loadSpineWebgl, loadSpinePhaser,
+    createCanvasRenderer as spineCanvasRenderer2, createWebGLRenderer as spineWebGLRenderer,
+    createBestRenderer as spineBestRenderer, getSpinePhaserPlugin,
+} from './src/lib/spine-renderers.js';
+import { store as zustandStore } from './src/zustand-store.js';
 
 // ────────────────────────────────────────
 // DICTIONARY
@@ -36,8 +106,32 @@ async function loadDictionary() {
         const data = await resp.json();
         // Support both old flat array and new {words, categories} format
         const words = Array.isArray(data) ? data : data.words;
-        DICTIONARY = new Set(words);
-        console.log(`Dictionary ready: ${DICTIONARY.size} valid words`);
+
+        // Filter out contraction words (words with apostrophes removed, e.g. HES, HED, ITLL, SHES)
+        // These are informal contractions that shouldn't appear in word search puzzles
+        const CONTRACTION_WORDS = new Set([
+            "HES", "HED", "HELL", "SHES", "SHED", "SHELL",
+            "THEYD", "THEYLL", "THEYRE", "THEYVE",
+            "YOULL", "YOUD", "YOURE", "YOUVE",
+            "WEVE", "WERE", "WELL", "WONT",
+            "ITLL", "ITS", "ITS", "ITLL",
+            "DONT", "DIDNT", "DOESNT", "ISNT", "ARENT", "WASNT", "WERENT",
+            "HASNT", "HAVENT", "HADNT", "CANT", "COULDNT", "SHOULDNT", "WOULDNT",
+            "MUSTNT", "NEEDNT", "SHANT", "AINT",
+            "ILL", "IM", "IVE", "ID",
+            "LETS", "HOWS", "WHATS", "WHERES", "WHOS", "WHENS",
+            "THATS", "THERES", "HERES",
+            "MAAM", "OCLOCK", "OER",
+        ]);
+        // Only filter words that are SOLELY contraction artifacts (not real standalone words)
+        // Keep words like "WELL" (noun/adverb), "WERE" (past tense), "CANT" (verb), "ILL" (adjective), "ITS" (possessive)
+        const KEEP_DESPITE_CONTRACTION = new Set([
+            "WELL", "WERE", "CANT", "ILL", "ITS", "SHELL", "SHED", "HELL", "WONT", "ID",
+        ]);
+        const filteredWords = words.filter(w => !CONTRACTION_WORDS.has(w) || KEEP_DESPITE_CONTRACTION.has(w));
+        const removedCount = words.length - filteredWords.length;
+        DICTIONARY = new Set(filteredWords);
+        console.log(`Dictionary ready: ${DICTIONARY.size} valid words (${removedCount} contractions removed)`);
         // Load categories if present
         if (data.categories) {
             for (const [key, cat] of Object.entries(data.categories)) {
@@ -51,6 +145,9 @@ async function loadDictionary() {
     }
     _buildHintSets();
     _buildTargetWordPools();
+    // Build trie index for prefix-based word validation and swipe hints
+    buildTrie(DICTIONARY);
+    console.log(`[Enhanced] Trie index built for word search hints`);
 }
 
 // ────────────────────────────────────────
@@ -192,119 +289,13 @@ function _fillGapsAndScore(sub, gaps, counts) {
 }
 
 function randomLetter(grid, targetWord) {
-    const letters = Object.keys(LETTER_FREQ);
-    const prevLetter = _letterHistory.length > 0 ? _letterHistory[_letterHistory.length - 1] : null;
-
-    // Helper: finalize a pick — update all tracking and return it.
-    // If the pick would repeat the previous letter, fall through to main selection.
-    const _commit = (ch) => {
-        _letterHistory.push(ch);
-        if (_letterHistory.length > _HISTORY_MAX) _letterHistory.shift();
-        _letterCounts[ch] = (_letterCounts[ch] || 0) + 1;
-        _totalPicks++;
-        return ch;
-    };
-
-    // ── Target Word Assistance ──
-    // When there's an active target word, periodically inject letters the player
-    // needs to spell it. This prevents "rare letter starvation" where the player
-    // waits 50+ blocks for a Q or Z.
-    if (targetWord && targetWord.length >= 3) {
-        const needed = {};
-        for (const ch of targetWord) needed[ch] = (needed[ch] || 0) + 1;
-        if (grid) {
-            for (let r = 0; r < grid.rows; r++) {
-                for (let c = 0; c < grid.cols; c++) {
-                    const val = grid.get(r, c);
-                    if (val && needed[val] && needed[val] > 0) needed[val]--;
-                }
-            }
-        }
-        const missingLetters = [];
-        for (const [ch, count] of Object.entries(needed)) {
-            for (let i = 0; i < count; i++) missingLetters.push(ch);
-        }
-        // Remove previous letter to prevent consecutive duplicates
-        const assistPool = missingLetters.filter(ch => ch !== prevLetter);
-        if (assistPool.length > 0) {
-            const assistRate = Math.min(0.50, 0.20 + missingLetters.length * 0.10);
-            if (Math.random() < assistRate) {
-                return _commit(assistPool[Math.floor(Math.random() * assistPool.length)]);
-            }
-        }
-    }
-
-    // ── Grid-aware helpful letter (≈25% chance) ──
-    if (grid && Math.random() < 0.25) {
-        const helpful = _findHelpfulLetters(grid).filter(h => h.letter !== prevLetter);
-        if (helpful.length > 0) {
-            const totalW = helpful.reduce((s, h) => s + h.count, 0);
-            let roll = Math.random() * totalW;
-            for (const h of helpful) {
-                roll -= h.count;
-                if (roll <= 0) return _commit(h.letter);
-            }
-        }
-    }
-
-    // ── Main weighted random selection ──
-    // Goals: (1) NEVER repeat previous letter, (2) wide letter diversity,
-    // (3) aggressive cooldown so recent letters are visibly rare,
-    // (4) deficit correction to ensure underrepresented letters surface.
-    const weights = [];
-    for (const ch of letters) {
-        // Hard block: never repeat previous letter
-        if (ch === prevLetter) { weights.push(0); continue; }
-
-        let w = LETTER_FREQ[ch];
-
-        // ── Strong cooldown for recent letters ──
-        // Last 2 letters: near-zero weight. Letters 3-5 ago: heavy penalty.
-        // Letters 6+ ago: gradually recover. This ensures a WIDE variety.
-        const histIdx = _letterHistory.lastIndexOf(ch);
-        if (histIdx !== -1) {
-            const age = _letterHistory.length - histIdx; // 1 = most recent
-            if (age <= 2)       w *= 0.001;  // effectively blocked
-            else if (age <= 4)  w *= 0.05;   // very unlikely
-            else if (age <= 6)  w *= 0.20;   // unlikely
-            else if (age <= 8)  w *= 0.50;   // mild penalty
-            else                w *= 0.80;   // light penalty
-        }
-
-        // ── Aggressive deficit / surplus balancing ──
-        if (_totalPicks > 8) {
-            const expected = (LETTER_FREQ[ch] / _FREQ_TOTAL) * _totalPicks;
-            const actual = _letterCounts[ch];
-            const ratio = expected > 0 ? actual / expected : 0;
-
-            if (ratio < 0.25)      w *= 5.0;   // severely underrepresented
-            else if (ratio < 0.5)  w *= 3.5;   // very underrepresented
-            else if (ratio < 0.75) w *= 2.0;   // moderately underrepresented
-            else if (ratio < 0.9)  w *= 1.4;   // slightly underrepresented
-            else if (ratio > 2.5)  w *= 0.10;  // extremely overrepresented
-            else if (ratio > 2.0)  w *= 0.20;  // heavily overrepresented
-            else if (ratio > 1.5)  w *= 0.35;  // quite overrepresented
-            else if (ratio > 1.2)  w *= 0.55;  // somewhat overrepresented
-        }
-
-        // ── Never-seen guarantee ──
-        if (_totalPicks >= 20 && _letterCounts[ch] === 0) {
-            w = Math.max(w, 5);
-        }
-
-        weights.push(Math.max(w, 0.01));
-    }
-
-    // Weighted random selection
-    const total = weights.reduce((a, b) => a + b, 0);
-    let roll = Math.random() * total;
-    let picked = letters[0];
-    for (let i = 0; i < letters.length; i++) {
-        roll -= weights[i];
-        if (roll <= 0) { picked = letters[i]; break; }
-    }
-
-    return _commit(picked);
+    // Delegates to Chance.js-powered engine (same algorithm, better entropy + seeded support).
+    // Passes _findHelpfulLetters so the engine can do grid-aware letter selection.
+    return chanceRandomLetter({
+        grid: grid || undefined,
+        targetWord: targetWord || undefined,
+        findHelpfulLetters: _findHelpfulLetters,
+    });
 }
 
 const WILDCARD_SYMBOL = "★";
@@ -360,6 +351,7 @@ const CHALLENGE_TYPES = Object.freeze({
     SPEED_ROUND: "speed-round",
     WORD_CATEGORY: "word-category",
     WORD_SEARCH: "word-search",
+    WORD_RUNNER: "word-runner",
 });
 
 const CHALLENGE_META = Object.freeze({
@@ -382,6 +374,11 @@ const CHALLENGE_META = Object.freeze({
         title: "Word Search",
         description: "Find hidden words in the grid! No word list — discover them yourself. Levels get harder and harder!",
         icon: "🔍",
+    },
+    [CHALLENGE_TYPES.WORD_RUNNER]: {
+        title: "Word Runner",
+        description: "Run, jump & collect letters to build words! Dodge rocks, leap across platforms, and form words to score.",
+        icon: "🏃",
     },
 });
 
@@ -476,40 +473,40 @@ function _wsLevelParams(level) {
     let gridSize, minWords, maxWords, minWordLen, maxWordLen, allowedDirs;
 
     if (level <= 10) {
-        // Beginner: tiny grid, only 3-letter words, right & down
+        // Beginner: tiny grid, 3-4 letter words, all 8 directions
         gridSize = 8;
         minWords = 5; maxWords = 5;
-        minWordLen = 3; maxWordLen = 3;
-        allowedDirs = [[0, 1], [1, 0]];
+        minWordLen = 3; maxWordLen = 4;
+        allowedDirs = WS_DIRECTIONS;
     } else if (level <= 25) {
         // Easing in: still small, introduce 4-letter words
         gridSize = 8;
         minWords = 5; maxWords = 6;
         minWordLen = 3; maxWordLen = 4;
-        allowedDirs = [[0, 1], [1, 0]];
+        allowedDirs = WS_DIRECTIONS;
     } else if (level <= 50) {
-        // Comfortable: add left & up directions
+        // Comfortable: more words
         gridSize = 8;
         minWords = 5; maxWords = 6;
         minWordLen = 3; maxWordLen = 4;
-        allowedDirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+        allowedDirs = WS_DIRECTIONS;
     } else if (level <= 80) {
         // Slightly bigger grid, still easy words
         gridSize = 9;
         minWords = 5; maxWords = 6;
         minWordLen = 3; maxWordLen = 4;
-        allowedDirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+        allowedDirs = WS_DIRECTIONS;
     } else if (level <= 120) {
-        // Introduce 5-letter words, one diagonal
+        // Introduce 5-letter words
         gridSize = 9;
         minWords = 5; maxWords = 7;
         minWordLen = 3; maxWordLen = 5;
-        allowedDirs = [[0, 1], [1, 0], [1, 1], [0, -1], [-1, 0]];
+        allowedDirs = WS_DIRECTIONS;
     } else if (level <= 180) {
         gridSize = 10;
         minWords = 5; maxWords = 7;
         minWordLen = 3; maxWordLen = 5;
-        allowedDirs = [[0, 1], [1, 0], [1, 1], [1, -1], [0, -1], [-1, 0]];
+        allowedDirs = WS_DIRECTIONS;
     } else if (level <= 260) {
         gridSize = 10;
         minWords = 6; maxWords = 8;
@@ -548,12 +545,42 @@ function _wsLevelParams(level) {
 }
 
 /**
+ * Rolling word history to prevent word repetition across word search levels.
+ * Stores last N words per profile in localStorage.
+ */
+const WS_WORD_HISTORY_KEY = 'plummet_ws_word_history';
+const WS_WORD_HISTORY_MAX = 500;
+
+function _wsGetWordHistory() {
+    try {
+        const raw = localStorage.getItem(WS_WORD_HISTORY_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+}
+
+function _wsAddToWordHistory(words) {
+    try {
+        let history = _wsGetWordHistory();
+        history.push(...words);
+        // Keep only last N entries
+        if (history.length > WS_WORD_HISTORY_MAX) {
+            history = history.slice(history.length - WS_WORD_HISTORY_MAX);
+        }
+        localStorage.setItem(WS_WORD_HISTORY_KEY, JSON.stringify(history));
+    } catch { /* localStorage full or unavailable */ }
+}
+
+/**
  * Select words for a word search level from the dictionary.
  * Returns array of uppercase words, sorted by length (shortest first).
+ * Avoids words used in the last 200 levels via rolling history.
  */
 function _wsSelectWords(params) {
     const { minWords, maxWords, minWordLen, maxWordLen, difficultyPct } = params;
     const count = minWords + Math.floor(Math.random() * (maxWords - minWords + 1));
+
+    // Load recently used words to penalize/avoid them
+    const recentWords = new Set(_wsGetWordHistory());
 
     // Build candidate pool from dictionary filtered by length
     const candidates = [];
@@ -578,19 +605,53 @@ function _wsSelectWords(params) {
     const windowEnd = Math.min(total, Math.floor(total * Math.min(1, center + halfWidth)));
     const pool = candidates.slice(windowStart, Math.max(windowEnd, windowStart + 20));
 
-    // Pick random unique words
+    // Pick random unique words, strongly avoiding recently used words
     const selected = new Set();
     const result = [];
     let attempts = 0;
-    while (result.length < count && attempts < count * 20) {
+    // First pass: try to pick words NOT in recent history
+    while (result.length < count && attempts < count * 30) {
         const word = pool[Math.floor(Math.random() * pool.length)];
         attempts++;
         if (selected.has(word)) continue;
+        if (recentWords.has(word)) continue; // Skip recently used
         selected.add(word);
         result.push(word);
     }
-    result.sort((a, b) => a.length - b.length);
-    return result;
+    // Fallback: if we couldn't fill from non-recent pool, allow recent words
+    // Shuffle the pool first to avoid always picking the same recent words
+    if (result.length < count) {
+        const remaining = pool.filter(w => !selected.has(w));
+        for (let i = remaining.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
+        }
+        for (const word of remaining) {
+            if (result.length >= count) break;
+            selected.add(word);
+            result.push(word);
+        }
+    }
+
+    // Eagerly add selected words to history BEFORE grid generation
+    // so the next level won't re-select the same words
+    _wsAddToWordHistory(result);
+
+    // Filter overlapping same-line words (e.g. TOE and TOER on same cells)
+    // Remove shorter words that are strict prefixes/suffixes of longer words in the list
+    const filtered = [];
+    const sortedByLen = [...result].sort((a, b) => b.length - a.length);
+    for (const word of sortedByLen) {
+        const isSubsetOfExisting = filtered.some(longer =>
+            longer.includes(word) && longer !== word
+        );
+        if (!isSubsetOfExisting) {
+            filtered.push(word);
+        }
+    }
+
+    filtered.sort((a, b) => a.length - b.length);
+    return filtered;
 }
 
 /**
@@ -752,8 +813,8 @@ function _wsGenerateGrid(size, words, allowedDirs) {
  * Validate that a sequence of cells forms a valid dictionary word in the word search.
  * Cells must be in a straight line (any of 8 directions).
  */
-function _wsValidateSelection(grid, cells, allValidWords) {
-    if (!cells || cells.length < 3) return null;
+function _wsValidateSelection(grid, cells, allValidWords, minWordLength) {
+    if (!cells || cells.length < (minWordLength || 3)) return null;
 
     // Check cells form a straight line
     if (cells.length > 1) {
@@ -879,39 +940,39 @@ const DIFFICULTY_MAX_LEVEL = 10;
 // COIN / CURRENCY SYSTEM
 // ────────────────────────────────────────
 
-// ── Coin earning rates ──
-const COIN_PER_WORD_LENGTH = { 3: 1, 4: 2, 5: 4, 6: 5, 7: 7 }; // 7+ = 7
-const COIN_COMBO_BONUS = 2;             // +2 per combo tier active
-const COIN_GAME_COMPLETE_BASE = 15;     // minimum per game
-const COIN_GAME_COMPLETE_PER_500 = 10;  // +10 per 500 pts (up to 50 max)
-const COIN_HIGH_SCORE_BEATEN = 30;      // personal best in any mode
-const COIN_LEVEL_UP_BASE = 25;          // base coins per level-up
-const COIN_LEVEL_UP_PER_LEVEL = 3;      // + level × 3
-const COIN_DAILY_FIRST_GAME = 20;       // first game of the day
-const COIN_CHALLENGE_COMPLETE_BASE = 30; // base challenge reward
-const COIN_CHALLENGE_TIER_MULT = 15;    // +15 per tier above 1
-const COIN_STREAK_PER_DAY = 5;          // 5 × consecutive days (capped)
-const COIN_STREAK_MAX = 50;             // cap on streak bonus
+// ── Coin earning rates (rebalanced — lower payouts for sustainable economy) ──
+const COIN_PER_WORD_LENGTH = { 3: 0, 4: 1, 5: 2, 6: 3, 7: 4 }; // 7+ = 4 (was: 3:1, 4:2, 5:4, 6:5, 7:7)
+const COIN_COMBO_BONUS = 1;             // +1 per combo tier active (was 2)
+const COIN_GAME_COMPLETE_BASE = 8;      // minimum per game (was 15)
+const COIN_GAME_COMPLETE_PER_500 = 5;   // +5 per 500 pts (was 10, up to 25 max)
+const COIN_HIGH_SCORE_BEATEN = 15;      // personal best in any mode (was 30)
+const COIN_LEVEL_UP_BASE = 12;          // base coins per level-up (was 25)
+const COIN_LEVEL_UP_PER_LEVEL = 2;      // + level × 2 (was 3)
+const COIN_DAILY_FIRST_GAME = 10;       // first game of the day (was 20)
+const COIN_CHALLENGE_COMPLETE_BASE = 15; // base challenge reward (was 30)
+const COIN_CHALLENGE_TIER_MULT = 8;     // +8 per tier above 1 (was 15)
+const COIN_STREAK_PER_DAY = 3;          // 3 × consecutive days (was 5)
+const COIN_STREAK_MAX = 30;             // cap on streak bonus (was 50)
 
 // ── Milestone achievements (one-time coin payouts) ──
 const MILESTONES = [
-    { id: "words_50",       label: "Wordsmith",          desc: "Find 50 unique words",          check: p => (p.uniqueWordsFound || []).length >= 50,    coins: 30 },
-    { id: "words_200",      label: "Lexicon Builder",    desc: "Find 200 unique words",         check: p => (p.uniqueWordsFound || []).length >= 200,   coins: 75 },
-    { id: "words_500",      label: "Dictionary Diver",   desc: "Find 500 unique words",         check: p => (p.uniqueWordsFound || []).length >= 500,   coins: 100 },
-    { id: "words_1000",     label: "Word Hoarder",       desc: "Find 1,000 unique words",       check: p => (p.uniqueWordsFound || []).length >= 1000,  coins: 200 },
-    { id: "games_10",       label: "Getting Started",    desc: "Play 10 games",                 check: p => p.gamesPlayed >= 10,                       coins: 25 },
-    { id: "games_50",       label: "Dedicated",          desc: "Play 50 games",                 check: p => p.gamesPlayed >= 50,                       coins: 75 },
-    { id: "games_100",      label: "Committed",          desc: "Play 100 games",                check: p => p.gamesPlayed >= 100,                      coins: 150 },
-    { id: "level_5",        label: "Rising Star",        desc: "Reach Level 5",                 check: p => p.level >= 5,                              coins: 30 },
-    { id: "level_10",       label: "Seasoned",           desc: "Reach Level 10",                check: p => p.level >= 10,                             coins: 60 },
-    { id: "level_25",       label: "Veteran",            desc: "Reach Level 25",                check: p => p.level >= 25,                             coins: 120 },
-    { id: "level_50",       label: "Master",             desc: "Reach Level 50",                check: p => p.level >= 50,                             coins: 200 },
-    { id: "score_1000",     label: "Four Digits",        desc: "Score 1,000+ in a game",        check: p => p.highScore >= 1000,                       coins: 25 },
-    { id: "score_5000",     label: "High Roller",        desc: "Score 5,000+ in a game",        check: p => p.highScore >= 5000,                       coins: 75 },
-    { id: "score_10000",    label: "Ten Grand",          desc: "Score 10,000+ in a game",       check: p => p.highScore >= 10000,                      coins: 150 },
-    { id: "streak_3",       label: "On a Roll",          desc: "3-day play streak",             check: p => (p.playStreak || 0) >= 3,                  coins: 30 },
-    { id: "streak_7",       label: "Weekly Warrior",     desc: "7-day play streak",             check: p => (p.playStreak || 0) >= 7,                  coins: 75 },
-    { id: "streak_14",      label: "Fortnight Force",    desc: "14-day play streak",            check: p => (p.playStreak || 0) >= 14,                 coins: 150 },
+    { id: "words_50",       label: "Wordsmith",          desc: "Find 50 unique words",          check: p => (p.uniqueWordsFound || []).length >= 50,    coins: 15 },
+    { id: "words_200",      label: "Lexicon Builder",    desc: "Find 200 unique words",         check: p => (p.uniqueWordsFound || []).length >= 200,   coins: 40 },
+    { id: "words_500",      label: "Dictionary Diver",   desc: "Find 500 unique words",         check: p => (p.uniqueWordsFound || []).length >= 500,   coins: 60 },
+    { id: "words_1000",     label: "Word Hoarder",       desc: "Find 1,000 unique words",       check: p => (p.uniqueWordsFound || []).length >= 1000,  coins: 100 },
+    { id: "games_10",       label: "Getting Started",    desc: "Play 10 games",                 check: p => p.gamesPlayed >= 10,                       coins: 12 },
+    { id: "games_50",       label: "Dedicated",          desc: "Play 50 games",                 check: p => p.gamesPlayed >= 50,                       coins: 40 },
+    { id: "games_100",      label: "Committed",          desc: "Play 100 games",                check: p => p.gamesPlayed >= 100,                      coins: 75 },
+    { id: "level_5",        label: "Rising Star",        desc: "Reach Level 5",                 check: p => p.level >= 5,                              coins: 15 },
+    { id: "level_10",       label: "Seasoned",           desc: "Reach Level 10",                check: p => p.level >= 10,                             coins: 30 },
+    { id: "level_25",       label: "Veteran",            desc: "Reach Level 25",                check: p => p.level >= 25,                             coins: 60 },
+    { id: "level_50",       label: "Master",             desc: "Reach Level 50",                check: p => p.level >= 50,                             coins: 100 },
+    { id: "score_1000",     label: "Four Digits",        desc: "Score 1,000+ in a game",        check: p => p.highScore >= 1000,                       coins: 12 },
+    { id: "score_5000",     label: "High Roller",        desc: "Score 5,000+ in a game",        check: p => p.highScore >= 5000,                       coins: 40 },
+    { id: "score_10000",    label: "Ten Grand",          desc: "Score 10,000+ in a game",       check: p => p.highScore >= 10000,                      coins: 75 },
+    { id: "streak_3",       label: "On a Roll",          desc: "3-day play streak",             check: p => (p.playStreak || 0) >= 3,                  coins: 15 },
+    { id: "streak_7",       label: "Weekly Warrior",     desc: "7-day play streak",             check: p => (p.playStreak || 0) >= 7,                  coins: 40 },
+    { id: "streak_14",      label: "Fortnight Force",    desc: "14-day play streak",            check: p => (p.playStreak || 0) >= 14,                 coins: 75 },
 ];
 
 // ── Shop catalog ──
@@ -923,35 +984,35 @@ const SHOP_CATEGORIES = {
 };
 
 const SHOP_ITEMS = {
-    // ── Grid Themes (cosmetic) ──
+    // ── Grid Themes (cosmetic — prices doubled) ──
     theme_default:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Classic",    price: 0,   preview: "Default olive tones",     owned: true },
-    theme_obsidian:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Obsidian",   price: 150, preview: "Dark glass, subtle glow" },
-    theme_charcoal:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Charcoal",   price: 125, preview: "Smoky graphite, amber ink" },
-    theme_neon:      { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Neon",       price: 200, preview: "Bright outlines, dark bg" },
-    theme_ocean:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ocean",      price: 175, preview: "Blue tones, wave clears" },
-    theme_ember:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ember",      price: 200, preview: "Warm reds, fire particles" },
-    theme_amethyst:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Amethyst",   price: 175, preview: "Deep crystal violet glow" },
-    theme_darkoak:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Dark Oak",   price: 175, preview: "Rich dark wood grain" },
+    theme_obsidian:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Obsidian",   price: 700, preview: "Dark glass, subtle glow" },
+    theme_charcoal:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Charcoal",   price: 550, preview: "Smoky graphite, amber ink" },
+    theme_neon:      { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Neon",       price: 900, preview: "Bright outlines, dark bg" },
+    theme_ocean:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ocean",      price: 800, preview: "Blue tones, wave clears" },
+    theme_ember:     { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Ember",      price: 900, preview: "Warm reds, fire particles" },
+    theme_amethyst:  { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Amethyst",   price: 800, preview: "Deep crystal violet glow" },
+    theme_darkoak:   { category: SHOP_CATEGORIES.GRID_THEMES,   name: "Dark Oak",   price: 800, preview: "Rich dark wood grain" },
 
-    // ── Letter Block Styles (cosmetic) ──
+    // ── Letter Block Styles (cosmetic — prices doubled) ──
     block_default:   { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Standard",   price: 0,   preview: "Default clean letters",    owned: true },
-    block_scrabble:  { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Scrabble",   price: 100, preview: "Wooden tiles with points" },
-    block_bubble:    { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Bubble",     price: 75,  preview: "Rounded, bouncy feel" },
-    block_typewriter:{ category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Typewriter",  price: 125, preview: "Monospace, inked look" },
-    block_pixel:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Pixel",      price: 150, preview: "Retro 8-bit blocks" },
-    block_glass:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Glass",      price: 175, preview: "Translucent refractions" },
+    block_scrabble:  { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Scrabble",   price: 450, preview: "Wooden tiles with points" },
+    block_bubble:    { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Bubble",     price: 350, preview: "Rounded, bouncy feel" },
+    block_typewriter:{ category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Typewriter",  price: 550, preview: "Monospace, inked look" },
+    block_pixel:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Pixel",      price: 650, preview: "Retro 8-bit blocks" },
+    block_glass:     { category: SHOP_CATEGORIES.BLOCK_STYLES,  name: "Glass",      price: 750, preview: "Translucent refractions" },
 
-    // ── Bonus Slots (permanent, sequential unlock) ──
-    bonus_slot_1:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 1",     price: 1000, preview: "First bonus slot",  unique: true },
-    bonus_slot_2:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 2",     price: 2000, preview: "Second bonus slot", unique: true },
-    bonus_slot_3:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 3",     price: 3000, preview: "Third bonus slot",  unique: true },
+    // ── Bonus Slots (permanent, sequential unlock — prices doubled) ──
+    bonus_slot_1:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 1",     price: 2000, preview: "First bonus slot",  unique: true },
+    bonus_slot_2:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 2",     price: 4000, preview: "Second bonus slot", unique: true },
+    bonus_slot_3:    { category: SHOP_CATEGORIES.BONUS_SLOTS,   name: "Slot 3",     price: 6000, preview: "Third bonus slot",  unique: true },
 
-    // ── Starting Perks (consumable, bought individually) ──
-    perk_headstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Head Start",     price: 100, preview: "+200 bonus points at start",       stackSize: 1 },
-    perk_slowstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Slow Start",     price: 150, preview: "0.5× fall speed for 30s",          stackSize: 1 },
-    perk_bonusboost: { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Bonus Boost",    price: 175, preview: "First bonus at 500 pts",           stackSize: 1 },
-    perk_comboext:   { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Combo Extender", price: 150, preview: "+4s combo window this game",       stackSize: 1 },
-    perk_luckydraw:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Lucky Draw",     price: 200, preview: "First bonus = bomb/wild/2×",      stackSize: 1 },
+    // ── Starting Perks (consumable — prices doubled) ──
+    perk_headstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Head Start",     price: 450, preview: "+200 bonus points at start",       stackSize: 1 },
+    perk_slowstart:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Slow Start",     price: 650, preview: "0.5× fall speed for 30s",          stackSize: 1 },
+    perk_bonusboost: { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Bonus Boost",    price: 750, preview: "First bonus at 500 pts",           stackSize: 1 },
+    perk_comboext:   { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Combo Extender", price: 650, preview: "+4s combo window this game",       stackSize: 1 },
+    perk_luckydraw:  { category: SHOP_CATEGORIES.STARTING_PERKS, name: "Lucky Draw",     price: 850, preview: "First bonus = bomb/wild/2×",      stackSize: 1 },
 };
 
 // ── Grid size gating (level + coin cost to unlock) ──
@@ -1047,13 +1108,26 @@ function coinsForWord(wordLength) {
     return COIN_PER_WORD_LENGTH[wordLength] || 1;
 }
 
+/** Word-runner coin rates — higher payouts since words are harder to form in real-time. */
+const WR_COIN_PER_WORD_LENGTH = { 3: 6, 4: 12, 5: 21, 6: 30, 7: 42 };
+function coinsForWordRunner(wordLength) {
+    if (wordLength >= 7) return 42;
+    return WR_COIN_PER_WORD_LENGTH[wordLength] || 6;
+}
+
 /** Calculate coins earned at game end. */
 function calculateGameCoins({ score, wordsFound, isNewHighScore, isChallenge, challengeType,
                               comboMax, playerLevel, isFirstGameToday, playStreak }) {
+    // If no words were found, no coins earned — you must find at least 1 word
+    const wordCount = Array.isArray(wordsFound) ? wordsFound.length : (wordsFound || 0);
+    if (wordCount === 0) return 0;
+    // If score is 0, no coins earned (must actually score to earn)
+    if (score <= 0) return 0;
+
     let coins = 0;
     // Per-word coins (already counted during gameplay for combo bonuses)
-    // Game completion bonus (10 base + 10 per 500 pts, max 50)
-    coins += COIN_GAME_COMPLETE_BASE + Math.min(40, Math.floor(score / 500) * COIN_GAME_COMPLETE_PER_500);
+    // Game completion bonus (8 base + 5 per 500 pts, max 25)
+    coins += COIN_GAME_COMPLETE_BASE + Math.min(25, Math.floor(score / 500) * COIN_GAME_COMPLETE_PER_500);
     // High score bonus
     if (isNewHighScore && score > 0) coins += COIN_HIGH_SCORE_BEATEN;
     // Challenge bonus
@@ -1462,70 +1536,13 @@ const BUFFER_ROWS = 2;
 const State = Object.freeze({ MENU: 0, PLAYING: 1, PAUSED: 2, CLEARING: 3, GAMEOVER: 4 });
 
 // ────────────────────────────────────────
-// AUDIO MANAGER  (Web Audio API, no files)
+// AUDIO MANAGER  (Enhanced with Howler.js)
+// Backwards-compatible: same API as before, but uses
+// Howler.js under the hood for better cross-platform audio.
 // ────────────────────────────────────────
-class AudioManager {
+class AudioManager extends HowlerAudioManager {
     constructor() {
-        this.muted = false;
-        this.ctx = null;
-    }
-
-    _ensureCtx() {
-        if (!this.ctx) {
-            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-    }
-
-    _beep(freq, duration, type = "square", vol = 0.12) {
-        if (this.muted) return;
-        try {
-            this._ensureCtx();
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = type;
-            osc.frequency.value = freq;
-            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
-            osc.connect(gain).connect(this.ctx.destination);
-            osc.start();
-            osc.stop(this.ctx.currentTime + duration);
-        } catch (_) { /* ignore audio errors */ }
-    }
-
-    land(isFastDrop = false) {
-        if (isFastDrop) {
-            this._beep(160, 0.12, "triangle", 0.18);
-            setTimeout(() => this._beep(100, 0.08, "triangle", 0.08), 30);
-        } else {
-            this._beep(220, 0.1, "triangle");
-        }
-    }
-    clear(wordLength = 3) {
-        // Longer words = higher, richer pitch
-        const freq = 440 + (wordLength - 3) * 80;
-        this._beep(freq, 0.2, "sine", 0.15);
-        if (wordLength >= 5) {
-            setTimeout(() => this._beep(freq * 1.25, 0.15, "sine", 0.10), 60);
-        }
-    }
-    chain(chainCount = 1) {
-        // Escalating pitch with each chain
-        const freq = 660 + chainCount * 110;
-        this._beep(freq, 0.25, "sine", 0.18);
-        setTimeout(() => this._beep(freq * 1.2, 0.15, "sine", 0.12), 80);
-    }
-    bomb() {
-        this._beep(140, 0.2, "sawtooth", 0.12);
-        setTimeout(() => this._beep(90, 0.35, "triangle", 0.1), 80);
-    }
-    gameOver() {
-        this._beep(200, 0.4, "sawtooth", 0.10);
-        setTimeout(() => this._beep(150, 0.5, "sawtooth", 0.08), 400);
-    }
-
-    toggle() {
-        this.muted = !this.muted;
-        return this.muted;
+        super();
     }
 }
 
@@ -1638,6 +1655,7 @@ class BackgroundAnimation {
         this.running = false;
         if (this._animId) cancelAnimationFrame(this._animId);
         this._animId = null;
+        this.confetti = [];
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
     addConfetti(particles) {
@@ -1653,6 +1671,12 @@ class BackgroundAnimation {
         if (this._spawnTimer <= 0) {
             this.letters.push(new FloatingLetter(w, h));
             this._spawnTimer = 0.4 + Math.random() * 0.6;
+
+            // PixiJS: spawn floating letter particles periodically
+            this._pixiSpawnCounter = (this._pixiSpawnCounter || 0) + 1;
+            if (this._pixiSpawnCounter % 5 === 0 && isPixiReady()) {
+                pixiFloatingLetters(3, { width: w, height: h });
+            }
         }
 
         this.ctx.clearRect(0, 0, w, h);
@@ -2010,6 +2034,8 @@ class Renderer {
     triggerImpact(row, col) {
         const { x, y } = this.cellCenter(row, col);
         this.impactRings.push({ x, y, progress: 0, maxRadius: this.cellSize * 0.9 });
+        // Matter.js: physics-based impact ring
+        spawnImpactRing(x, y, 1);
     }
 
     // Convert pixel coordinates (relative to canvas) to grid row/col, or null if outside
@@ -2309,15 +2335,19 @@ class Renderer {
         const w = cs * cols;
         const h = this.totalH || cs * (rows + BUFFER_ROWS);
 
-        // Update screen shake
+        // Update screen shake (enhanced with Kaboom noise shake)
         if (this.shakeIntensity > 0.1) {
-            this.shakeX = (Math.random() - 0.5) * 2 * this.shakeIntensity;
-            this.shakeY = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+            this._shakeTime = (this._shakeTime || 0) + dt;
+            const normalizedT = Math.min(1, this._shakeTime * 3); // ~0.33s shake duration
+            const kShake = screenShakeOffset(this.shakeIntensity, normalizedT, 14);
+            this.shakeX = kShake.x;
+            this.shakeY = kShake.y;
             this.shakeIntensity *= Math.exp(-this.shakeDecay * dt);
         } else {
             this.shakeX = 0;
             this.shakeY = 0;
             this.shakeIntensity = 0;
+            this._shakeTime = 0;
         }
 
         // Background (full canvas including buffer) — drawn before shake transform
@@ -2527,6 +2557,10 @@ class Renderer {
             for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(x, y));
             }
+            // Matter.js physics debris
+            spawnDebris(x, y, 6);
+            // PixiJS dust burst
+            pixiDustBurst(x, y, 8);
         }
     }
 }
@@ -2868,6 +2902,9 @@ class MusicManager {
         }
         this.currentTrackId = trackId;
         this._cancelCrossfade();
+        // Reset duration tracking for crossfade stability check
+        this._lastKnownDuration = 0;
+        this._durationStableSince = 0;
 
         // Stop and discard old audio element (abort listeners BEFORE clearing src
         // to prevent phantom events from src="" triggering handlers)
@@ -3070,6 +3107,10 @@ class MusicManager {
             if (audioEl !== this.audio) return;
             console.warn("♪ Audio error on track", this.currentTrackId, audioEl.error);
             // Skip to next track on load/decode errors instead of freezing
+            // Guard: don't rapid-fire skip (debounce 2s between error-triggered skips)
+            const now = Date.now();
+            if (this._lastErrorSkipTime && now - this._lastErrorSkipTime < 2000) return;
+            this._lastErrorSkipTime = now;
             if (this.playing) this.next();
         }, { signal });
 
@@ -3078,12 +3119,24 @@ class MusicManager {
             if (this.onTimeUpdate) {
                 this.onTimeUpdate(this.audio.currentTime, this.audio.duration || 0);
             }
-            // Crossfade guard: require track has played at least 5 seconds to avoid
-            // premature triggers from inaccurate VBR MP3 duration estimates
+            // Crossfade guard: require track has played at least 10 seconds to avoid
+            // premature triggers from inaccurate VBR MP3 duration estimates.
+            // Also require duration has stabilized (not changing rapidly).
             const playedSec = this.audio.currentTime;
             const dur = this.audio.duration;
-            const minPlayTime = Math.max(5, this._crossfadeDuration * 3);
+            const minPlayTime = Math.max(15, this._crossfadeDuration * 5);
+            // Track duration stability: only crossfade if duration hasn't changed
+            // significantly in the last few timeupdates
+            const now = Date.now();
+            if (dur > 0) {
+                if (!this._lastKnownDuration || Math.abs(dur - this._lastKnownDuration) > 0.5) {
+                    this._lastKnownDuration = dur;
+                    this._durationStableSince = now;
+                }
+            }
+            const durationStable = this._durationStableSince && (now - this._durationStableSince > 5000);
             if (!this._crossfading && this.playing && dur > 0
+                && durationStable
                 && playedSec >= minPlayTime
                 && this.repeatMode !== "one"
                 && dur - playedSec <= this._crossfadeDuration
@@ -3091,7 +3144,6 @@ class MusicManager {
                 && this._getEffectiveQueue().length > 1) {
                 this._startCrossfade();
             }
-            const now = Date.now();
             if (now - this._lastSavedTime > 3000) {
                 this._lastSavedTime = now;
                 this._saveMusicState();
@@ -4145,6 +4197,16 @@ class Game {
             lbMyRankIcon: document.getElementById("lb-my-rank-icon"),
             lbMyRankClass: document.getElementById("lb-my-rank-class"),
             lbMyRankPos: document.getElementById("lb-my-rank-pos"),
+            lbMyStats: document.getElementById("lb-my-stats"),
+            lbMyStatsToggle: document.getElementById("lb-my-stats-toggle"),
+            lbsRating: document.getElementById("lbs-rating"),
+            lbsHighScore: document.getElementById("lbs-high-score"),
+            lbsGames: document.getElementById("lbs-games"),
+            lbsWords: document.getElementById("lbs-words"),
+            lbsLevel: document.getElementById("lbs-level"),
+            lbsStreak: document.getElementById("lbs-streak"),
+            lbsComponents: document.getElementById("lbs-components"),
+            lbsAnalysis: document.getElementById("lbs-analysis"),
             lbList: document.getElementById("lb-list"),
             lbLoadMore: document.getElementById("lb-load-more"),
             lbLoadMoreBtn: document.getElementById("lb-load-more-btn"),
@@ -4153,6 +4215,16 @@ class Game {
             myRankClassLabel: document.getElementById("my-rank-class-label"),
             myRankPosition: document.getElementById("my-rank-position"),
             myRankRating: document.getElementById("my-rank-rating"),
+            myRankStats: document.getElementById("my-rank-stats"),
+            myRankToggle: document.getElementById("my-rank-toggle"),
+            mrsRating: document.getElementById("mrs-rating"),
+            mrsHighScore: document.getElementById("mrs-high-score"),
+            mrsGames: document.getElementById("mrs-games"),
+            mrsWords: document.getElementById("mrs-words"),
+            mrsLevel: document.getElementById("mrs-level"),
+            mrsStreak: document.getElementById("mrs-streak"),
+            mrsComponents: document.getElementById("mrs-components"),
+            mrsAnalysis: document.getElementById("mrs-analysis"),
             challengeLbBtns: document.querySelectorAll(".challenge-lb-btn"),
             // Word Search
             wsScreen: document.getElementById("ws-screen"),
@@ -4178,6 +4250,31 @@ class Game {
             wsMiniToggle: document.getElementById("ws-mini-toggle"),
             wsMiniNext: document.getElementById("ws-mini-next"),
             wsMiniProgressFill: document.getElementById("ws-mini-progress-fill"),
+            // Word Runner
+            wrScreen: document.getElementById("wr-screen"),
+            wrCanvas: document.getElementById("wr-canvas"),
+            wrCanvasContainer: document.getElementById("wr-canvas-container"),
+            wrScore: document.getElementById("wr-score"),
+            wrDistance: document.getElementById("wr-distance"),
+            wrCoins: document.getElementById("wr-coins"),
+            wrWordBoxes: document.getElementById("wr-word-boxes"),
+            wrPauseBtn: document.getElementById("wr-pause-btn"),
+            wrValidateBtn: document.getElementById("wr-validate-btn"),
+            wrPauseOverlay: document.getElementById("wr-pause-overlay"),
+            wrResumeBtn: document.getElementById("wr-resume-btn"),
+            wrWordsFoundBtn: document.getElementById("wr-words-found-btn"),
+            wrMusicBtn: document.getElementById("wr-music-btn"),
+            wrShopBtn: document.getElementById("wr-shop-btn"),
+            wrEndGameBtn: document.getElementById("wr-end-game-btn"),
+            wrSaveQuitBtn: document.getElementById("wr-save-quit-btn"),
+            wrLevelText: document.getElementById("wr-level-text"),
+            wrXpBarFill: document.getElementById("wr-xp-bar-fill"),
+            wrXpText: document.getElementById("wr-xp-text"),
+            wrMiniTitle: document.getElementById("wr-mini-title"),
+            wrMiniPrev: document.getElementById("wr-mini-prev"),
+            wrMiniToggle: document.getElementById("wr-mini-toggle"),
+            wrMiniNext: document.getElementById("wr-mini-next"),
+            wrMiniProgressFill: document.getElementById("wr-mini-progress-fill"),
         };
 
         this.state = State.MENU;
@@ -4260,6 +4357,16 @@ class Game {
         // ── Word Search state ──
         this._ws = null; // Active word search game object
 
+        // ── Word Runner state ──
+        this._wr = null; // Active word runner game object
+
+        // ── Enhanced Systems (Chance.js, Difficulty Engine, Loot Tables) ──
+        this._dynamicDifficulty = new DynamicDifficulty(30);
+        this._bonusLootTable = createBonusLootTable();
+        this._terrainLootTable = createTerrainLootTable();
+        this._screenShake = null; // Initialized when play screen is shown
+        this._gameSessionId = null; // Per-game Chance.js engine ID
+
         document.body.classList.toggle("touch-input", this.usesTouchSwipeInput);
 
         this._bindUI();
@@ -4273,6 +4380,7 @@ class Game {
         this._bindAuth();
         this._bindLeaderboard();
         this._bindWordSearch();
+        this._bindWordRunner();
         this._initMutePref();
         this._menuPage = 1;
         this._bindMenuSwipe();
@@ -4293,16 +4401,45 @@ class Game {
         this.music.onStateChange = () => this._updateMusicUI();
         this.music.onTimeUpdate = (cur, dur) => this._updateMusicProgress(cur, dur);
 
+        // Resume audio context when tab becomes visible again
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden && this.music && this.music.playing) {
+                this.music.resumePlayback();
+            }
+        });
+
         // Music starts when the player presses Start (see _startGame)
 
         // Background floating letters animation
         this.bgAnim = new BackgroundAnimation(this.els.bgCanvas);
         this.bgAnim.start();
 
+        // ── Matter.js physics world (particles & debris) ──
+        try {
+            initPhysicsWorld(this.canvas);
+        } catch (e) {
+            console.warn('[Game] Matter.js init skipped:', e.message);
+        }
+
+        // ── PixiJS overlay (WebGL-accelerated particles) ──
+        const gameContainer = this.canvas.parentElement;
+        if (gameContainer) {
+            initPixiOverlay(gameContainer, this.canvas.width, this.canvas.height).catch(e => {
+                console.warn('[Game] PixiJS overlay init skipped:', e.message);
+            });
+        }
+
+        // ── Spine renderers: preload best available ──
+        loadSpineCanvas().catch(() => {});
+        loadSpineWebgl().catch(() => {});
+
         // Confetti state (handled by bgAnim)
 
         // Wrap title letters for wave animation
         this._wrapTitleLetters();
+
+        // GSAP: apply micro-interaction juice to all game buttons
+        juiceAllButtons('.size-btn, .diff-btn, .game-mode-btn, .control-btn, #bonus-btn, #start-game-btn, #resume-game-btn, #back-to-menu, .challenge-card, .nav-btn');
 
         // Start RAF loop
         requestAnimationFrame((t) => this._loop(t));
@@ -4455,6 +4592,9 @@ class Game {
                 this._shopBackTarget = null;
                 this._showScreen("play");
                 this.els.pauseOverlay.classList.add("active");
+            } else if (this._shopBackTarget === "wr-pause") {
+                this._shopBackTarget = null;
+                this._wrResumePause();
             } else {
                 this._showScreen("menu");
             }
@@ -4540,6 +4680,9 @@ class Game {
                 this._musicBackTarget = null;
                 this._showScreen("play");
                 this.els.pauseOverlay.classList.add("active");
+            } else if (this._musicBackTarget === "wr-pause") {
+                this._musicBackTarget = null;
+                this._wrResumePause();
             } else if (this._musicBackTarget === "challenges") {
                 this._musicBackTarget = null;
                 this._showScreen("challenges");
@@ -4743,6 +4886,10 @@ class Game {
         this._setMusicControlButton(this.els.wsMiniPrev, "prev", "Previous Track");
         this._setMusicControlButton(this.els.wsMiniNext, "next", "Next Track");
         this._setMusicControlButton(this.els.wsMiniToggle, "play", "Play");
+        // Word Runner mini player icons
+        this._setMusicControlButton(this.els.wrMiniPrev, "prev", "Previous Track");
+        this._setMusicControlButton(this.els.wrMiniNext, "next", "Next Track");
+        this._setMusicControlButton(this.els.wrMiniToggle, "play", "Play");
 
         // Shuffle & Repeat buttons (set initial icons)
         this._setMusicControlButton(this.els.npShuffle, "shuffle", "Shuffle");
@@ -5195,6 +5342,7 @@ class Game {
         this.els.shopScreen.classList.toggle("active", name === "shop");
         if (this.els.leaderboardScreen) this.els.leaderboardScreen.classList.toggle("active", name === "leaderboard");
         if (this.els.wsScreen) this.els.wsScreen.classList.toggle("active", name === "ws");
+        if (this.els.wrScreen) this.els.wrScreen.classList.toggle("active", name === "wr");
         if (name === "menu") {
             this._updateHighScoreDisplay();
             this._updateMenuStats();
@@ -5214,6 +5362,7 @@ class Game {
         }
         if (name === "play") this._updateMiniNowPlaying();
         if (name === "ws") this._wsUpdateMiniPlayer();
+        if (name === "wr") this._wrUpdateMiniPlayer();
         if (name === "profiles") this._renderProfilesList();
         if (name === "shop") this._renderShop();
         if (name === "leaderboard") {
@@ -5232,8 +5381,8 @@ class Game {
             }
         }
 
-        // Confetti on game over
-        if (name === "gameover") this._spawnConfetti();
+        // Confetti on new high score game over only
+        if (name === "gameover" && this._lastGameNewHighScore) this._spawnConfetti();
 
         // ── Sync screen to Preact store ──
         gameStore.set({ screen: name, gameState: this.state });
@@ -5285,13 +5434,17 @@ class Game {
     _closeWordsFound() {
         this._unbindWfSwipe();
         const target = this.wordsFoundBackTarget || "gameover";
-        this._showScreen(target === "pause" ? "play" : target);
-        if (target === "pause") {
-            this.state = State.PAUSED;
-            this.els.pauseOverlay.classList.add("active");
-        }
-        if (target === "play" && this.wordsFoundResumeState === State.PLAYING) {
-            this.state = State.PLAYING;
+        if (target === "wr-pause") {
+            this._wrResumePause();
+        } else {
+            this._showScreen(target === "pause" ? "play" : target);
+            if (target === "pause") {
+                this.state = State.PAUSED;
+                this.els.pauseOverlay.classList.add("active");
+            }
+            if (target === "play" && this.wordsFoundResumeState === State.PLAYING) {
+                this.state = State.PLAYING;
+            }
         }
         this.wordsFoundResumeState = null;
     }
@@ -5483,11 +5636,19 @@ class Game {
 
     _updateScoreDisplay() {
         const el = this.els.currentScore;
+        const prevScore = parseInt(el.textContent, 10) || 0;
         el.textContent = this.score;
-        // Pulse animation
-        el.classList.remove("score-bump");
-        void el.offsetWidth; // force reflow to restart animation
-        el.classList.add("score-bump");
+
+        // GSAP score bump: scale bounce + number roll for large jumps
+        gsap.fromTo(el, { scale: 1.15 }, {
+            scale: 1,
+            duration: 0.3,
+            ease: 'elastic.out(1, 0.4)',
+        });
+        if (this.score - prevScore > 50) {
+            numberRoll(el, prevScore, this.score, { duration: 0.4 });
+        }
+
         this._updateBonusButton();
         // Update coin count in HUD
         this._updatePlayCoins();
@@ -5764,50 +5925,26 @@ class Game {
         card.classList.remove("dust-out");
         overlay.classList.remove("hidden");
 
-        // Hold time matches card entrance animation (0.5s) + 0.5s buffer
-        const holdMs = 1000;
+        // GSAP-powered bonus unlock: card entrance → dust implosion → button pulse
+        bonusUnlockSequence(card, this.els.bonusBtn, overlay, 1000);
 
-        setTimeout(() => {
-            // Start dust-out on the card
-            card.classList.add("dust-out");
+        // PixiJS: sparkle burst at bonus button location
+        const btnRect = this.els.bonusBtn.getBoundingClientRect();
+        const canvasRect = this.canvas.getBoundingClientRect();
+        pixiSparkleBurst(btnRect.left - canvasRect.left + btnRect.width / 2, btnRect.top - canvasRect.top + btnRect.height / 2, 12);
 
-            // Spawn dust particles that travel to the bonus button
-            const cardRect = card.getBoundingClientRect();
-            const btnRect = this.els.bonusBtn.getBoundingClientRect();
-            const targetX = btnRect.left + btnRect.width / 2;
-            const targetY = btnRect.top + btnRect.height / 2;
-            const cx = cardRect.left + cardRect.width / 2;
-            const cy = cardRect.top + cardRect.height / 2;
+        // Matter.js: dust implosion physics toward button
+        const cardRect = card.getBoundingClientRect();
+        spawnDustImplosion(
+            cardRect.left - canvasRect.left + cardRect.width / 2,
+            cardRect.top - canvasRect.top + cardRect.height / 2,
+            btnRect.left - canvasRect.left + btnRect.width / 2,
+            btnRect.top - canvasRect.top + btnRect.height / 2,
+            10
+        );
 
-            const particleCount = 18;
-            for (let i = 0; i < particleCount; i++) {
-                const p = document.createElement("div");
-                p.className = "bonus-dust-particle";
-                // Scatter starting positions around the card center
-                const angle = (Math.PI * 2 * i) / particleCount;
-                const spread = 30 + Math.random() * 30;
-                const sx = cx + Math.cos(angle) * spread;
-                const sy = cy + Math.sin(angle) * spread;
-                p.style.left = sx + "px";
-                p.style.top = sy + "px";
-                document.body.appendChild(p);
-
-                const delay = i * 20;
-                const duration = 500 + Math.random() * 200;
-                p.animate([
-                    { left: sx + "px", top: sy + "px", opacity: 1, transform: "scale(1)" },
-                    { left: targetX + "px", top: targetY + "px", opacity: 0.3, transform: "scale(0.3)" }
-                ], { duration, delay, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" });
-
-                setTimeout(() => p.remove(), delay + duration + 50);
-            }
-
-            // Hide overlay after dust animation
-            setTimeout(() => {
-                overlay.classList.add("hidden");
-                card.classList.remove("dust-out");
-            }, 700);
-        }, holdMs);
+        // Kaboom: emit event for bonus unlock tracking
+        kEmit('bonusUnlock', { type: this.availableBonusType });
     }
 
     _openLetterChoiceModal() {
@@ -6319,6 +6456,13 @@ class Game {
             return;
         }
 
+        // Word Runner uses its own resume flow
+        if (saved.type === "word-runner") {
+            this._clearGameState();
+            this._wrResumeFromSave(saved);
+            return;
+        }
+
         this.gridSize = saved.gridSize;
         this.difficulty = saved.difficulty || "casual";
         if (this.difficulty === "challenging") this.difficulty = "hard";
@@ -6778,6 +6922,17 @@ class Game {
         this.renderer.blastProgress = 0;
         this.renderer.spawnParticles(cellsToClear);
         this._pendingClearCells = cellsToClear;
+
+        // Matter.js: bomb explosion shrapnel burst
+        const blastCenter = this.renderer.cellCenter(row, col);
+        if (blastCenter) {
+            spawnExplosion(blastCenter.x, blastCenter.y, 25);
+            spawnImpactRing(blastCenter.x, blastCenter.y, 2);
+        }
+        // PixiJS: sparkle burst at blast center
+        if (blastCenter) {
+            pixiSparkleBurst(blastCenter.x, blastCenter.y, 15);
+        }
     }
 
     _checkWords(triggerRow, triggerCol) {
@@ -6945,15 +7100,14 @@ class Game {
         el.textContent = chainCount < labels.length ? labels[chainCount] : `🔥🔥🔥 CHAIN ×${chainCount}!!!`;
         el.classList.remove("hidden", "pop");
         el.classList.add("visible");
-        void el.offsetWidth;
-        el.classList.add("pop");
+        // GSAP-powered elastic entrance
+        chainBannerEntrance(el, chainCount);
     }
 
     _hideChainBanner() {
         const el = this.els.chainBanner;
         if (!el) return;
-        el.classList.remove("visible", "pop");
-        el.classList.add("hidden");
+        chainBannerExit(el);
     }
 
     _addWordPopupRow(entry) {
@@ -6999,26 +7153,84 @@ class Game {
 
         container.appendChild(row);
 
+        // GSAP letter assembly for non-bonus rows
+        if (!entry.isBonus) {
+            const letterSpans = row.querySelectorAll('.word-popup-letter');
+            letterAssemble(row, letterSpans);
+        }
+
         // Pause falling while any popup row is visible
         this._wordPopupActive = true;
         if (!this._wordPopupCount) this._wordPopupCount = 0;
         this._wordPopupCount++;
 
-        const holdMs = (animDuration + 0.5) * 1000;
+        // Track active timers for cleanup on game over / resume
+        if (!this._wordPopupTimers) this._wordPopupTimers = [];
+
+        const holdMs = Math.min((animDuration + 0.5) * 1000, 1500);
 
         // Each row exits on its own timer after its animation completes
-        setTimeout(() => {
-            row.classList.add("pop-out");
-            setTimeout(() => {
-                row.remove();
-                this._wordPopupCount--;
-                if (this._wordPopupCount <= 0) {
-                    this._wordPopupCount = 0;
-                    this._wordPopupActive = false;
-                    if (!this.block) this._spawnBlock();
+        const timerId = setTimeout(() => {
+            this._removePopupTimer(timerId);
+            try {
+                const tween = wordPopupExit(row);
+                if (tween && typeof tween.eventCallback === 'function') {
+                    tween.eventCallback('onComplete', () => {
+                        this._decrementPopupCount();
+                    });
+                } else {
+                    // GSAP returned no tween — force cleanup after fallback duration
+                    setTimeout(() => this._decrementPopupCount(), 400);
                 }
-            }, 400);
+            } catch (e) {
+                // GSAP failure — remove row manually and decrement
+                if (row.parentNode) row.parentNode.removeChild(row);
+                this._decrementPopupCount();
+            }
         }, holdMs);
+        this._wordPopupTimers.push(timerId);
+
+        // Absolute failsafe: if this popup still hasn't cleared after 2s, force-clear it
+        const failsafeId = setTimeout(() => {
+            this._removePopupTimer(failsafeId);
+            if (row.parentNode) row.parentNode.removeChild(row);
+            // Only decrement if this row is still counted
+            if (this._wordPopupCount > 0) {
+                this._decrementPopupCount();
+            }
+        }, holdMs + 2000);
+        this._wordPopupTimers.push(failsafeId);
+    }
+
+    _decrementPopupCount() {
+        this._wordPopupCount--;
+        if (this._wordPopupCount <= 0) {
+            this._wordPopupCount = 0;
+            this._wordPopupActive = false;
+            if (!this.block) this._spawnBlock();
+        }
+    }
+
+    _removePopupTimer(id) {
+        if (this._wordPopupTimers) {
+            const idx = this._wordPopupTimers.indexOf(id);
+            if (idx !== -1) this._wordPopupTimers.splice(idx, 1);
+        }
+    }
+
+    _clearAllWordPopups() {
+        // Cancel all pending popup timers
+        if (this._wordPopupTimers) {
+            for (const id of this._wordPopupTimers) clearTimeout(id);
+            this._wordPopupTimers = [];
+        }
+        // Remove all popup rows from DOM
+        if (this.els.wordPopup) {
+            this.els.wordPopup.innerHTML = '';
+        }
+        // Reset popup state
+        this._wordPopupCount = 0;
+        this._wordPopupActive = false;
     }
 
 
@@ -7038,6 +7250,7 @@ class Game {
 
         this.state = State.GAMEOVER;
         this.block = null;
+        this._clearAllWordPopups();  // Clean up any pending popups
         this.audio.gameOver();
         this.renderer.hintCells = new Set();
         this.renderer.validatedCells = new Set();
@@ -7084,6 +7297,7 @@ class Game {
                 isNew = this.score > 0;
             }
         }
+        this._lastGameNewHighScore = isNew;
 
         // ── XP Calculation ──
         const gs = this.activeChallenge ? this.challengeGridSize : this.gridSize;
@@ -7165,6 +7379,42 @@ class Game {
         this.els.finalScore.textContent = finalText;
         this.els.newHighScore.classList.toggle("hidden", !isNew);
 
+        // GSAP: Roll up the score number from 0
+        if (this.score > 0) {
+            numberRoll(this.els.finalScore, 0, this.score, {
+                duration: 0.8,
+                prefix: 'Score: ',
+            });
+        }
+
+        // GSAP: confetti on new high score
+        if (isNew && this.els.gameoverScreen) {
+            confettiRain(this.els.gameoverScreen, 60, 2.0);
+            // PixiJS: WebGL confetti burst
+            pixiConfettiBurst(80);
+            // Matter.js: physics confetti rain
+            spawnConfettiPhysics(50);
+        }
+
+        // Matter.js: Falling letter physics cascade on every game over
+        if (this.grid && this.grid.cells) {
+            const cvs = this.canvas;
+            const cellW = cvs ? cvs.width / (this.gridSize || 5) : 40;
+            const cellH = cvs ? cvs.height / (this.gridSize || 5) : 40;
+            let delay = 0;
+            for (let r = (this.gridSize || 5) - 1; r >= 0; r--) {
+                for (let c = 0; c < (this.gridSize || 5); c++) {
+                    const cell = this.grid.cells[r]?.[c];
+                    if (cell && cell.letter) {
+                        setTimeout(() => {
+                            spawnFallingLetter(c * cellW + cellW / 2, r * cellH + cellH / 2, cell.letter);
+                        }, delay);
+                        delay += 30;
+                    }
+                }
+            }
+        }
+
         // Store challenge type for gameover screen buttons before resetting
         this._gameOverChallenge = this.activeChallenge;
         this._gameOverCategoryKey = this.activeCategoryKey;
@@ -7201,6 +7451,21 @@ class Game {
             difficultyMultiplier: this.difficulty === "hard" ? 1.5 : 1.0,
             modeMultiplier: this.gameMode === GAME_MODES.TIMED ? 1.2 : 1.0,
         });
+
+        // ── OpenSkill: compute competitive rating for this game result ──
+        try {
+            // Compute a percentile estimate from score (higher score → higher percentile)
+            const scorePercentile = Math.min(95, Math.max(5, 25 * Math.log10(1 + this.score / 100)));
+            const skillResult = processGameResults(
+                this._playerOpenSkillRating || null,
+                [{ percentile: scorePercentile }]
+            );
+            this._playerOpenSkillRating = { mu: skillResult.mu, sigma: skillResult.sigma };
+            this._playerOrdinal = skillResult.ordinal;
+            console.log(`[OpenSkill] Rating: μ=${skillResult.mu.toFixed(1)} σ=${skillResult.sigma.toFixed(1)} ordinal=${skillResult.ordinal.toFixed(1)}`);
+        } catch (err) {
+            console.warn('[OpenSkill] Rating computation failed:', err);
+        }
 
         // ── Sync profile state (level, xp, coins, stats) to cloud ──
         this._syncProfileToCloud();
@@ -7314,15 +7579,23 @@ class Game {
         this.els.levelUpBarFill.style.width = "0%";
         this.els.levelUpOverlay.classList.add("active");
 
-        setTimeout(() => {
-            this.els.levelUpBarFill.style.transition = "width 0.8s cubic-bezier(0.22,1,0.36,1)";
-            this.els.levelUpBarFill.style.width = pct + "%";
-        }, 400);
+        // GSAP: animate the progress bar fill
+        gsap.fromTo(this.els.levelUpBarFill, { width: '0%' }, {
+            width: pct + '%',
+            duration: 0.8,
+            delay: 0.4,
+            ease: 'power2.out',
+        });
 
-        // Confetti burst
+        // Confetti burst — GSAP rain + background system
+        confettiRain(this.els.levelUpOverlay, 80, 2.5);
         if (this.bgAnim && this.bgAnim.spawnConfetti) {
             this.bgAnim.spawnConfetti();
         }
+        // PixiJS: star burst for level up
+        pixiStarBurst(this.canvas.width / 2, this.canvas.height / 3, 20);
+        // Matter.js: physics confetti rain
+        spawnConfettiPhysics(60);
     }
 
     _showXPTutorial(newLevel) {
@@ -7764,23 +8037,22 @@ class Game {
             if (isEquipped) badgeHtml = '<span class="shop-item-badge equipped-badge">Equipped</span>';
             else if (owned && !isPerk) badgeHtml = '<span class="shop-item-badge owned-badge">Owned</span>';
 
-            let previewHtml = "";
-            if (item.color) {
-                previewHtml = `<div class="shop-item-color-swatch" style="background:${item.color}"></div>`;
-            }
-
             let perkCountHtml = isPerk && perkCount > 0 ? `<div class="shop-perk-count">${perkCount} remaining</div>` : "";
 
             card.innerHTML = `
                 ${badgeHtml}
+                <canvas class="shop-preview-canvas" width="100" height="80"></canvas>
                 <div class="shop-item-name">${item.name}</div>
-                ${previewHtml}
                 <div class="shop-item-desc">${item.preview}</div>
                 ${perkCountHtml}
                 <div class="shop-item-actions">
                     ${this._shopItemButton(id, item, owned, isEquipped, isPerk)}
                 </div>
             `;
+
+            // Draw preview on the canvas
+            const cvs = card.querySelector(".shop-preview-canvas");
+            if (cvs) this._drawShopPreview(cvs, id, item, tabName);
 
             // Bind actions
             const btn = card.querySelector(".shop-action-btn");
@@ -7847,6 +8119,166 @@ class Game {
             this._showShopToast(msg);
         } else if (result.reason === "insufficient_coins") {
             this._showShopToast("Not enough coins!");
+        }
+    }
+
+    _drawShopPreview(canvas, id, item, tabName) {
+        const ctx = canvas.getContext("2d");
+        const w = canvas.width, h = canvas.height;
+
+        if (tabName === "grid_themes") {
+            // Draw a mini 3x3 grid with theme colors
+            const theme = GRID_THEMES[id] || GRID_THEMES.theme_default;
+            ctx.fillStyle = theme.bg;
+            ctx.fillRect(0, 0, w, h);
+
+            const cellSize = 18;
+            const gridW = cellSize * 3;
+            const offsetX = (w - gridW) / 2;
+            const offsetY = (h - gridW) / 2;
+            const sampleLetters = ["P", "L", "U", "M", "M", "E", "T", "!", "★"];
+
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const x = offsetX + c * cellSize;
+                    const y = offsetY + r * cellSize;
+                    ctx.fillStyle = theme.cell;
+                    ctx.fillRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+                    // Grid lines
+                    ctx.strokeStyle = theme.gridLine;
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+                    // Letters
+                    ctx.fillStyle = theme.text;
+                    ctx.font = "bold 9px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(sampleLetters[r * 3 + c], x + cellSize / 2, y + cellSize / 2);
+                }
+            }
+            // Accent border around grid
+            if (theme.border) {
+                ctx.strokeStyle = theme.border;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(offsetX, offsetY, gridW, gridW);
+            }
+            // Glow effect
+            if (theme.glow) {
+                ctx.shadowColor = theme.glow;
+                ctx.shadowBlur = 8;
+                ctx.strokeStyle = theme.border || theme.text;
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(offsetX, offsetY, gridW, gridW);
+                ctx.shadowBlur = 0;
+            }
+        } else if (tabName === "block_styles") {
+            // Draw sample letter tiles
+            const style = BLOCK_STYLES[id] || BLOCK_STYLES.block_default;
+            ctx.fillStyle = "#1a1a2e";
+            ctx.fillRect(0, 0, w, h);
+
+            const tileSize = 22;
+            const letters = ["W", "O", "R", "D"];
+            const startX = (w - letters.length * (tileSize + 3)) / 2;
+            const y = (h - tileSize) / 2;
+
+            for (let i = 0; i < letters.length; i++) {
+                const x = startX + i * (tileSize + 3);
+
+                if (style.type === "bubble") {
+                    // Round bubble
+                    const cx = x + tileSize / 2, cy = y + tileSize / 2;
+                    const gradient = ctx.createRadialGradient(cx - 3, cy - 3, 2, cx, cy, tileSize * 0.45);
+                    gradient.addColorStop(0, "#e0e8f0");
+                    gradient.addColorStop(1, "#8090b0");
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, tileSize * 0.42, 0, Math.PI * 2);
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                } else if (style.type === "scrabble") {
+                    // Wooden tile
+                    ctx.fillStyle = style.tileColor || "#d4b87a";
+                    ctx.fillRect(x, y, tileSize, tileSize);
+                    ctx.strokeStyle = style.tileBorder || "#a08848";
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x + 0.5, y + 0.5, tileSize - 1, tileSize - 1);
+                } else if (style.type === "typewriter") {
+                    // Typewriter key
+                    ctx.fillStyle = "#333";
+                    const r = 3;
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, tileSize, tileSize, r);
+                    ctx.fill();
+                    ctx.strokeStyle = "#555";
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                } else if (style.type === "pixel") {
+                    // Pixel blocky
+                    const ps = 4;
+                    for (let py = 0; py < tileSize; py += ps) {
+                        for (let px = 0; px < tileSize; px += ps) {
+                            const brightness = 40 + Math.floor(Math.random() * 30);
+                            ctx.fillStyle = `rgb(${brightness},${brightness + 20},${brightness + 40})`;
+                            ctx.fillRect(x + px, y + py, ps - 0.5, ps - 0.5);
+                        }
+                    }
+                } else if (style.type === "glass") {
+                    // Glass transparent
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillStyle = "#4060a0";
+                    ctx.fillRect(x, y, tileSize, tileSize);
+                    ctx.globalAlpha = 0.2;
+                    ctx.fillStyle = "#fff";
+                    ctx.fillRect(x + 2, y + 2, tileSize - 4, tileSize / 2 - 2);
+                    ctx.globalAlpha = 1;
+                } else {
+                    // Flat default
+                    ctx.fillStyle = "#2a2a42";
+                    ctx.fillRect(x, y, tileSize, tileSize);
+                }
+
+                // Letter text
+                ctx.fillStyle = style.type === "typewriter" ? (style.inkColor || "#ddd") :
+                                style.type === "scrabble" ? "#3a2a10" : "#e0e0f0";
+                ctx.font = style.type === "typewriter" ? "bold 10px 'Courier New', monospace" :
+                           style.type === "pixel" ? "bold 10px monospace" : "bold 10px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(letters[i], x + tileSize / 2, y + tileSize / 2 + 1);
+
+                // Scrabble point value
+                if (style.showPoints) {
+                    ctx.fillStyle = "#6a5020";
+                    ctx.font = "6px sans-serif";
+                    ctx.textAlign = "right";
+                    ctx.fillText(String(i + 1), x + tileSize - 2, y + tileSize - 2);
+                }
+            }
+        } else if (tabName === "starting_perks") {
+            // Draw perk icon
+            ctx.fillStyle = "#1a1a2e";
+            ctx.fillRect(0, 0, w, h);
+
+            const perkIcons = {
+                perk_headstart: "🚀",
+                perk_slowstart: "🐢",
+                perk_bonusboost: "⚡",
+                perk_comboext: "🔗",
+                perk_luckydraw: "🎲",
+            };
+
+            const icon = perkIcons[id] || "✨";
+            ctx.font = "28px serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(icon, w / 2, h / 2);
+
+            // Subtle glow ring
+            ctx.strokeStyle = "rgba(100,180,255,0.15)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(w / 2, h / 2, 24, 0, Math.PI * 2);
+            ctx.stroke();
         }
     }
 
@@ -8192,6 +8624,14 @@ class Game {
         if (this.els.npMiniProgressFill) {
             this.els.npMiniProgressFill.style.width = pct + "%";
         }
+        // Word Search mini progress
+        if (this.els.wsMiniProgressFill) {
+            this.els.wsMiniProgressFill.style.width = pct + "%";
+        }
+        // Word Runner mini progress
+        if (this.els.wrMiniProgressFill) {
+            this.els.wrMiniProgressFill.style.width = pct + "%";
+        }
     }
 
     _updateMiniNowPlaying() {
@@ -8200,6 +8640,8 @@ class Game {
         this._setMusicControlButton(this.els.npMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
         // Keep Word Search mini player in sync
         this._wsUpdateMiniPlayer();
+        // Keep Word Runner mini player in sync
+        this._wrUpdateMiniPlayer();
     }
 
     // ── Tutorial System (Sub-menu + Animated Canvas Slides) ──
@@ -9106,6 +9548,220 @@ class Game {
                             // Level badge
                             gT(ctx, w / 2, oy + gs * cs + cs * 0.5, 'Lv. 1 — 7:00', '#b0a878', Math.floor(cs * 0.3));
                         }
+                    },
+                    {
+                        title: 'Word Runner',
+                        desc: 'Word Runner is a side-scrolling action mode! Your character runs automatically through a neon-lit procedural world. TAP or PRESS SPACE to jump — you get up to 5 jumps (1 ground + 4 air). Dodge spike obstacles and leap over gaps — falling into a hole or hitting spikes ends the game! Floating letters appear in the air — run into them to collect and fill your word boxes. Press the VALIDATE button (or tap a filled box) to submit your word. Valid words earn big points and bonus coins; invalid words shake and clear. Choose your target word length (3-8) before starting. Speed increases the further you go!',
+                        _spineState: null,
+                        draw(ctx, w, h, t) {
+                            // Initialize Spine skeleton lazily on first draw
+                            if (!this._spineState) {
+                                try {
+                                    const skData = createProceduralSkeleton('tutorial-wr-runner');
+                                    buildHumanoidAnimations(skData);
+                                    this._spineState = {
+                                        skeleton: spineCreateSkeleton(skData),
+                                        animState: spineCreateAnimState(skData),
+                                        lastT: t,
+                                    };
+                                    this._spineState.animState.setAnimation(0, 'run', true);
+                                } catch (e) {
+                                    this._spineState = { fallback: true };
+                                }
+                            }
+
+                            const groundY = h * 0.72;
+                            const scrollX = t * 40;
+
+                            // Neon gradient background
+                            const grd = ctx.createLinearGradient(0, 0, 0, h);
+                            grd.addColorStop(0, '#0a0e1a');
+                            grd.addColorStop(0.6, '#111830');
+                            grd.addColorStop(1, '#0a1520');
+                            ctx.fillStyle = grd;
+                            ctx.fillRect(0, 0, w, h);
+
+                            // Distant neon city silhouette
+                            ctx.fillStyle = '#141a2e';
+                            for (let i = 0; i < 6; i++) {
+                                const bx = ((i * w * 0.22 - t * 8) % (w * 1.5) + w * 1.7) % (w * 1.5) - w * 0.1;
+                                const bh = 20 + (i * 17) % 35;
+                                ctx.fillRect(bx, groundY - bh, w * 0.08, bh);
+                            }
+
+                            // Ground with neon edge
+                            ctx.fillStyle = '#1a3040';
+                            ctx.fillRect(0, groundY, w, h - groundY);
+                            ctx.strokeStyle = '#00ccaa'; ctx.lineWidth = 2;
+                            ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(w, groundY); ctx.stroke();
+
+                            // Gap (hole) in the ground — scrolls
+                            const gapX = ((w * 0.65 - scrollX * 0.5) % w + w * 1.3) % w - w * 0.1;
+                            const gapW = w * 0.12;
+                            ctx.fillStyle = '#0a0e1a';
+                            ctx.fillRect(gapX, groundY, gapW, h - groundY);
+                            // Re-draw ground edges around gap
+                            ctx.strokeStyle = '#00ccaa'; ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.moveTo(gapX, groundY); ctx.lineTo(gapX, groundY + 15);
+                            ctx.moveTo(gapX + gapW, groundY); ctx.lineTo(gapX + gapW, groundY + 15);
+                            ctx.stroke();
+
+                            // Scrolling spike clusters
+                            const spikePositions = [0.35, 0.82];
+                            for (const sp of spikePositions) {
+                                const sx = ((sp * w - scrollX * 0.5) % w + w * 1.3) % w - w * 0.1;
+                                ctx.fillStyle = '#ff4444';
+                                for (let s = 0; s < 3; s++) {
+                                    const ox = sx + s * 8;
+                                    ctx.beginPath();
+                                    ctx.moveTo(ox - 4, groundY);
+                                    ctx.lineTo(ox, groundY - 10);
+                                    ctx.lineTo(ox + 4, groundY);
+                                    ctx.closePath();
+                                    ctx.fill();
+                                }
+                                // Spike glow
+                                ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 6;
+                                ctx.fillStyle = '#ff6666';
+                                ctx.beginPath();
+                                ctx.moveTo(sx + 4, groundY);
+                                ctx.lineTo(sx + 8, groundY - 10);
+                                ctx.lineTo(sx + 12, groundY);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+                            }
+
+                            // Floating neon letters
+                            const ltrs = ['P','L','U','M','M','E','T'];
+                            for (let i = 0; i < 5; i++) {
+                                const lx = ((i * w * 0.25 + w * 0.15 - scrollX * 0.8) % w + w * 1.3) % w - w * 0.15;
+                                const ly = groundY - 30 + Math.sin(t * 3 + i * 1.5) * 8;
+                                const lClr = i % 3 === 0 ? '#ffaa00' : '#00ddff';
+                                ctx.shadowColor = lClr; ctx.shadowBlur = 10;
+                                ctx.fillStyle = lClr;
+                                ctx.font = `bold ${Math.floor(w * 0.065)}px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(ltrs[i % ltrs.length], lx, ly);
+                            }
+                            ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+
+                            // Word boxes at top with neon styling
+                            const boxCount = 5, boxW = w * 0.1, boxH = w * 0.08;
+                            const boxStartX = (w - boxCount * (boxW + 5)) / 2;
+                            const collected = Math.floor(t * 0.7) % (boxCount + 1);
+                            for (let i = 0; i < boxCount; i++) {
+                                const bx = boxStartX + i * (boxW + 5), by = 8;
+                                ctx.fillStyle = i < collected ? 'rgba(0,204,170,0.2)' : 'rgba(255,255,255,0.04)';
+                                ctx.fillRect(bx, by, boxW, boxH);
+                                ctx.strokeStyle = i < collected ? '#00ccaa' : '#334455';
+                                ctx.lineWidth = 1;
+                                ctx.strokeRect(bx, by, boxW, boxH);
+                                if (i < collected) {
+                                    ctx.fillStyle = '#fff';
+                                    ctx.font = `bold ${Math.floor(boxH * 0.55)}px sans-serif`;
+                                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                    ctx.fillText(ltrs[i], bx + boxW / 2, by + boxH / 2);
+                                }
+                            }
+
+                            // Validate button indicator (green check) — pulses when word complete
+                            if (collected >= boxCount) {
+                                const btnX = w * 0.85, btnY = 8 + boxH / 2;
+                                const pulse = 0.9 + Math.sin(t * 6) * 0.1;
+                                ctx.save();
+                                ctx.translate(btnX, btnY);
+                                ctx.scale(pulse, pulse);
+                                ctx.fillStyle = '#22aa44';
+                                ctx.beginPath();
+                                ctx.roundRect(-14, -10, 28, 20, 4);
+                                ctx.fill();
+                                ctx.strokeStyle = '#44ff66'; ctx.lineWidth = 1.5;
+                                ctx.beginPath();
+                                ctx.roundRect(-14, -10, 28, 20, 4);
+                                ctx.stroke();
+                                ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(boxH * 0.5)}px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText('✓', 0, 0);
+                                ctx.restore();
+                            }
+
+                            // Spine character or fallback stick figure
+                            const charX = w * 0.25;
+                            const jumpCyc = t % 3;
+                            const charY = jumpCyc > 1.5 && jumpCyc < 2.3
+                                ? groundY - Math.sin((jumpCyc - 1.5) / 0.8 * Math.PI) * 30
+                                : groundY;
+
+                            if (this._spineState && !this._spineState.fallback) {
+                                const sk = this._spineState.skeleton;
+                                const anim = this._spineState.animState;
+                                const dt = t - this._spineState.lastT;
+                                this._spineState.lastT = t;
+
+                                const airborne = charY < groundY;
+                                const cur = anim.getCurrent(0)?.animation?.name;
+                                if (airborne && cur !== 'jump') anim.setAnimation(0, 'jump', false);
+                                else if (!airborne && cur === 'jump') anim.setAnimation(0, 'run', true);
+
+                                try {
+                                    anim.update(Math.max(0.016, dt));
+                                    anim.apply(sk);
+                                    sk.x = charX;
+                                    sk.y = charY;
+                                    sk.scaleX = 1.2;
+                                    sk.scaleY = 1.2;
+                                    sk.update(Math.max(0.016, dt));
+                                    sk.updateWorldTransform(spineCore.Physics.update);
+                                } catch { /* Spine frame skip */ }
+
+                                const bones = sk.bones;
+                                ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+                                for (let bi = 1; bi < bones.length; bi++) {
+                                    const bone = bones[bi], parent = bone.parent;
+                                    if (!parent) continue;
+                                    ctx.beginPath();
+                                    ctx.moveTo(parent.worldX, parent.worldY);
+                                    ctx.lineTo(bone.worldX, bone.worldY);
+                                    ctx.stroke();
+                                    ctx.beginPath(); ctx.fillStyle = '#ffd700';
+                                    ctx.arc(bone.worldX, bone.worldY, 2.5, 0, Math.PI * 2);
+                                    ctx.fill();
+                                }
+                                const headBone = sk.findBone('head');
+                                if (headBone) {
+                                    ctx.beginPath(); ctx.fillStyle = '#ffaa00';
+                                    ctx.arc(headBone.worldX, headBone.worldY - 7, 7, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 8;
+                                    ctx.beginPath(); ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+                                    ctx.arc(headBone.worldX, headBone.worldY - 7, 7, 0, Math.PI * 2);
+                                    ctx.stroke();
+                                    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+                                }
+                            } else {
+                                // Fallback neon stick figure
+                                const phase = t * 6;
+                                ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+                                ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 6;
+                                ctx.beginPath(); ctx.arc(charX, charY - 20, 5, 0, Math.PI * 2); ctx.stroke();
+                                ctx.beginPath(); ctx.moveTo(charX, charY - 15); ctx.lineTo(charX, charY - 4); ctx.stroke();
+                                const aS = Math.sin(phase) * 0.6;
+                                ctx.beginPath(); ctx.moveTo(charX, charY - 12);
+                                ctx.lineTo(charX + Math.sin(aS) * 8, charY - 12 + Math.cos(aS) * 6); ctx.stroke();
+                                ctx.beginPath(); ctx.moveTo(charX, charY - 12);
+                                ctx.lineTo(charX + Math.sin(-aS) * 8, charY - 12 + Math.cos(-aS) * 6); ctx.stroke();
+                                const lS = Math.sin(phase) * 0.7;
+                                ctx.beginPath(); ctx.moveTo(charX, charY - 4);
+                                ctx.lineTo(charX + Math.sin(-lS) * 7, charY - 4 + Math.cos(-lS) * 8); ctx.stroke();
+                                ctx.beginPath(); ctx.moveTo(charX, charY - 4);
+                                ctx.lineTo(charX + Math.sin(lS) * 7, charY - 4 + Math.cos(lS) * 8); ctx.stroke();
+                                ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+                            }
+
+                            gT(ctx, w / 2, h - 14, '🏃 Tap to jump! Collect letters!', '#00ccaa', Math.floor(w * 0.04));
+                        }
                     }
                 ]
             },
@@ -9166,7 +9822,7 @@ class Game {
                     },
                     {
                         title: 'Classes & Tabs',
-                        desc: 'Players are grouped into three classes based on their skill rating: HIGH CLASS (top tier, gold), MEDIUM CLASS (mid tier, blue), and LOW CLASS (still climbing). Filter the leaderboard by class to see where you stand among similar players. The leaderboard has tabs for OVERALL ranking plus separate tabs for each challenge mode — Target Word, Speed Round, Word Category, and Word Search — each with its own independent skill rating!',
+                        desc: 'Players are grouped into three classes based on their skill rating: HIGH CLASS (top tier, gold), MEDIUM CLASS (mid tier, blue), and LOW CLASS (still climbing). Filter the leaderboard by class to see where you stand among similar players. The leaderboard has tabs for OVERALL ranking plus separate tabs for each challenge mode — Target Word, Speed Round, Word Category, Word Search, and Word Runner — each with its own independent skill rating!',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10792,6 +11448,13 @@ class Game {
         if (this.comboCount > this.bestCombo) this.bestCombo = this.comboCount;
         this.comboTimer = COMBO_WINDOW_SECONDS + (this._activePerks && this._activePerks.comboext ? 4 : 0); // reset combo timer
 
+        // PixiJS: star burst for combo streaks
+        if (this.comboCount >= 3) {
+            pixiStarBurst(this.canvas.width / 2, this.canvas.height / 2, this.comboCount * 4);
+        }
+        // Kaboom: emit combo event
+        kEmit('combo', { count: this.comboCount, words: toClaim.length });
+
         // ── Difficulty progression ──
         const newDiffLevel = Math.min(DIFFICULTY_MAX_LEVEL, 1 + Math.floor(this._totalWordsThisGame / DIFFICULTY_WORDS_PER_LEVEL));
         if (newDiffLevel > this._difficultyLevel) {
@@ -10799,6 +11462,20 @@ class Game {
             // Speed up slightly (only in non-challenge, non-speed modes)
             if (this.activeChallenge !== CHALLENGE_TYPES.SPEED_ROUND) {
                 this.fallInterval = Math.max(0.25, this._baseFallInterval - (this._difficultyLevel - 1) * DIFFICULTY_SPEED_STEP);
+            }
+        }
+
+        // ── Dynamic difficulty: record word-finding performance ──
+        if (this._dynamicDifficulty) {
+            for (const group of toClaim) {
+                const perf = DynamicDifficulty.scoreWordFound(group.word.length, 5, 60);
+                this._dynamicDifficulty.recordPerformance(perf);
+            }
+            // Modulate fall speed by dynamic difficulty tier's fallSpeedMult
+            const tier = this._dynamicDifficulty.getTier();
+            if (this.activeChallenge !== CHALLENGE_TYPES.SPEED_ROUND) {
+                const base = Math.max(0.25, this._baseFallInterval - (this._difficultyLevel - 1) * DIFFICULTY_SPEED_STEP);
+                this.fallInterval = Math.max(0.20, base / tier.fallSpeedMult);
             }
         }
 
@@ -10945,7 +11622,7 @@ class Game {
         this.els.challengeSetupName.textContent = `${meta.icon} ${meta.title}`;
         this._setupCategorySelector(key);
         const gridSizeSel = document.getElementById("challenge-grid-size-selector");
-        if (gridSizeSel) gridSizeSel.classList.toggle("hidden", key === CHALLENGE_TYPES.WORD_SEARCH);
+        if (gridSizeSel) gridSizeSel.classList.toggle("hidden", key === CHALLENGE_TYPES.WORD_SEARCH || key === CHALLENGE_TYPES.WORD_RUNNER);
         this._showScreen("challengesetup");
     }
 
@@ -10958,6 +11635,7 @@ class Game {
             const stats = this.profileMgr.getChallengeStats(key);
             const card = document.createElement("div");
             card.className = "challenge-card";
+            card.dataset.challenge = key;
             const levelInfo = (key === CHALLENGE_TYPES.TARGET_WORD || key === CHALLENGE_TYPES.WORD_SEARCH)
                 ? `<span class="challenge-level-badge">Lv.${(key === CHALLENGE_TYPES.WORD_SEARCH ? this.profileMgr.getWordSearchLevel() : stats.targetWordLevel) || 1}</span>` : '';
             card.innerHTML = `
@@ -10976,10 +11654,17 @@ class Game {
             });
             grid.appendChild(card);
 
+            // GSAP overlay effect for challenge card preview
+            const previewOvl = challengePreviewOverlay(card, key);
+            if (previewOvl) this._challengePreviewAnimations.push(previewOvl);
+
             // Start animated preview on the card's canvas
             const canvas = card.querySelector("canvas");
             this._startChallengePreview(canvas, key);
         }
+
+        // GSAP staggered entrance for all challenge cards
+        challengeGridEntrance(grid.querySelectorAll('.challenge-card'));
     }
 
     _setupCategorySelector(challengeKey) {
@@ -11441,10 +12126,209 @@ class Game {
             this._challengePreviewAnimations.push(id);
             return;
         }
+
+        // ─── WORD RUNNER preview ──────────────────────────────────
+        if (challengeType === CHALLENGE_TYPES.WORD_RUNNER) {
+            const groundY = size * 0.78;
+            let tick = 0;
+            let runnerX = size * 0.25;
+            let runnerY = groundY;
+            let vy = 0;
+            const rocks = [
+                { x: size * 0.6, w: 8, h: 14 },
+                { x: size * 1.1, w: 10, h: 16 },
+            ];
+            const letters = [
+                { x: size * 0.45, y: groundY - 28, ch: "W" },
+                { x: size * 0.85, y: groundY - 32, ch: "O" },
+                { x: size * 1.25, y: groundY - 26, ch: "R" },
+            ];
+            let scrollX = 0;
+
+            const draw = () => {
+                tick++;
+                scrollX += 1.2;
+
+                // Auto-jump near rocks
+                const onGround = runnerY >= groundY;
+                for (const r of rocks) {
+                    const rx = ((r.x - scrollX) % (size * 1.0) + size * 1.3) % (size * 1.0) - size * 0.1;
+                    if (rx > runnerX && rx < runnerX + 35 && onGround) {
+                        vy = -6.5;
+                    }
+                }
+                // Gravity
+                if (!onGround || vy < 0) {
+                    vy += 0.45;
+                    runnerY += vy;
+                    if (runnerY >= groundY) {
+                        runnerY = groundY;
+                        vy = 0;
+                    }
+                }
+
+                // Deep navy background (matches WR game)
+                ctx.fillStyle = "#0a0e1a";
+                ctx.fillRect(0, 0, size, size);
+
+                // Distant stars
+                if (tick === 1) {
+                    canvas._stars = [];
+                    for (let i = 0; i < 15; i++) {
+                        canvas._stars.push({
+                            x: Math.random() * size,
+                            y: Math.random() * groundY * 0.7,
+                            r: 0.3 + Math.random() * 1,
+                            a: 0.1 + Math.random() * 0.3,
+                        });
+                    }
+                }
+                if (canvas._stars) {
+                    for (const s of canvas._stars) {
+                        ctx.fillStyle = `rgba(51,68,102,${s.a})`;
+                        ctx.beginPath();
+                        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+
+                // Ground — teal edge line + dark fill
+                ctx.fillStyle = "#1a3040";
+                ctx.fillRect(0, groundY, size, size - groundY);
+                ctx.strokeStyle = "#00ccaa";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(0, groundY);
+                ctx.lineTo(size, groundY);
+                ctx.stroke();
+
+                // Ground detail pebbles
+                ctx.fillStyle = "rgba(0,204,170,0.1)";
+                for (let x = (tick * 0.6) % 18; x < size; x += 18 + 5) {
+                    ctx.fillRect(x, groundY + 3, 1, 1);
+                }
+
+                // Spike obstacles (red, matching WR spikes)
+                ctx.fillStyle = "#cc2244";
+                for (const r of rocks) {
+                    const rx = ((r.x - scrollX) % (size * 1.0) + size * 1.3) % (size * 1.0) - size * 0.1;
+                    // Triangle spike
+                    ctx.beginPath();
+                    ctx.moveTo(rx, groundY);
+                    ctx.lineTo(rx + r.w / 2, groundY - r.h);
+                    ctx.lineTo(rx + r.w, groundY);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Dark base
+                    ctx.fillStyle = "#661122";
+                    ctx.fillRect(rx, groundY - 2, r.w, 2);
+                    ctx.fillStyle = "#cc2244";
+                }
+
+                // Floating letters — cyan glow circles + gold text
+                ctx.font = "bold 13px 'SF Mono', Consolas, monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                for (const l of letters) {
+                    const lx = ((l.x - scrollX) % (size * 1.0) + size * 1.3) % (size * 1.0) - size * 0.1;
+                    const ly = l.y + Math.sin(tick * 0.06 + l.x) * 2;
+                    // Cyan glow
+                    ctx.fillStyle = "rgba(0,221,255,0.15)";
+                    ctx.beginPath();
+                    ctx.arc(lx, ly, 9, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Letter
+                    ctx.fillStyle = "#00ddff";
+                    ctx.fillText(l.ch, lx, ly);
+                }
+
+                // Runner — orange player with glow
+                const phase = tick * 0.15;
+                const feetY = runnerY;
+                const hipY = feetY - 12;
+                const shoulderY = hipY - 10;
+                const headY = shoulderY - 5;
+
+                ctx.strokeStyle = "#ffaa00";
+                ctx.lineWidth = 1.5;
+                ctx.lineCap = "round";
+
+                // Head
+                ctx.beginPath();
+                ctx.arc(runnerX, headY, 4, 0, Math.PI * 2);
+                ctx.stroke();
+                // Eye
+                ctx.fillStyle = "#ffdd44";
+                ctx.fillRect(runnerX + 1.5, headY - 1, 1, 1);
+
+                // Torso
+                ctx.beginPath();
+                ctx.moveTo(runnerX, shoulderY);
+                ctx.lineTo(runnerX, hipY);
+                ctx.stroke();
+
+                if (runnerY < groundY) {
+                    // Jump pose — arms up, legs tucked
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, shoulderY + 1);
+                    ctx.lineTo(runnerX - 4, shoulderY - 3);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, shoulderY + 1);
+                    ctx.lineTo(runnerX + 4, shoulderY - 3);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, hipY);
+                    ctx.lineTo(runnerX - 3, hipY + 4);
+                    ctx.lineTo(runnerX - 1, hipY + 1);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, hipY);
+                    ctx.lineTo(runnerX + 3, hipY + 4);
+                    ctx.lineTo(runnerX + 1, hipY + 1);
+                    ctx.stroke();
+                } else {
+                    // Run cycle
+                    const armS = Math.sin(phase) * 0.6;
+                    const legS = Math.sin(phase) * 0.55;
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, shoulderY + 1);
+                    ctx.lineTo(runnerX + Math.sin(armS) * 6, shoulderY + 1 + Math.cos(armS) * 6);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, shoulderY + 1);
+                    ctx.lineTo(runnerX + Math.sin(-armS) * 6, shoulderY + 1 + Math.cos(-armS) * 6);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, hipY);
+                    ctx.lineTo(runnerX + Math.sin(-legS) * 5, hipY + Math.cos(-legS) * 6);
+                    ctx.lineTo(runnerX + Math.sin(-legS * 0.3) * 3, feetY);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(runnerX, hipY);
+                    ctx.lineTo(runnerX + Math.sin(legS) * 5, hipY + Math.cos(legS) * 6);
+                    ctx.lineTo(runnerX + Math.sin(legS * 0.3) * 3, feetY);
+                    ctx.stroke();
+                }
+
+                // Score counter (teal)
+                ctx.fillStyle = "rgba(0,204,170,0.5)";
+                ctx.font = "bold 9px monospace";
+                ctx.textAlign = "right";
+                ctx.fillText(String(Math.floor(scrollX)).padStart(5, '0'), size - 4, 12);
+            };
+            draw();
+            const id = setInterval(draw, 40);
+            this._challengePreviewAnimations.push(id);
+            return;
+        }
     }
 
     _stopChallengePreviewAnimations() {
-        for (const id of this._challengePreviewAnimations) clearInterval(id);
+        for (const item of this._challengePreviewAnimations) {
+            if (typeof item === 'number') clearInterval(item);
+            else if (item && typeof item.destroy === 'function') item.destroy();
+        }
         this._challengePreviewAnimations = [];
     }
 
@@ -11454,6 +12338,12 @@ class Game {
         // Word Search uses its own screen and game flow
         if (this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH) {
             this._wsStartGame();
+            return;
+        }
+
+        // Word Runner uses its own screen and game flow
+        if (this.activeChallenge === CHALLENGE_TYPES.WORD_RUNNER) {
+            this._wrStartGame();
             return;
         }
 
@@ -11592,6 +12482,8 @@ class Game {
             tutorialText = "Choose a category before starting. Words matching your category earn bonus points! Harder categories (Technology, Nature) earn even more points and XP. Longer, more complex words also score higher. Other words earn reduced points. Game lasts 7 minutes.";
         } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH) {
             tutorialText = "Find hidden words in the grid by swiping across letters! No word list is shown — you must discover valid words yourself. Words can go in any direction. Each level is timed at 7 minutes. Levels get progressively harder with larger grids and harder words. Earn points and coins for every word you find!";
+        } else if (this.activeChallenge === CHALLENGE_TYPES.WORD_RUNNER) {
+            tutorialText = "Run through a neon-lit procedural world! TAP or SPACE to jump — you get up to 5 jumps (1 ground + 4 air). Dodge spike obstacles and leap over gaps — falling into a hole or hitting spikes ends the game! Collect floating letters to fill your word boxes. Press the ✓ button to submit your word when ready. Valid words earn big points and coins; invalid words shake red and clear. Choose your word length (3-8) before starting. Speed ramps up the further you go!";
         }
         this.els.challengeTutorialText.textContent = tutorialText;
 
@@ -11600,18 +12492,100 @@ class Game {
         canvas.width = 200;
         canvas.height = 200;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#2f3029";
-        ctx.fillRect(0, 0, 200, 200);
-        ctx.fillStyle = "#e2d8a6";
-        ctx.font = "bold 60px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(meta.icon, 100, 100);
+
+        // Use Spine animated character for Word Runner; static icon for others
+        if (this._challengeTutorialSpine) {
+            this._challengeTutorialSpine.destroy();
+            this._challengeTutorialSpine = null;
+        }
+        if (this.activeChallenge === CHALLENGE_TYPES.WORD_RUNNER) {
+            // Neon WR scene background
+            const grd = ctx.createLinearGradient(0, 0, 0, 200);
+            grd.addColorStop(0, '#0a0e1a');
+            grd.addColorStop(1, '#111830');
+            ctx.fillStyle = grd;
+            ctx.fillRect(0, 0, 200, 200);
+
+            // Ground
+            const gy = 155;
+            ctx.fillStyle = '#1a3040';
+            ctx.fillRect(0, gy, 200, 45);
+            ctx.strokeStyle = '#00ccaa'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(200, gy); ctx.stroke();
+
+            // Gap in ground
+            ctx.fillStyle = '#0a0e1a';
+            ctx.fillRect(130, gy, 25, 45);
+
+            // Spikes
+            ctx.fillStyle = '#ff4444';
+            for (const sx of [80, 90, 100]) {
+                ctx.beginPath();
+                ctx.moveTo(sx - 4, gy);
+                ctx.lineTo(sx, gy - 10);
+                ctx.lineTo(sx + 4, gy);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Floating letters
+            const neonLetters = [
+                { ch: 'P', x: 40, y: 100, color: '#00ddff' },
+                { ch: 'L', x: 75, y: 85, color: '#00ddff' },
+                { ch: 'U', x: 120, y: 95, color: '#ffaa00' },
+                { ch: 'M', x: 165, y: 80, color: '#00ddff' },
+            ];
+            ctx.font = 'bold 16px sans-serif';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            for (const lt of neonLetters) {
+                ctx.shadowColor = lt.color; ctx.shadowBlur = 8;
+                ctx.fillStyle = lt.color;
+                ctx.fillText(lt.ch, lt.x, lt.y);
+            }
+            ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+
+            // Word boxes at top
+            const boxW = 28, boxH = 22;
+            const startX = (200 - 4 * (boxW + 4)) / 2;
+            for (let i = 0; i < 4; i++) {
+                const bx = startX + i * (boxW + 4), by = 12;
+                ctx.fillStyle = i < 2 ? 'rgba(0,204,170,0.2)' : 'rgba(255,255,255,0.05)';
+                ctx.fillRect(bx, by, boxW, boxH);
+                ctx.strokeStyle = i < 2 ? '#00ccaa' : '#334';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(bx, by, boxW, boxH);
+                if (i < 2) {
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.fillText(['P','L'][i], bx + boxW / 2, by + boxH / 2);
+                }
+            }
+
+            // Spine character on top of the neon scene
+            this._challengeTutorialSpine = createChallengePreviewCharacter(canvas, 'run', {
+                scale: 2.5,
+                x: 35,
+                y: gy - 2,
+                boneStyle: { color: '#ffaa00', headColor: '#ffd700', lineWidth: 3, headRadius: 9 },
+            });
+        } else {
+            ctx.fillStyle = "#2f3029";
+            ctx.fillRect(0, 0, 200, 200);
+            ctx.fillStyle = "#e2d8a6";
+            ctx.font = "bold 60px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(meta.icon, 100, 100);
+        }
 
         this.els.challengeTutorialOverlay.classList.add("active");
     }
 
     _closeChallengeTutorial() {
+        if (this._challengeTutorialSpine) {
+            this._challengeTutorialSpine.destroy();
+            this._challengeTutorialSpine = null;
+        }
         this.els.challengeTutorialOverlay.classList.remove("active");
     }
 
@@ -11732,6 +12706,9 @@ class Game {
             // Render
             this.renderer.draw(this.grid, this.block, dt);
             this._checkBonusBtnOverlap();
+
+            // ── Matter.js physics particles overlay ──
+            updatePhysics(dt);
         } else if (this.state === State.PAUSED) {
             // Still draw but don't update
             this.renderer.draw(this.grid, this.block, 0);
@@ -12227,6 +13204,16 @@ class Game {
             this._showScreen("leaderboard");
         });
 
+        // My Rank Card toggle (on page 2 of home screen — expand/collapse analysis)
+        this.els.myRankCard?.addEventListener("click", () => {
+            const statsEl = this.els.myRankStats;
+            if (!statsEl) return;
+            const isOpen = statsEl.classList.contains("open");
+            statsEl.classList.toggle("open", !isOpen);
+            statsEl.classList.toggle("hidden", false);
+            this.els.myRankCard.classList.toggle("stats-open", !isOpen);
+        });
+
         // Challenge-specific leaderboard buttons
         this.els.challengeLbBtns?.forEach(btn => {
             btn.addEventListener("click", () => {
@@ -12246,6 +13233,16 @@ class Game {
         // Refresh button
         this.els.lbRefreshBtn?.addEventListener("click", () => {
             this._loadLeaderboard(true);
+        });
+
+        // My Stats toggle (personal stats dropdown)
+        this.els.lbMyRank?.addEventListener("click", () => {
+            const statsEl = this.els.lbMyStats;
+            if (!statsEl) return;
+            const isOpen = statsEl.classList.contains("open");
+            statsEl.classList.toggle("open", !isOpen);
+            statsEl.classList.toggle("hidden", false);
+            this.els.lbMyRank.classList.toggle("stats-open", !isOpen);
         });
 
         // Tab switching
@@ -12284,7 +13281,7 @@ class Game {
         const swipeTarget = document.getElementById("leaderboard-screen");
         if (!swipeTarget) return;
 
-        const tabOrder = ["main", "target-word", "speed-round", "word-category", "word-search"];
+        const tabOrder = ["main", "target-word", "speed-round", "word-category", "word-search", "word-runner"];
         let startX = 0;
         let startY = 0;
         let tracking = false;
@@ -12376,7 +13373,7 @@ class Game {
                     classFilter: this._lbClassFilter || null,
                     forceRefresh,
                 });
-                const names = { 'target-word': 'Target Word', 'speed-round': 'Speed Round', 'word-category': 'Word Category', 'word-search': 'Word Search' };
+                const names = { 'target-word': 'Target Word', 'speed-round': 'Speed Round', 'word-category': 'Word Category', 'word-search': 'Word Search', 'word-runner': 'Word Runner' };
                 this.els.lbTitle.textContent = names[tab] || "Leaderboard";
             }
 
@@ -12557,9 +13554,112 @@ class Game {
                 this.els.lbMyRankClass.textContent = info.label;
                 this.els.lbMyRankPos.textContent = `#${myRank.global_rank}`;
             }
+
+            // Populate personal stats dropdown
+            this._populateMyStats(myRank);
         } else {
             this.els.myRankCard?.classList.add("hidden");
             this.els.lbMyRank?.classList.add("hidden");
+            this.els.lbMyStats?.classList.add("hidden");
+        }
+    }
+
+    _populateMyStats(myRank) {
+        const p = this.profileMgr.getActive();
+        if (!p) return;
+
+        // Store rank data for analysis loading
+        this._myRankData = myRank;
+
+        // Top stat cells (leaderboard screen)
+        if (this.els.lbsRating) this.els.lbsRating.textContent = (myRank.skill_rating || 0).toFixed(1);
+        if (this.els.lbsHighScore) this.els.lbsHighScore.textContent = (p.highScore || 0).toLocaleString();
+        if (this.els.lbsGames) this.els.lbsGames.textContent = (p.gamesPlayed || 0).toLocaleString();
+        if (this.els.lbsWords) this.els.lbsWords.textContent = (p.totalWords || 0).toLocaleString();
+        if (this.els.lbsLevel) this.els.lbsLevel.textContent = p.level || 1;
+        if (this.els.lbsStreak) this.els.lbsStreak.textContent = `${p.playStreak || 0}d`;
+
+        // Top stat cells (menu rank card dropdown)
+        if (this.els.mrsRating) this.els.mrsRating.textContent = (myRank.skill_rating || 0).toFixed(1);
+        if (this.els.mrsHighScore) this.els.mrsHighScore.textContent = (p.highScore || 0).toLocaleString();
+        if (this.els.mrsGames) this.els.mrsGames.textContent = (p.gamesPlayed || 0).toLocaleString();
+        if (this.els.mrsWords) this.els.mrsWords.textContent = (p.totalWords || 0).toLocaleString();
+        if (this.els.mrsLevel) this.els.mrsLevel.textContent = p.level || 1;
+        if (this.els.mrsStreak) this.els.mrsStreak.textContent = `${p.playStreak || 0}d`;
+
+        // Component bars
+        const components = [
+            { key: 'raw_score_component', label: 'Score' },
+            { key: 'grid_mastery_component', label: 'Grids' },
+            { key: 'difficulty_component', label: 'Difficulty' },
+            { key: 'time_pressure_component', label: 'Speed' },
+            { key: 'challenge_component', label: 'Challenge' },
+            { key: 'consistency_component', label: 'Consistency' },
+            { key: 'versatility_component', label: 'Versatility' },
+            { key: 'progression_component', label: 'Growth' },
+        ];
+
+        const container = this.els.lbsComponents;
+        if (container) {
+            container.innerHTML = '';
+            for (const c of components) {
+                const val = Math.round(myRank[c.key] || 0);
+                const row = document.createElement('div');
+                row.className = 'lb-stat-bar-row';
+                row.innerHTML = `
+                    <span class="lb-stat-bar-label">${c.label}</span>
+                    <div class="lb-stat-bar-track"><div class="lb-stat-bar-fill" style="width:${val}%"></div></div>
+                    <span class="lb-stat-bar-val">${val}</span>
+                `;
+                container.appendChild(row);
+            }
+        }
+
+        // Populate menu rank card component bars (same data)
+        const mrsContainer = this.els.mrsComponents;
+        if (mrsContainer) {
+            mrsContainer.innerHTML = '';
+            for (const c of components) {
+                const val = Math.round(myRank[c.key] || 0);
+                const row = document.createElement('div');
+                row.className = 'lb-stat-bar-row';
+                row.innerHTML = `
+                    <span class="lb-stat-bar-label">${c.label}</span>
+                    <div class="lb-stat-bar-track"><div class="lb-stat-bar-fill" style="width:${val}%"></div></div>
+                    <span class="lb-stat-bar-val">${val}</span>
+                `;
+                mrsContainer.appendChild(row);
+            }
+        }
+
+        // Load analysis text
+        this._loadMyAnalysis(myRank);
+    }
+
+    async _loadMyAnalysis(myRank) {
+        const targets = [
+            this.els.lbsAnalysis,
+            this.els.mrsAnalysis,
+        ].filter(Boolean);
+        if (targets.length === 0) return;
+        for (const el of targets) {
+            const inner = el.querySelector('.lb-analysis-inner');
+            if (inner) inner.innerHTML = '<div class="lb-analysis-loading">Loading analysis...</div>';
+        }
+        try {
+            const { fetchPlayerAnalysis } = await import('./src/lib/leaderboard-service.js');
+            const currentTab = this._lbCurrentTab || 'main';
+            const challengeType = currentTab !== 'main' ? currentTab : null;
+            const html = await fetchPlayerAnalysis(myRank, challengeType);
+            for (const el of targets) {
+                const inner = el.querySelector('.lb-analysis-inner');
+                if (inner) inner.innerHTML = html || '<div class="lb-analysis-loading">No analysis available.</div>';
+            }
+        } catch {
+            for (const el of targets) {
+                const inner = el.querySelector('.lb-analysis-inner');
+                if (inner) inner.innerHTML = '<div class="lb-analysis-loading">Could not load analysis.</div>';
+            }
         }
     }
 
@@ -12733,6 +13833,17 @@ class Game {
                 selectedCells = newCells;
             }
             this._ws.selecting = selectedCells;
+
+            // ── Live swipe hint via trie-search ──
+            // Show real-time feedback: is the current swipe a valid prefix or word?
+            if (selectedCells.length >= 2 && this._ws.grid) {
+                this._ws.swipeHint = getSwipeHint(
+                    this._ws.grid, selectedCells, this._ws.allValidWords
+                );
+            } else {
+                this._ws.swipeHint = null;
+            }
+
             this._wsRender();
         };
 
@@ -12743,7 +13854,8 @@ class Game {
             selecting = false;
 
             // Validate selection against the board's known valid words
-            const word = _wsValidateSelection(this._ws.grid, selectedCells, this._ws.allValidWords);
+            // Use word search level's own minWordLen, NOT the main game's _getMinWordLength()
+            const word = _wsValidateSelection(this._ws.grid, selectedCells, this._ws.allValidWords, this._ws.params.minWordLen || 3);
             if (word && !this._ws.foundWords.has(word)) {
                 // Valid new word!
                 this._wsWordFound(word, selectedCells);
@@ -12753,6 +13865,7 @@ class Game {
             }
 
             this._ws.selecting = null;
+            this._ws.swipeHint = null;
             selectedCells = [];
             this._wsRender();
         };
@@ -12773,20 +13886,36 @@ class Game {
 
         const level = this.profileMgr.getWordSearchLevel();
         const params = _wsLevelParams(level);
+
         const words = _wsSelectWords(params);
         const { grid, placedWords } = _wsGenerateGrid(params.gridSize, words, params.allowedDirs);
+
+        // Cross-validate with wordsearch-generator library
+        const validation = crossValidateGrid(grid, words, params.gridSize);
+        if (validation.confidence < 0.5) {
+            console.warn(`[WS] Grid cross-validation low (${(validation.confidence * 100).toFixed(0)}%), disagreed:`, validation.disagreedWords);
+        }
 
         // Build set of intentionally placed words (the completion target)
         const placedWordSet = new Set();
         for (const pw of placedWords) placedWordSet.add(pw.word);
 
         // Build set of all valid words on the board (placed + accidental) for validation
-        // Only scan in the level's allowed directions to limit accidental word noise
+        // Scan ALL 8 directions — players can swipe any direction regardless of level
+        const scanMinLen = params.minWordLen || 3;
         const allValidWords = new Set(placedWordSet);
+        // Track cell positions for each valid word occurrence: word -> [{startR, startC, dr, dc, len}]
+        const wordOccurrences = new Map();
+        for (const pw of placedWords) {
+            const dr = pw.dir[0], dc = pw.dir[1];
+            const { r: sr, c: sc } = pw.cells[0];
+            if (!wordOccurrences.has(pw.word)) wordOccurrences.set(pw.word, []);
+            wordOccurrences.get(pw.word).push({ startR: sr, startC: sc, dr, dc, len: pw.word.length });
+        }
         for (let r = 0; r < params.gridSize; r++) {
             for (let c = 0; c < params.gridSize; c++) {
-                for (const [dr, dc] of params.allowedDirs) {
-                    for (let len = 3; len <= 7; len++) {
+                for (const [dr, dc] of WS_DIRECTIONS) {
+                    for (let len = scanMinLen; len <= 7; len++) {
                         const endR = r + dr * (len - 1);
                         const endC = c + dc * (len - 1);
                         if (endR < 0 || endR >= params.gridSize || endC < 0 || endC >= params.gridSize) break;
@@ -12794,15 +13923,48 @@ class Game {
                         for (let i = 0; i < len; i++) {
                             w += grid[r + dr * i][c + dc * i];
                         }
-                        if (DICTIONARY.has(w)) allValidWords.add(w);
+                        if (DICTIONARY.has(w)) {
+                            allValidWords.add(w);
+                            if (!wordOccurrences.has(w)) wordOccurrences.set(w, []);
+                            wordOccurrences.get(w).push({ startR: r, startC: c, dr, dc, len });
+                        }
                     }
                 }
             }
         }
 
+        // Remove "stacked" words: non-placed words whose cells are entirely
+        // within a single placed word's footprint (e.g. EAT inside NEATS).
+        // Only remove a word if ALL of its occurrences on the grid are embedded;
+        // if any occurrence uses cells NOT belonging to one placed word, keep it.
+        const placedCellSets = placedWords.map(pw => {
+            const cs = new Set();
+            for (const { r, c } of pw.cells) cs.add(`${r},${c}`);
+            return cs;
+        });
+        const wordsToRemove = new Set();
+        for (const [word, occs] of wordOccurrences) {
+            if (placedWordSet.has(word)) continue;
+            let allEmbedded = true;
+            for (const occ of occs) {
+                const occCells = [];
+                for (let i = 0; i < occ.len; i++) {
+                    occCells.push(`${occ.startR + occ.dr * i},${occ.startC + occ.dc * i}`);
+                }
+                let isEmbedded = false;
+                for (const cs of placedCellSets) {
+                    if (occCells.every(c => cs.has(c))) { isEmbedded = true; break; }
+                }
+                if (!isEmbedded) { allEmbedded = false; break; }
+            }
+            if (allEmbedded) wordsToRemove.add(word);
+        }
+        for (const w of wordsToRemove) allValidWords.delete(w);
+
         // Log accidental words for debugging
         const accidentalWords = [...allValidWords].filter(w => !placedWordSet.has(w));
         console.log(`[WS] Level ${level}: ${placedWordSet.size} placed words, ${accidentalWords.length} accidental words${accidentalWords.length ? ": " + accidentalWords.join(", ") : ""}`);
+        // Words already added to history in _wsSelectWords() before grid generation
 
         this._ws = {
             level,
@@ -12927,9 +14089,20 @@ class Game {
             }
         }
 
-        // Draw current selection highlight
+        // Draw current selection highlight (color-coded by trie hint)
         if (selecting && selecting.length > 0) {
-            ctx.fillStyle = "rgba(226, 216, 166, 0.35)";
+            const hint = this._ws.swipeHint;
+            let selColor = "rgba(226, 216, 166, 0.35)"; // default amber
+            if (hint) {
+                if (hint.isComplete) {
+                    selColor = "rgba(100, 220, 100, 0.40)"; // green — valid word
+                } else if (hint.couldBeValid) {
+                    selColor = "rgba(226, 216, 166, 0.35)"; // amber — valid prefix
+                } else {
+                    selColor = "rgba(200, 100, 80, 0.30)"; // dim red — dead end
+                }
+            }
+            ctx.fillStyle = selColor;
             for (const { r, c } of selecting) {
                 ctx.fillRect(padding + c * cellSize, padding + r * cellSize, cellSize, cellSize);
             }
@@ -13432,14 +14605,73 @@ class Game {
     _wsResumeFromSave(saved) {
         const level = saved.level;
         const params = _wsLevelParams(level);
+        const grid = saved.grid;
+        const gridSize = saved.gridSize || params.gridSize;
+
+        // Rebuild allValidWords by scanning ALL 8 directions (not from save)
+        const placedWordSet = new Set(saved.placedWordSet || saved.placedWords.map(pw => pw.word));
+        const scanMinLen = params.minWordLen || 3;
+        const allValidWords = new Set(placedWordSet);
+        const wordOccs = new Map();
+        for (const pw of (saved.placedWords || [])) {
+            const dr = pw.dir[0], dc = pw.dir[1];
+            const { r: sr, c: sc } = pw.cells[0];
+            if (!wordOccs.has(pw.word)) wordOccs.set(pw.word, []);
+            wordOccs.get(pw.word).push({ startR: sr, startC: sc, dr, dc, len: pw.word.length });
+        }
+        for (let r = 0; r < gridSize; r++) {
+            for (let c = 0; c < gridSize; c++) {
+                for (const [dr, dc] of WS_DIRECTIONS) {
+                    for (let len = scanMinLen; len <= 7; len++) {
+                        const endR = r + dr * (len - 1);
+                        const endC = c + dc * (len - 1);
+                        if (endR < 0 || endR >= gridSize || endC < 0 || endC >= gridSize) break;
+                        let w = "";
+                        for (let i = 0; i < len; i++) {
+                            w += grid[r + dr * i][c + dc * i];
+                        }
+                        if (DICTIONARY.has(w)) {
+                            allValidWords.add(w);
+                            if (!wordOccs.has(w)) wordOccs.set(w, []);
+                            wordOccs.get(w).push({ startR: r, startC: c, dr, dc, len });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove stacked sub-words embedded within placed words (cell-subset approach)
+        const placedCellSets = (saved.placedWords || []).map(pw => {
+            const cs = new Set();
+            for (const { r, c } of pw.cells) cs.add(`${r},${c}`);
+            return cs;
+        });
+        const wordsToRemove = new Set();
+        for (const [word, occs] of wordOccs) {
+            if (placedWordSet.has(word)) continue;
+            let allEmbedded = true;
+            for (const occ of occs) {
+                const occCells = [];
+                for (let i = 0; i < occ.len; i++) {
+                    occCells.push(`${occ.startR + occ.dr * i},${occ.startC + occ.dc * i}`);
+                }
+                let isEmbedded = false;
+                for (const cs of placedCellSets) {
+                    if (occCells.every(c => cs.has(c))) { isEmbedded = true; break; }
+                }
+                if (!isEmbedded) { allEmbedded = false; break; }
+            }
+            if (allEmbedded) wordsToRemove.add(word);
+        }
+        for (const w of wordsToRemove) allValidWords.delete(w);
 
         this._ws = {
             level,
             params,
-            grid: saved.grid,
+            grid,
             placedWords: saved.placedWords,
-            placedWordSet: new Set(saved.placedWordSet || saved.placedWords.map(pw => pw.word)),
-            allValidWords: new Set(saved.allValidWords),
+            placedWordSet,
+            allValidWords,
             foundWords: new Set(saved.foundWords),
             foundWordCells: saved.foundWordCells || [],
             score: saved.score || 0,
@@ -13491,10 +14723,560 @@ class Game {
         this._openChallengeSetup(CHALLENGE_TYPES.WORD_SEARCH);
     }
 
+    // ════════════════════════════════════════════════════════
+    // WORD RUNNER CHALLENGE – Phaser 3 powered platformer
+    // ════════════════════════════════════════════════════════
+
+    _bindWordRunner() {
+        this.els.wrPauseBtn?.addEventListener("click", () => this._wrTogglePause());
+        this.els.wrValidateBtn?.addEventListener("click", () => this._wrValidateWord());
+        this.els.wrResumeBtn?.addEventListener("click", () => this._wrTogglePause());
+        this.els.wrWordsFoundBtn?.addEventListener("click", () => {
+            this.els.wrPauseOverlay.classList.remove("active");
+            // Set wordsFound from current WR Phaser scene state
+            const scene = this._wrGame?.getScene();
+            if (scene) {
+                this.wordsFound = scene.wordsFormed || [];
+                this._wordsFoundData = scene.wordsFormed || [];
+            }
+            this._openWordsFound("wr-pause");
+        });
+        this.els.wrMusicBtn?.addEventListener("click", () => {
+            this.els.wrPauseOverlay.classList.remove("active");
+            this._musicBackTarget = "wr-pause";
+            this._showScreen("music");
+            this._renderMusicScreen();
+        });
+        this.els.wrShopBtn?.addEventListener("click", () => {
+            this.els.wrPauseOverlay.classList.remove("active");
+            this._shopBackTarget = "wr-pause";
+            this._shopCurrentTab = "grid_themes";
+            this._showScreen("shop");
+        });
+        this.els.wrEndGameBtn?.addEventListener("click", () => {
+            this._wrEndGame();
+        });
+        this.els.wrSaveQuitBtn?.addEventListener("click", () => {
+            this.els.wrPauseOverlay?.classList.remove("active");
+            try {
+                if (this._wrGame) {
+                    try { this._wrSaveState(); } catch (e) { console.warn("WR save failed:", e); }
+                    this._wrGame.destroy();
+                    this._wrGame = null;
+                }
+            } catch (e) { console.warn("WR cleanup failed:", e); }
+            this._wr = null;
+            // Unhide the raw canvas if Phaser hid it
+            if (this.els.wrCanvas) this.els.wrCanvas.style.display = "";
+            // ALWAYS navigate to challenge setup
+            this.activeChallenge = CHALLENGE_TYPES.WORD_RUNNER;
+            this._openChallengeSetup(CHALLENGE_TYPES.WORD_RUNNER);
+        });
+
+        // Mini music player buttons
+        this.els.wrMiniPrev?.addEventListener("click", () => this.music.prev());
+        this.els.wrMiniToggle?.addEventListener("click", () => this.music.toggle());
+        this.els.wrMiniNext?.addEventListener("click", () => this.music.next());
+        // NOTE: Jump input is handled by Phaser's own input system.
+    }
+
+    /** Create a Phaser-backed WordRunnerGame with the given callbacks. */
+    _wrCreatePhaserGame(savedState) {
+        const container = this.els.wrCanvasContainer;
+        if (!container) return;
+
+        // Hide the raw canvas — Phaser creates its own
+        if (this.els.wrCanvas) this.els.wrCanvas.style.display = "none";
+
+        const self = this;
+
+        this._wrGame = new WordRunnerGame(container, {
+            highScore: this._wr.highScore,
+            randomLetterFn: () => this._wrRandomLetter(),
+            dictionaryRef: DICTIONARY,
+            audioRef: this.audio,
+            letterValuesRef: typeof LETTER_VALUES !== "undefined" ? LETTER_VALUES : {},
+            coinsForWordFn: coinsForWordRunner,
+            callbacks: {
+                onLetterCollected(letters) {
+                    self._wrUpdateBoxes(letters);
+                    if (letters.length >= 3) {
+                        const boxes = self.els.wrWordBoxes?.querySelectorAll(".wr-box");
+                        boxes?.forEach((b, i) => {
+                            if (i < letters.length) b.classList.add("complete-glow");
+                        });
+                    }
+                },
+                onStateUpdate(state) {
+                    if (self._wr) {
+                        self._wr.score = state.score;
+                        self._wr.coins = state.coins || 0;
+                        self._wr.highScore = state.highScore;
+                    }
+                    self._wrUpdateUI(state);
+                },
+                onPause() {
+                    self.els.wrPauseOverlay?.classList.add("active");
+                },
+                onGameOver(result) {
+                    if (self._wr) {
+                        self._wr.wordsFormed = result.wordsFormed;
+                        self._wr.coins = result.coins;
+                        self._wr.score = result.score;
+                        self._wr.wordStreak = result.wordStreak;
+                        self._wr.maxWordStreak = result.maxWordStreak;
+                        self._wr.distance = result.distance;
+                    }
+                    self._wrShowGameOver();
+                },
+                onResumed(collectedLetters) {
+                    self._wrBuildBoxes();
+                    self._wrUpdateBoxes(collectedLetters);
+                },
+            },
+        });
+
+        this._wrGame.start(savedState);
+    }
+
+    _wrStartGame() {
+        // Check for a saved WR game first
+        const saved = this._loadGameState(CHALLENGE_TYPES.WORD_RUNNER);
+        if (saved && saved.type === "word-runner") {
+            this._clearGameState();
+            this._wrResumeFromSave(saved);
+            return;
+        }
+        this._clearGameState();
+
+        // Lightweight _wr tracking object for compatibility with
+        // game-over, save, and other shared systems
+        this._wr = {
+            wordsFormed: [],
+            coins: 0,
+            score: 0,
+            wordStreak: 0,
+            maxWordStreak: 0,
+            distance: 0,
+            highScore: this.profileMgr.getChallengeStats(CHALLENGE_TYPES.WORD_RUNNER).highScore || 0,
+        };
+
+        this._showScreen("wr");
+        this._wrUpdateMiniPlayer();
+
+        requestAnimationFrame(() => {
+            this._wrCreatePhaserGame(null);
+            this._wrBuildBoxes();
+            this._wrUpdateUI({ score: 0, distance: 0, coins: 0, highScore: this._wr.highScore });
+        });
+    }
+
+    _wrResizeCanvas() {
+        if (this._wrGame && this.els.wrCanvasContainer) {
+            const c = this.els.wrCanvasContainer;
+            const w = Math.floor(c.clientWidth);
+            const h = Math.floor(c.clientHeight || window.innerHeight * 0.45);
+            this._wrGame.resize(w, h);
+        }
+    }
+
+    _wrSaveState() {
+        if (!this._wrGame) return;
+        const state = this._wrGame.getState();
+        if (!state) return;
+        const key = this._saveKey(CHALLENGE_TYPES.WORD_RUNNER);
+        if (!key) return;
+        localStorage.setItem(key, JSON.stringify(state));
+    }
+
+    _wrResumeFromSave(saved) {
+        this._wr = {
+            wordsFormed: saved.wordsFormed || [],
+            coins: saved.coins || 0,
+            score: saved.score || 0,
+            wordStreak: saved.wordStreak || 0,
+            maxWordStreak: saved.maxWordStreak || 0,
+            distance: saved.distance || 0,
+            highScore: this.profileMgr.getChallengeStats(CHALLENGE_TYPES.WORD_RUNNER).highScore || 0,
+        };
+
+        this._showScreen("wr");
+        this._wrUpdateMiniPlayer();
+
+        requestAnimationFrame(() => {
+            this._wrCreatePhaserGame(saved);
+            this._wrBuildBoxes();
+            this._wrUpdateBoxes(saved.collectedLetters || []);
+            this._wrUpdateUI({
+                score: saved.score || 0,
+                distance: saved.distance || 0,
+                coins: saved.coins || 0,
+                highScore: this._wr.highScore,
+            });
+        });
+    }
+
+    _wrBuildBoxes() {
+        const container = this.els.wrWordBoxes;
+        if (!container) return;
+        container.innerHTML = "";
+        for (let i = 0; i < 8; i++) {
+            const box = document.createElement("div");
+            box.className = "wr-box";
+            box.dataset.idx = i;
+            box.addEventListener("pointerdown", (e) => {
+                e.stopPropagation();
+                this._wrValidateWord();
+            });
+            container.appendChild(box);
+        }
+    }
+
+    _wrUpdateBoxes(letters) {
+        const boxes = this.els.wrWordBoxes?.querySelectorAll(".wr-box");
+        if (!boxes) return;
+        const arr = letters || (this._wrGame ? this._wrGame.getCollectedLetters() : []);
+        boxes.forEach((box, i) => {
+            const letter = arr[i] || "";
+            box.textContent = letter;
+            box.classList.toggle("filled", !!letter);
+            if (!letter) box.classList.remove("complete-glow");
+        });
+    }
+
+    _wrValidateWord() {
+        if (!this._wrGame) return;
+        const result = this._wrGame.validateWord();
+        if (result) {
+            // Word was valid — update boxes with remaining letters
+            this._wrUpdateBoxes();
+            const boxes = this.els.wrWordBoxes?.querySelectorAll(".wr-box");
+            boxes?.forEach((b, i) => {
+                if (i < result.word.length) {
+                    b.classList.add("valid-flash");
+                    setTimeout(() => b.classList.remove("valid-flash"), 500);
+                }
+            });
+            // Show word popup
+            this._wrShowWordPopup(result.word, result.coins);
+        } else {
+            // Invalid — shake and clear
+            this._wrUpdateBoxes([]);
+            const boxes = this.els.wrWordBoxes?.querySelectorAll(".wr-box");
+            boxes?.forEach(b => {
+                b.classList.add("invalid-shake");
+                setTimeout(() => b.classList.remove("invalid-shake"), 400);
+            });
+        }
+    }
+
+    _wrShowWordPopup(word, coins) {
+        const popup = document.getElementById("wr-word-popup");
+        if (!popup) return;
+        clearTimeout(this._wrWordPopupTimer);
+        popup.classList.remove("show", "fade-out", "hidden");
+        popup.textContent = `${word}  +${coins} 🪙`;
+        // Force reflow for re-animation
+        void popup.offsetWidth;
+        popup.classList.add("show");
+        this._wrWordPopupTimer = setTimeout(() => {
+            popup.classList.remove("show");
+            popup.classList.add("fade-out");
+            setTimeout(() => { popup.classList.add("hidden"); popup.classList.remove("fade-out"); }, 400);
+        }, 2000);
+    }
+
+    _wrTogglePause() {
+        if (!this._wrGame) return;
+        const scene = this._wrGame.getScene();
+        if (!scene) return;
+        if (scene.isPaused) {
+            scene.resumeGame();
+            this.els.wrPauseOverlay?.classList.remove("active");
+        } else {
+            scene.pauseGame();
+            // pause overlay shown via onPause callback
+        }
+    }
+
+    _wrResumePause() {
+        if (!this._wrGame) return;
+        this._showScreen("wr");
+        const scene = this._wrGame.getScene();
+        if (scene && !scene.isPaused) {
+            scene.pauseGame();
+        }
+        this.els.wrPauseOverlay?.classList.add("active");
+    }
+
+    _wrRandomLetter() {
+        // Track recently spawned letters to avoid repetition
+        if (!this._wrRecentLetters) this._wrRecentLetters = [];
+        const recent = this._wrRecentLetters;
+
+        const scene = this._wrGame?.getScene();
+        const collected = scene ? scene.collectedLetters : [];
+
+        // Count letters currently visible on screen (not yet collected)
+        const onScreen = {};
+        if (scene) {
+            for (const l of scene.letters) {
+                if (!l.collected) onScreen[l.letter] = (onScreen[l.letter] || 0) + 1;
+            }
+        }
+
+        // Helper: pick with anti-repeat filtering
+        const antiRepeatPick = (letter) => {
+            recent.push(letter);
+            if (recent.length > 16) recent.shift();
+            return letter;
+        };
+
+        // Helper: apply anti-repeat + on-screen penalties to a weight
+        const penalize = (ch, w) => {
+            // Penalize letters already visible on screen
+            const screenCount = onScreen[ch] || 0;
+            if (screenCount >= 2) w *= 0.02;
+            else if (screenCount === 1) w *= 0.15;
+
+            // Penalize recently spawned letters
+            const lastIdx = recent.lastIndexOf(ch);
+            if (lastIdx !== -1) {
+                const age = recent.length - lastIdx;
+                if (age <= 1) w *= 0.01;
+                else if (age <= 2) w *= 0.04;
+                else if (age <= 3) w *= 0.10;
+                else if (age <= 5) w *= 0.25;
+                else if (age <= 8) w *= 0.50;
+            }
+            return Math.max(w, 0.001);
+        };
+
+        // If we have 2+ letters collected, use trie for efficient completion lookup
+        if (collected.length >= 2) {
+            const prefix = collected.join("");
+            if (randFloat(0, 1) < 0.45) {
+                const candidates = [];
+                for (let i = 0; i < 26; i++) {
+                    const ch = String.fromCharCode(65 + i);
+                    const test = prefix + ch;
+                    if (test.length >= 3 && test.length <= 8 && DICTIONARY.has(test)) {
+                        candidates.push({ ch, weight: 4 });
+                    }
+                    if (checkPrefix(test)) {
+                        candidates.push({ ch, weight: 1 });
+                    }
+                }
+                if (candidates.length > 0) {
+                    for (const c of candidates) c.weight = penalize(c.ch, c.weight);
+                    const items = candidates.map(c => c.ch);
+                    const weights = candidates.map(c => c.weight);
+                    return antiRepeatPick(weightedPick(items, weights));
+                }
+            }
+        }
+
+        // If 1 letter collected, boost common pairings
+        if (collected.length === 1) {
+            const first = collected[0];
+            if (randFloat(0, 1) < 0.40) {
+                const vowels = "AEIOU".split("");
+                const consonants = "TNRSLCDGBMP".split("");
+                const pool = !"AEIOU".includes(first) ? vowels : consonants;
+                // Build weighted pool with penalties
+                const items = pool;
+                const weights = pool.map(ch => penalize(ch, 1));
+                return antiRepeatPick(weightedPick(items, weights));
+            }
+        }
+
+        // Weighted fallback with strong anti-repeat
+        const FREQ = {
+            A: 12, B: 3, C: 4, D: 4, E: 14, F: 3, G: 3, H: 3, I: 10, J: 1,
+            K: 2, L: 6, M: 4, N: 7, O: 10, P: 4, Q: 1, R: 8, S: 8, T: 8,
+            U: 6, V: 2, W: 3, X: 1, Y: 3, Z: 1
+        };
+        const letters = Object.keys(FREQ);
+        const weights = letters.map(ch => penalize(ch, FREQ[ch]));
+        return antiRepeatPick(weightedPick(letters, weights));
+    }
+
+    _wrShowGameOver() {
+      try {
+        const wr = this._wr;
+        if (!wr) return;
+
+        // Clear saved state — game is over, no resume
+        const saveKey = this._saveKey(CHALLENGE_TYPES.WORD_RUNNER);
+        if (saveKey) localStorage.removeItem(saveKey);
+
+        // Record stats
+        const wordsFound = wr.wordsFormed;
+        const score = wr.score;
+        const coinsEarned = wr.coins;
+
+        // End-of-game coins
+        const endGameCoins = calculateGameCoins({
+            score,
+            wordsFound,
+            isNewHighScore: score > (this.profileMgr.getChallengeStats(CHALLENGE_TYPES.WORD_RUNNER).highScore || 0),
+            isChallenge: true,
+            challengeType: CHALLENGE_TYPES.WORD_RUNNER,
+            comboMax: wr.maxWordStreak || wr.wordStreak,
+            playerLevel: this.profileMgr.getActive()?.level || 1,
+            isFirstGameToday: false,
+            playStreak: 0,
+        });
+        // Hard guard: 0 words found = 0 coins
+        const totalCoins = wordsFound.length === 0 ? 0 : (coinsEarned + endGameCoins);
+
+        // Check high score BEFORE recording
+        const prevHigh = this.profileMgr.getChallengeStats(CHALLENGE_TYPES.WORD_RUNNER).highScore || 0;
+        const isNewHigh = score > prevHigh;
+
+        this.profileMgr.recordChallengeGame(CHALLENGE_TYPES.WORD_RUNNER, score, wordsFound);
+
+        // XP award
+        const xpBase = Math.floor(score / 10) + wordsFound.length * 15;
+        const xpEarned = wordsFound.length > 0 ? Math.max(1, xpBase) : 0;
+        const xpResult = this.profileMgr.awardXP(xpEarned);
+        this.profileMgr.addCoins(totalCoins);
+
+        // Update game over screen
+        if (this.els.finalScore) this.els.finalScore.textContent = `Score: ${score}`;
+        if (this.els.newHighScore) this.els.newHighScore.classList.toggle("hidden", !isNewHigh);
+
+        const xpDisplay = document.getElementById("xp-earned-text");
+        if (xpDisplay) {
+            xpDisplay.textContent = `+${xpEarned} XP`;
+            xpDisplay.classList.remove("visible");
+        }
+        const coinsDisplay = document.getElementById("coins-earned-text");
+        if (coinsDisplay) coinsDisplay.textContent = `+${totalCoins} Coins`;
+
+        const gameoverLevel = document.getElementById("gameover-level-text");
+        if (gameoverLevel) gameoverLevel.textContent = `Level ${xpResult.newLevel}`;
+        const gameoverXp = document.getElementById("gameover-xp-bar-fill");
+        if (gameoverXp) gameoverXp.style.width = `${xpResult.newXpReq > 0 ? Math.min(100, (xpResult.newXp / xpResult.newXpReq) * 100) : 0}%`;
+
+        this._gameOverChallenge = CHALLENGE_TYPES.WORD_RUNNER;
+        this._gameOverCategoryKey = null;
+
+        this.wordsFound = wordsFound;
+        this._wordsFoundData = wordsFound;
+
+        // Destroy Phaser game
+        if (this._wrGame) {
+            this._wrGame.destroy();
+            this._wrGame = null;
+        }
+        // Unhide raw canvas
+        if (this.els.wrCanvas) this.els.wrCanvas.style.display = "";
+        this._wr = null;
+        this._wrPrefixSet = null;
+        this._wrRecentLetters = null;
+
+        // Sync game-over state to Preact store so GameOverStats renders
+        gameStore.set({
+            gameState: State.GAMEOVER,
+            finalScore: score,
+            isNewHighScore: isNewHigh,
+            xpEarned,
+            bestCombo: wr?.maxWordStreak || wr?.wordStreak || 0,
+            wordsFoundCount: wordsFound.length,
+            wordsFound: wordsFound.slice(),
+        });
+
+        this._showScreen("gameover");
+
+        // Record to Supabase and sync profile
+        this._recordGameToSupabase({
+            gameMode: GAME_MODES.SANDBOX,
+            isChallenge: true,
+            challengeType: CHALLENGE_TYPES.WORD_RUNNER,
+            categoryKey: null,
+            gridSize: null,
+            difficulty: "casual",
+            timeLimitSeconds: null,
+            score,
+            wordsFound: wordsFound.length,
+            longestWordLength: Math.max(0, ...wordsFound.map(w => (w.word || w).length)),
+            bestCombo: wr.maxWordStreak || wr.wordStreak || 0,
+            targetWordsCompleted: 0,
+            bonusWordsCompleted: 0,
+            timeRemainingSeconds: null,
+            xpEarned,
+            coinsEarned: totalCoins,
+            gridFactor: 1.0,
+            difficultyMultiplier: 1.0,
+            modeMultiplier: 1.0,
+        });
+        this._syncProfileToCloud();
+
+        // Animate XP text in after a delay (matches main game flow)
+        setTimeout(() => {
+            const xpEl = document.getElementById("xp-earned-text");
+            if (xpEl) xpEl.classList.add("visible");
+        }, 300);
+
+        if (xpResult.leveled) {
+            setTimeout(() => this._showLevelUpPopup(xpResult.newLevel, xpResult.newXp, xpResult.newXpReq), 600);
+        }
+      } catch (err) {
+        console.error('[WR GameOver] Error:', err);
+        // Ensure game over screen still shows even if something fails
+        try { this._showScreen("gameover"); } catch (_) { /* */ }
+      }
+    }
+
+    _wrEndGame() {
+        if (!this._wrGame && !this._wr) return;
+        this.els.wrPauseOverlay?.classList.remove("active");
+        // Tell Phaser to end (triggers onGameOver callback -> _wrShowGameOver)
+        if (this._wrGame) {
+            // Clear saved state
+            const key = this._saveKey(CHALLENGE_TYPES.WORD_RUNNER);
+            if (key) localStorage.removeItem(key);
+            this._wrGame.endGame();
+        } else {
+            this._wrShowGameOver();
+        }
+    }
+
+    _wrUpdateUI(state) {
+        if (!state) return;
+        if (this.els.wrScore) this.els.wrScore.textContent = state.score;
+        if (this.els.wrDistance) this.els.wrDistance.textContent = Math.floor((state.distance || 0) / 10) + "m";
+        if (this.els.wrCoins) this.els.wrCoins.textContent = state.coins || 0;
+
+        // Level/XP display
+        const info = this.profileMgr.getLevelInfo();
+        const pct = info.xpRequired > 0 ? Math.min(100, (info.xp / info.xpRequired) * 100) : 0;
+        if (this.els.wrLevelText) this.els.wrLevelText.textContent = `Lv. ${info.level}`;
+        if (this.els.wrXpBarFill) this.els.wrXpBarFill.style.width = pct + "%";
+        if (this.els.wrXpText) this.els.wrXpText.textContent = `${info.xp} / ${info.xpRequired}`;
+    }
+
+    _wrUpdateMiniPlayer() {
+        if (!this.music) return;
+        const track = this.music.getCurrentTrack();
+        if (this.els.wrMiniTitle) {
+            this.els.wrMiniTitle.textContent = track ? `♪ ${track.title} – ${track.artist}` : "♪ ---";
+        }
+        this._setMusicControlButton(this.els.wrMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
+        if (this.els.wrMiniProgressFill && this.music.audio) {
+            const d = this.music.audio.duration || 1;
+            const pct = (this.music.audio.currentTime / d) * 100;
+            this.els.wrMiniProgressFill.style.width = pct + "%";
+        }
+    }
+
     destroy() {
         this._destroyed = true;
         if (this._ws && this._ws._animId) cancelAnimationFrame(this._ws._animId);
         this._ws = null;
+        if (this._wrGame) { try { this._wrGame.destroy(); } catch {} this._wrGame = null; }
+        this._wr = null;
         if (this.music) {
             this.music.pause();
             this.music._cancelCrossfade();
@@ -13516,6 +15298,7 @@ window.addEventListener("resize", () => {
             g.renderer.resize(g.grid.rows, g.grid.cols);
         }
         if (g && g._ws) g._wsResizeCanvas();
+        if (g && g._wrGame) g._wrResizeCanvas();
         if (g && g.bgAnim) g.bgAnim._resize();
     }, 150);
 });
@@ -13532,6 +15315,9 @@ document.addEventListener("touchmove", (e) => {
     if (game?._ws && !game._ws.gameOver && target.closest("#ws-screen")) {
         e.preventDefault();
     }
+    if (game?._wr && !game._wr.gameOver && target.closest("#wr-screen")) {
+        e.preventDefault();
+    }
 }, { passive: false });
 
 // Auto-save when the user navigates away or closes the tab
@@ -13544,6 +15330,10 @@ document.addEventListener("visibilitychange", () => {
         // Also save Word Search state if active
         if (g && g._ws && !g._ws.gameOver) {
             g._wsSaveState();
+        }
+        // Also save Word Runner state if active
+        if (g && g._wrGame) {
+            try { g._wrSaveState(); } catch(e) {}
         }
         if (g && g.music) g.music._saveMusicState();
     } else if (document.visibilityState === "visible") {
@@ -13559,6 +15349,10 @@ window.addEventListener("beforeunload", () => {
     // Also save Word Search state if active
     if (g && g._ws && !g._ws.gameOver) {
         g._wsSaveState();
+    }
+    // Also save Word Runner state if active
+    if (g && g._wrGame) {
+        try { g._wrSaveState(); } catch(e) {}
     }
     if (g && g.music) g.music._saveMusicState();
 });

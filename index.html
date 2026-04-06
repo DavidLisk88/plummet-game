@@ -205,6 +205,23 @@
                                 <div class="my-rank-details">
                                     <span id="my-rank-position" class="rank-position">#—</span>
                                     <span id="my-rank-rating" class="rank-rating">—</span>
+                                    <span id="my-rank-toggle" class="lb-my-stats-toggle">▾</span>
+                                </div>
+                            </div>
+                            <div id="my-rank-stats" class="lb-my-stats hidden">
+                                <div class="lb-my-stats-grid">
+                                    <div class="lb-stat-cell"><span class="lb-stat-value" id="mrs-rating">—</span><span class="lb-stat-label">Rating</span></div>
+                                    <div class="lb-stat-cell"><span class="lb-stat-value" id="mrs-high-score">—</span><span class="lb-stat-label">High Score</span></div>
+                                    <div class="lb-stat-cell"><span class="lb-stat-value" id="mrs-games">—</span><span class="lb-stat-label">Games</span></div>
+                                    <div class="lb-stat-cell"><span class="lb-stat-value" id="mrs-words">—</span><span class="lb-stat-label">Words</span></div>
+                                    <div class="lb-stat-cell"><span class="lb-stat-value" id="mrs-level">—</span><span class="lb-stat-label">Level</span></div>
+                                    <div class="lb-stat-cell"><span class="lb-stat-value" id="mrs-streak">—</span><span class="lb-stat-label">Streak</span></div>
+                                </div>
+                                <div id="mrs-components" class="lb-stat-components"></div>
+                                <div id="mrs-analysis" class="lb-analysis">
+                                    <div class="lb-analysis-inner">
+                                        <div class="lb-analysis-loading">Loading analysis...</div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -229,6 +246,10 @@
                                 <button class="challenge-lb-btn" data-challenge="word-search">
                                     <span class="clb-icon">🔍</span>
                                     <span class="clb-text">Word Search</span>
+                                </button>
+                                <button class="challenge-lb-btn" data-challenge="word-runner">
+                                    <span class="clb-icon">🏃</span>
+                                    <span class="clb-text">Word Runner</span>
                                 </button>
                             </div>
                         </div>
@@ -279,6 +300,7 @@
                     <button class="lb-tab" data-lb="speed-round">Speed Round</button>
                     <button class="lb-tab" data-lb="word-category">Word Category</button>
                     <button class="lb-tab" data-lb="word-search">Word Search</button>
+                    <button class="lb-tab" data-lb="word-runner">Word Runner</button>
                 </div>
             </div>
             <div id="lb-class-filter">
@@ -298,6 +320,41 @@
                 <span id="lb-my-rank-icon" class="rank-class-icon"></span>
                 <span id="lb-my-rank-class"></span>
                 <span id="lb-my-rank-pos">#—</span>
+                <span id="lb-my-stats-toggle" class="lb-my-stats-toggle">▾</span>
+            </div>
+            <div id="lb-my-stats" class="lb-my-stats hidden">
+                <div class="lb-my-stats-grid">
+                    <div class="lb-stat-cell">
+                        <span class="lb-stat-value" id="lbs-rating">—</span>
+                        <span class="lb-stat-label">Rating</span>
+                    </div>
+                    <div class="lb-stat-cell">
+                        <span class="lb-stat-value" id="lbs-high-score">—</span>
+                        <span class="lb-stat-label">High Score</span>
+                    </div>
+                    <div class="lb-stat-cell">
+                        <span class="lb-stat-value" id="lbs-games">—</span>
+                        <span class="lb-stat-label">Games</span>
+                    </div>
+                    <div class="lb-stat-cell">
+                        <span class="lb-stat-value" id="lbs-words">—</span>
+                        <span class="lb-stat-label">Words</span>
+                    </div>
+                    <div class="lb-stat-cell">
+                        <span class="lb-stat-value" id="lbs-level">—</span>
+                        <span class="lb-stat-label">Level</span>
+                    </div>
+                    <div class="lb-stat-cell">
+                        <span class="lb-stat-value" id="lbs-streak">—</span>
+                        <span class="lb-stat-label">Streak</span>
+                    </div>
+                </div>
+                <div id="lbs-components" class="lb-stat-components"></div>
+                <div id="lbs-analysis" class="lb-analysis">
+                    <div class="lb-analysis-inner">
+                        <div class="lb-analysis-loading">Loading analysis...</div>
+                    </div>
+                </div>
             </div>
             <div id="lb-list" class="lb-list">
                 <div class="lb-loading">Loading leaderboard...</div>
@@ -465,8 +522,6 @@
                     <span id="ws-coins" class="score-value coin-value">0</span>
                 </div>
             </div>
-            <!-- Pause button (matches play-screen pause) -->
-            <button id="ws-pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏐⏐</button>
             <!-- Music mini player (matches #now-playing-mini) -->
             <div id="ws-mini-player">
                 <div id="ws-mini-progress"><div id="ws-mini-progress-fill"></div></div>
@@ -477,6 +532,8 @@
                     <button id="ws-mini-next" class="icon-btn np-mini-btn" title="Next Track" aria-label="Next Track"></button>
                 </div>
             </div>
+            <!-- Pause button — positioned between music player and grid on mobile -->
+            <button id="ws-pause-btn" class="icon-btn play-fab-btn play-pause-btn ws-pause-mobile" title="Pause" aria-label="Pause">⏐⏐</button>
             <!-- The grid (matches #canvas-wrapper) -->
             <div id="ws-grid-container">
                 <canvas id="ws-canvas"></canvas>
@@ -493,6 +550,64 @@
                     <button id="ws-music-btn" class="secondary-btn">Music</button>
                     <button id="ws-end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
                     <button id="ws-save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- WORD RUNNER SCREEN -->
+        <div id="wr-screen" class="screen">
+            <!-- Level / XP bar -->
+            <div id="wr-level-bar">
+                <span id="wr-level-text">Lv. 1</span>
+                <div id="wr-xp-bar-track"><div id="wr-xp-bar-fill"></div></div>
+                <span id="wr-xp-text">0 / 100</span>
+            </div>
+            <!-- Score/Distance/Coins bar -->
+            <div id="wr-score-bar">
+                <div class="score-item">
+                    <span class="score-label">Score</span>
+                    <span id="wr-score" class="score-value">0</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">Distance</span>
+                    <span id="wr-distance" class="score-value">0m</span>
+                </div>
+                <div class="score-item coin-score-item">
+                    <span class="score-label">Coins</span>
+                    <span id="wr-coins" class="score-value coin-value">0</span>
+                </div>
+            </div>
+            <!-- Pause button (FAB on side, same as all games) -->
+            <button id="wr-pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏐⏐</button>
+            <!-- Validate word button (below pause, convenience for mobile) -->
+            <button id="wr-validate-btn" class="icon-btn play-fab-btn wr-validate-fab" title="Check Word" aria-label="Check Word">✓</button>
+            <!-- Music mini player -->
+            <div id="wr-mini-player">
+                <div id="wr-mini-progress"><div id="wr-mini-progress-fill"></div></div>
+                <span id="wr-mini-title">♪ ---</span>
+                <div id="wr-mini-controls">
+                    <button id="wr-mini-prev" class="icon-btn np-mini-btn" title="Previous Track" aria-label="Previous Track"></button>
+                    <button id="wr-mini-toggle" class="icon-btn np-mini-btn np-mini-toggle-btn" title="Play or Pause Music" aria-label="Play"></button>
+                    <button id="wr-mini-next" class="icon-btn np-mini-btn" title="Next Track" aria-label="Next Track"></button>
+                </div>
+            </div>
+            <!-- Game canvas -->
+            <div id="wr-canvas-container">
+                <canvas id="wr-canvas"></canvas>
+                <!-- Word boxes inside canvas, positioned at top of canvas area -->
+                <div id="wr-word-boxes"></div>
+                <div id="wr-word-popup" class="wr-word-popup hidden"></div>
+            </div>
+            <!-- Pause overlay (same as play screen) -->
+            <div id="wr-pause-overlay" class="overlay">
+                <div class="overlay-content">
+                    <h2>PAUSED</h2>
+                    <button id="wr-resume-btn" class="primary-btn">Resume</button>
+                    <button id="wr-words-found-btn" class="secondary-btn">Words So Far</button>
+                    <button id="wr-music-btn" class="secondary-btn">Music</button>
+                    <button id="wr-shop-btn" class="secondary-btn">Shop</button>
+                    <button id="wr-end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
+                    <button id="wr-save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
                 </div>
             </div>
         </div>

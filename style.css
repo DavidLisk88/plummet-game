@@ -3855,6 +3855,8 @@ body.touch-input #mobile-controls {
     margin-left: 4px;
 }
 
+/* Word Runner challenge card — keep default card styling, animation handles theming */
+
 /* ---------- Challenge Setup Screen ---------- */
 
 #challenge-setup-screen {
@@ -4411,6 +4413,15 @@ body.touch-input #mobile-controls {
     font-size: 0.95rem;
     font-weight: 800;
     color: var(--text);
+}
+
+.shop-preview-canvas {
+    width: 100px;
+    height: 80px;
+    border-radius: 6px;
+    margin: 0 auto 0.35rem;
+    display: block;
+    image-rendering: crisp-edges;
 }
 
 .shop-item-preview {
@@ -5050,6 +5061,34 @@ body.touch-input #mobile-controls {
     padding: 0.75rem 1.25rem;
     width: 100%;
     max-width: 300px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+.my-rank-card:hover {
+    background: rgba(255,255,255,0.08);
+}
+.my-rank-card.stats-open {
+    border-radius: 12px 12px 0 0;
+    border-bottom-color: transparent;
+}
+.my-rank-card.stats-open #my-rank-toggle {
+    transform: rotate(180deg);
+}
+#my-rank-toggle {
+    color: #888;
+    font-size: 0.75rem;
+    margin-left: 0.4rem;
+    transition: transform 0.2s ease;
+}
+
+/* My Rank Stats Dropdown (mirrors lb-my-stats) */
+#my-rank-stats {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 0 0 12px 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-top: none;
 }
 .my-rank-class {
     display: flex;
@@ -5233,8 +5272,105 @@ body.touch-input #mobile-controls {
     padding: 0.5rem 0.75rem;
     background: rgba(255,255,255,0.04);
     font-size: 0.85rem;
+    cursor: pointer;
+    user-select: none;
 }
 .lb-my-rank-label { color: #888; }
+.lb-my-stats-toggle {
+    margin-left: auto;
+    color: #888;
+    font-size: 0.75rem;
+    transition: transform 0.2s ease;
+}
+.lb-my-rank.stats-open .lb-my-stats-toggle {
+    transform: rotate(180deg);
+}
+
+/* Personal Stats Dropdown */
+.lb-my-stats {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 0 0.75rem;
+}
+.lb-my-stats.open {
+    max-height: 2000px;
+    padding: 0.75rem;
+    overflow-y: auto;
+}
+.lb-my-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem;
+}
+.lb-stat-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.4rem 0.2rem;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+}
+.lb-stat-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #e0e0e8;
+}
+.lb-stat-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #888;
+    margin-top: 0.15rem;
+}
+.lb-stat-components {
+    margin-top: 0.6rem;
+}
+.lb-stat-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.7rem;
+}
+.lb-stat-bar-label {
+    width: 70px;
+    color: #999;
+    text-align: right;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lb-stat-bar-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.lb-stat-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #4a90d9, #60a5fa);
+    transition: width 0.5s ease;
+}
+.lb-stat-bar-val {
+    width: 28px;
+    color: #aaa;
+    font-size: 0.65rem;
+    text-align: left;
+}
+
+/* Personal analysis inside my-stats dropdown */
+.lb-my-stats .lb-analysis {
+    max-height: none;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255,255,255,0.06);
+}
 
 .lb-list {
     flex: none;
@@ -5647,10 +5783,10 @@ body.touch-input #mobile-controls {
     flex-shrink: 0;
 }
 
-/* Word popup — floating over the grid */
+/* Word popup — floating above the grid */
 #ws-word-popup {
     position: absolute;
-    bottom: 80px;
+    top: 88px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -5721,8 +5857,11 @@ body.touch-input #mobile-controls {
 #ws-pause-btn {
     position: absolute;
     right: calc(8px + var(--safe-right));
-    top: 32%;
+    top: 44%;
     z-index: 30;
+    width: 68px;
+    height: 68px;
+    font-size: 1.7rem;
 }
 
 /* On mobile, move pause button between mini player and grid */
@@ -5731,10 +5870,11 @@ body.touch-input #mobile-controls {
         position: relative;
         right: auto;
         top: auto;
-        align-self: flex-end;
-        margin-right: 8px;
-        margin-top: -2px;
-        margin-bottom: -2px;
+        width: 62px;
+        height: 62px;
+        font-size: 1.6rem;
+        align-self: center;
+        margin: 8px auto;
     }
 }
 
@@ -5843,4 +5983,273 @@ body.touch-input #mobile-controls {
     font-weight: 600;
     letter-spacing: 0.05em;
     margin-bottom: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   WORD RUNNER CHALLENGE
+   ═══════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════
+   WORD RUNNER – Matches WS/Play screen patterns
+   ══════════════════════════════════════════ */
+#wr-screen {
+    gap: 0;
+    justify-content: flex-start;
+    padding: calc(8px + var(--safe-top)) calc(10px + var(--safe-right)) calc(var(--safe-bottom)) calc(10px + var(--safe-left));
+    overflow: hidden;
+}
+#wr-screen::before, #wr-screen::after { display: none; }
+
+/* Level bar — matches #ws-level-bar / #level-bar */
+#wr-level-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 500px;
+    padding: 2px 64px 0 16px;
+    flex-shrink: 0;
+}
+#wr-level-text {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--blue);
+    white-space: nowrap;
+    min-width: 38px;
+}
+#wr-xp-bar-track {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    border: none;
+}
+#wr-xp-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--blue);
+    border-radius: 2px;
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#wr-xp-text {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    min-width: 54px;
+    text-align: right;
+}
+
+/* Score bar — matches #ws-score-bar / #score-bar */
+#wr-score-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 500px;
+    padding: 8px 64px 8px 16px;
+    flex-shrink: 0;
+}
+
+/* Word boxes — absolute inside canvas container, just below top of canvas */
+#wr-word-boxes {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    padding: 4px 10px;
+    background: rgba(20, 18, 14, 0.85);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.wr-word-popup {
+    position: absolute;
+    top: 48px;
+    left: 50%;
+    transform: translateX(-50%) translateY(0);
+    z-index: 6;
+    padding: 6px 18px;
+    background: rgba(74, 222, 128, 0.15);
+    border: 1.5px solid #4ade80;
+    border-radius: 10px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #4ade80;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    white-space: nowrap;
+    text-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+}
+.wr-word-popup.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+.wr-word-popup.fade-out {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+    transition: opacity 0.4s ease-in, transform 0.4s ease-in;
+}
+.wr-box {
+    width: 28px;
+    height: 32px;
+    border: 1.5px solid rgba(255,255,255,0.18);
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.2s, background 0.2s;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.wr-box:active { transform: scale(0.93); }
+.wr-box.filled {
+    border-color: var(--accent);
+    background: rgba(226, 216, 166, 0.08);
+}
+.wr-box.valid-flash {
+    border-color: #4ade80;
+    background: rgba(74, 222, 128, 0.15);
+    animation: wrBoxPop 0.3s ease-out;
+}
+.wr-box.invalid-flash {
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.15);
+    animation: wrBoxShake 0.5s ease-out;
+}
+.wr-box.complete-glow {
+    border-color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+    animation: wrBoxGlow 0.8s ease-in-out infinite alternate;
+}
+@keyframes wrBoxShake {
+    0%, 100% { transform: translateX(0); }
+    10%, 50%, 90% { transform: translateX(-6px); }
+    30%, 70% { transform: translateX(6px); }
+}
+@keyframes wrBoxPop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+@keyframes wrBoxGlow {
+    0% { box-shadow: 0 0 4px rgba(251, 191, 36, 0.3); }
+    100% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.6); }
+}
+
+/* Mini player — matches #ws-mini-player */
+#wr-mini-player {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 500px;
+    padding: 4px 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    position: relative;
+}
+#wr-mini-progress {
+    width: 100%;
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+    order: -1;
+}
+#wr-mini-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 1px;
+    transition: width 1s linear;
+}
+#wr-mini-title {
+    flex: 1;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+#wr-mini-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+#wr-mini-toggle {
+    width: 34px;
+    height: 34px;
+}
+
+/* Canvas container — matches #ws-grid-container */
+#wr-canvas-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 500px;
+    min-height: 0;
+    position: relative;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    z-index: 1;
+}
+#wr-canvas {
+    display: block;
+    border-radius: 6px;
+}
+
+/* WR pause button — shifted left and darker for visibility */
+#wr-pause-btn {
+    right: calc(30px + var(--safe-right));
+    background: rgba(0, 0, 0, 0.45);
+    border-radius: 999px;
+    opacity: 0.9;
+}
+
+/* WR validate button — below pause, quick word check */
+.wr-validate-fab {
+    right: calc(30px + var(--safe-right));
+    top: calc(32% + 58px);
+    width: 46px;
+    height: 46px;
+    background: rgba(0, 180, 120, 0.35);
+    border: 2px solid rgba(0, 220, 150, 0.5);
+    border-radius: 999px;
+    font-size: 1.3rem;
+    color: #aaffcc;
+    opacity: 0.85;
+    font-weight: bold;
+    transition: opacity 0.2s ease, background 0.2s ease;
+}
+.wr-validate-fab:hover,
+.wr-validate-fab:active {
+    opacity: 1;
+    background: rgba(0, 220, 150, 0.5);
+}
+
+/* Pause overlay — uses shared .overlay class from play screen */
+/* #wr-pause-overlay inherits .overlay styles */
+
+/* Responsive adjustments */
+@media (max-width: 400px) {
+    .wr-box { width: 24px; height: 28px; font-size: 0.8rem; }
+    #wr-word-boxes { gap: 3px; padding: 3px 6px; }
+    #wr-score-bar { padding: 6px 54px 4px 10px; }
 }
