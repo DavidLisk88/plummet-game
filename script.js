@@ -5842,7 +5842,7 @@ class Game {
         if (!key) return null;
         try {
             const data = JSON.parse(localStorage.getItem(key) || "null");
-            if (data && (data.version === 1 || data.version === 2)) return data;
+            if (data && (data.version === 1 || data.version === 2 || data.version === 3)) return data;
         } catch {}
         return null;
     }
@@ -14754,23 +14754,10 @@ class Game {
             this._showScreen("shop");
         });
         this.els.wrEndGameBtn?.addEventListener("click", () => {
-            this._wrEndGame();
+            this._wrEndGame("endgame");
         });
         this.els.wrSaveQuitBtn?.addEventListener("click", () => {
-            this.els.wrPauseOverlay?.classList.remove("active");
-            try {
-                if (this._wrGame) {
-                    try { this._wrSaveState(); } catch (e) { console.warn("WR save failed:", e); }
-                    this._wrGame.destroy();
-                    this._wrGame = null;
-                }
-            } catch (e) { console.warn("WR cleanup failed:", e); }
-            this._wr = null;
-            // Unhide the raw canvas if Phaser hid it
-            if (this.els.wrCanvas) this.els.wrCanvas.style.display = "";
-            // ALWAYS navigate to challenge setup
-            this.activeChallenge = CHALLENGE_TYPES.WORD_RUNNER;
-            this._openChallengeSetup(CHALLENGE_TYPES.WORD_RUNNER);
+            this._wrEndGame("save");
         });
 
         // Mini music player buttons
@@ -14840,13 +14827,7 @@ class Game {
     }
 
     _wrStartGame() {
-        // Check for a saved WR game first
-        const saved = this._loadGameState(CHALLENGE_TYPES.WORD_RUNNER);
-        if (saved && saved.type === "word-runner") {
-            this._clearGameState();
-            this._wrResumeFromSave(saved);
-            return;
-        }
+        // Clear any stale WR save when starting fresh
         this._clearGameState();
 
         // Lightweight _wr tracking object for compatibility with
@@ -14881,11 +14862,45 @@ class Game {
     }
 
     _wrSaveState() {
-        if (!this._wrGame) return;
-        const state = this._wrGame.getState();
-        if (!state) return;
         const key = this._saveKey(CHALLENGE_TYPES.WORD_RUNNER);
         if (!key) return;
+
+        // Try to get full scene state from Phaser (includes world geometry)
+        let sceneState = null;
+        try {
+            sceneState = this._wrGame ? this._wrGame.getState() : null;
+        } catch (e) {
+            console.warn("[WR] getState() failed, using fallback:", e);
+        }
+
+        if (sceneState) {
+            localStorage.setItem(key, JSON.stringify(sceneState));
+            return;
+        }
+
+        // Fallback: build save from _wr tracking object + any scene data we can grab
+        const scene = this._wrGame?.getScene?.();
+        const wr = this._wr;
+        if (!wr) return;
+
+        const state = {
+            version: 2,
+            type: "word-runner",
+            score: wr.score || 0,
+            coins: wr.coins || 0,
+            wordsFormed: wr.wordsFormed || [],
+            wordStreak: wr.wordStreak || 0,
+            maxWordStreak: wr.maxWordStreak || 0,
+            distance: wr.distance || 0,
+            collectedLetters: scene?.collectedLetters || [],
+            highScore: wr.highScore || 0,
+            scrollSpeed: scene?.scrollSpeed || 200,
+            nextSpawnX: scene?.nextSpawnX || 0,
+            groundSegments: [],
+            platforms: [],
+            rocks: [],
+            letters: [],
+        };
         localStorage.setItem(key, JSON.stringify(state));
     }
 
@@ -15233,14 +15248,29 @@ class Game {
       }
     }
 
-    _wrEndGame() {
+    _wrEndGame(reason = "endgame") {
         if (!this._wrGame && !this._wr) return;
+
+        // Close pause if open
         this.els.wrPauseOverlay?.classList.remove("active");
-        // Tell Phaser to end (triggers onGameOver callback -> _wrShowGameOver)
+
+        if (reason === "save") {
+            // Save & Quit: save WR state, destroy Phaser, return to setup
+            try { this._wrSaveState(); } catch (e) { console.warn("[WR] Save failed:", e); }
+            try {
+                if (this._wrGame) { this._wrGame.destroy(); this._wrGame = null; }
+            } catch (e) { console.warn("[WR] Cleanup failed:", e); }
+            this._wr = null;
+            // Unhide the raw canvas if Phaser hid it
+            if (this.els.wrCanvas) this.els.wrCanvas.style.display = "";
+            this._openChallengeSetup(CHALLENGE_TYPES.WORD_RUNNER);
+            return;
+        }
+
+        // End Game: clear saved state, trigger game over
+        const key = this._saveKey(CHALLENGE_TYPES.WORD_RUNNER);
+        if (key) localStorage.removeItem(key);
         if (this._wrGame) {
-            // Clear saved state
-            const key = this._saveKey(CHALLENGE_TYPES.WORD_RUNNER);
-            if (key) localStorage.removeItem(key);
             this._wrGame.endGame();
         } else {
             this._wrShowGameOver();

@@ -412,18 +412,18 @@ class WRGameScene extends Phaser.Scene {
             fontSize: "14px", color: "rgba(83,83,83,0.8)",
         }).setOrigin(0.5).setDepth(100).setVisible(false);
 
-        // Countdown overlay (fresh games only — not resumed)
-        this.countdownTimer = this.savedState ? 0 : 3.0;
+        // Countdown overlay (always shown — gives player time to get ready)
+        this.countdownTimer = 3.0;
         this.countdownText = this.add.text(w / 2, h * 0.38, '3', {
             fontFamily: "Inter, sans-serif",
             fontSize: '64px', fontStyle: 'bold', color: 'rgba(255,255,255,0.9)',
             stroke: 'rgba(0,0,0,0.5)', strokeThickness: 4,
-        }).setOrigin(0.5).setDepth(200).setVisible(!this.savedState);
+        }).setOrigin(0.5).setDepth(200).setVisible(true);
         this.countdownLabel = this.add.text(w / 2, h * 0.38 + 50, 'GET READY', {
             fontFamily: "Inter, sans-serif",
             fontSize: '14px', fontStyle: 'bold', color: 'rgba(255,255,255,0.6)',
             letterSpacing: 4,
-        }).setOrigin(0.5).setDepth(200).setVisible(!this.savedState);
+        }).setOrigin(0.5).setDepth(200).setVisible(true);
         // Freeze physics during countdown
         if (this.countdownTimer > 0) this.physics.pause();
 
