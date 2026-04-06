@@ -11,148 +11,246 @@
 import { getClassInfo } from './skill-engine.js';
 
 // Component labels and descriptions for analysis
+// Each component has 4 phrase bands: elite (75+), strong (50-74), developing (25-49), early (0-24)
 const COMPONENT_META = {
     raw_score: {
         label: 'Scoring Power',
-        strongPhrases: [
-            'Consistently delivers high scores across game modes',
-            'A dominant scorer with impressive point totals',
-            'Exceptional scoring ability that sets them apart',
-        ],
-        weakPhrases: [
-            'Scoring output could see improvement with practice',
-            'Point totals are modest — there\'s room to grow',
-            'Still building up scoring momentum',
-        ],
+        bands: {
+            elite: [
+                'A dominant scorer with consistently impressive point totals.',
+                'Exceptional scoring ability that places them among the strongest in the game.',
+                'Delivers elite-level points across game modes — scoring is a true weapon.',
+            ],
+            strong: [
+                'Solid scoring output that forms a reliable foundation.',
+                'Consistently puts up respectable numbers on the scoreboard.',
+                'Above-average scoring that shows real competence.',
+            ],
+            developing: [
+                'Scoring is building momentum — getting stronger with each session.',
+                'Point totals are growing as game sense improves.',
+                'Starting to find the bigger words and point multipliers.',
+            ],
+            early: [
+                'Scoring output is in its early stages — plenty of ceiling to discover.',
+                'Still learning what drives big scores — the upside is significant.',
+                'Focus on longer words and combos to kickstart scoring growth.',
+            ],
+        },
     },
     grid_mastery: {
         label: 'Grid Mastery',
-        strongPhrases: [
-            'Thrives on smaller, more challenging grids',
-            'Masters tight grid spaces where every letter placement counts',
-            'Shows remarkable skill on constrained grid sizes',
-        ],
-        weakPhrases: [
-            'Tends to stick to larger, more forgiving grids',
-            'Could push into smaller grid sizes for a real challenge',
-            'Grid versatility is an area for development',
-        ],
+        bands: {
+            elite: [
+                'Masters tight grid spaces where every letter placement counts.',
+                'Shows remarkable proficiency across all grid sizes — a genuine grid specialist.',
+                'Thrives on smaller, more challenging grids that punish sloppy play.',
+            ],
+            strong: [
+                'Comfortable across most grid sizes with solid spatial awareness.',
+                'Handles grid variation well — no grid size feels like unfamiliar territory.',
+                'Good grid instincts that translate into consistent play.',
+            ],
+            developing: [
+                'Grid skills are progressing — pushing into smaller grids more often would accelerate growth.',
+                'Showing comfort on mid-range grids with room to expand.',
+                'Building the spatial awareness needed for tighter grid play.',
+            ],
+            early: [
+                'Tends to stick to larger, more forgiving grids so far.',
+                'Grid mastery is a wide-open growth area — try smaller grids to level up.',
+                'Still mapping out how grid size impacts strategy.',
+            ],
+        },
     },
     difficulty: {
         label: 'Hard Mode',
-        strongPhrases: [
-            'Excels under Hard Mode\'s punishing 4+ letter requirement',
-            'A Hard Mode specialist who embraces the challenge',
-            'Hard Mode performance is a standout strength',
-        ],
-        weakPhrases: [
-            'Primarily plays on Normal difficulty',
-            'Hard Mode remains relatively unexplored territory',
-            'Stepping into Hard Mode more often would boost their ranking',
-        ],
+        bands: {
+            elite: [
+                'A Hard Mode specialist who thrives under the 4+ letter requirement.',
+                'Hard Mode performance is a standout strength — consistently excels on the hardest setting.',
+                'Crushing it on Hard Mode where most players struggle.',
+            ],
+            strong: [
+                'Handles Hard Mode with confidence and decent results.',
+                'A regular Hard Mode player who produces competitive scores under pressure.',
+                'Hard Mode is no stranger — showing real comfort at the higher difficulty.',
+            ],
+            developing: [
+                'Dabbling in Hard Mode with promising early results.',
+                'Starting to build a Hard Mode track record — the foundation is forming.',
+                'Making the transition to Hard Mode play — scores will follow with persistence.',
+            ],
+            early: [
+                'Primarily plays on Normal difficulty — Hard Mode awaits.',
+                'Hard Mode remains relatively unexplored territory.',
+                'Stepping into Hard Mode more often would be the single biggest rating booster.',
+            ],
+        },
     },
     time_pressure: {
         label: 'Time Pressure',
-        strongPhrases: [
-            'Performs brilliantly under tight time constraints',
-            'Short-timer games are where they truly shine',
-            'Handles time pressure with composure and efficiency',
-        ],
-        weakPhrases: [
-            'Gravitates toward longer time limits',
-            'Performance drops noticeably under shorter timers',
-            'Building speed and efficiency under pressure is the next frontier',
-        ],
+        bands: {
+            elite: [
+                'Performs brilliantly under the tightest time constraints.',
+                'Short-timer games are where they truly shine — composure under pressure is elite.',
+                'Clock management is exceptional — extracts maximum value from every second.',
+            ],
+            strong: [
+                'Handles time pressure well with solid performance on shorter timers.',
+                'Comfortable racing the clock — time-limited modes are a strength.',
+                'Good speed and efficiency when the timer is ticking.',
+            ],
+            developing: [
+                'Building comfort with time pressure — tighter timers are becoming more familiar.',
+                'Shows potential under time constraints that will sharpen with practice.',
+                'Starting to find rhythm in timed modes.',
+            ],
+            early: [
+                'Gravitates toward longer time limits or untimed modes.',
+                'Time pressure performance is the biggest unlock available right now.',
+                'Shorter timers would be a great next challenge to tackle.',
+            ],
+        },
     },
     challenge: {
         label: 'Challenges',
-        strongPhrases: [
-            'Dominates across multiple challenge types',
-            'Challenge modes bring out their best performance',
-            'A well-rounded challenge competitor',
-        ],
-        weakPhrases: [
-            'Challenge participation is limited',
-            'Has yet to fully explore the challenge game modes',
-            'Engaging more with challenges would strengthen their profile',
-        ],
+        bands: {
+            elite: [
+                'Dominates across multiple challenge types — a true all-around competitor.',
+                'Challenge modes bring out their best performance — thrives in specialized play.',
+                'A feared name on the challenge leaderboards.',
+            ],
+            strong: [
+                'A solid challenge competitor with strong showings across modes.',
+                'Engages meaningfully with challenges and puts up competitive scores.',
+                'Challenge experience is translating into real skill.',
+            ],
+            developing: [
+                'Growing their challenge repertoire with each new attempt.',
+                'Challenge participation is picking up — building valuable experience.',
+                'The more challenges played, the faster this score will climb.',
+            ],
+            early: [
+                'Challenge participation is limited — a major opportunity zone.',
+                'Exploring challenges more would diversify their skill profile significantly.',
+                'Has yet to fully discover what challenges offer — big upside here.',
+            ],
+        },
     },
     consistency: {
         label: 'Consistency',
-        strongPhrases: [
-            'Delivers reliable, steady performance game after game',
-            'One of the most consistent players — rarely has an off game',
-            'Score variance is remarkably low, showing true mastery',
-        ],
-        weakPhrases: [
-            'Performance can be unpredictable from game to game',
-            'Score fluctuations suggest an inconsistent play style',
-            'Stabilizing performance would elevate their ranking significantly',
-        ],
+        bands: {
+            elite: [
+                'One of the most consistent players around — rarely has an off game.',
+                'Score variance is remarkably low, signaling true mastery and control.',
+                'Delivers reliable, steady performance game after game.',
+            ],
+            strong: [
+                'Puts up consistent numbers with only occasional variance.',
+                'A dependable performer — you know roughly what to expect each game.',
+                'Good game-to-game stability that reflects solid fundamentals.',
+            ],
+            developing: [
+                'Some variance from game to game — consistency will sharpen with volume.',
+                'Performance can swing between hot and cold sessions.',
+                'Narrowing the gap between best and worst games.',
+            ],
+            early: [
+                'Scores fluctuate substantially — natural at this stage of development.',
+                'High variance suggests an evolving play style that hasn\'t settled yet.',
+                'Consistency comes with experience — it will stabilize naturally.',
+            ],
+        },
     },
     versatility: {
         label: 'Versatility',
-        strongPhrases: [
-            'Plays across a wide variety of game configurations',
-            'Impressively well-rounded — no mode feels unfamiliar',
-            'Explores every corner of the game with strong results',
-        ],
-        weakPhrases: [
-            'Tends to specialize in a narrow set of configurations',
-            'Branching out to different modes and grids would help',
-            'Versatility is limited — a broader approach would pay dividends',
-        ],
+        bands: {
+            elite: [
+                'Explores every corner of the game with strong results — impressively well-rounded.',
+                'A true generalist who can compete in any configuration.',
+                'Plays across a wide variety of game setups and succeeds in all of them.',
+            ],
+            strong: [
+                'Good breadth of experience across game modes and settings.',
+                'Comfortable trying different configurations and adapting.',
+                'A versatile player who doesn\'t shy away from variety.',
+            ],
+            developing: [
+                'Starting to branch out from their comfort zone.',
+                'Versatility is growing as they explore new configurations.',
+                'A few more mode/grid combinations would round out this profile nicely.',
+            ],
+            early: [
+                'Tends to specialize in a narrow set of configurations.',
+                'Branching out to different modes, grids, and time limits would help significantly.',
+                'More variety in game choices is the clearest path to a higher rating.',
+            ],
+        },
     },
     progression: {
         label: 'Growth Trend',
-        strongPhrases: [
-            'On a clear upward trajectory — improving rapidly',
-            'Recent games show marked improvement over earlier sessions',
-            'Getting stronger with every session',
-        ],
-        weakPhrases: [
-            'Improvement has plateaued recently',
-            'Recent performance is similar to earlier results',
-            'Finding new strategies could reignite their growth curve',
-        ],
+        bands: {
+            elite: [
+                'On a steep upward trajectory — improving at an impressive rate.',
+                'Recent games show dramatic improvement over earlier sessions.',
+                'Growth rate is exceptional — this player is leveling up fast.',
+            ],
+            strong: [
+                'Clear positive trend — getting noticeably stronger over time.',
+                'Recent performance is outpacing their overall track record.',
+                'Steady improvement that shows dedication and learning.',
+            ],
+            developing: [
+                'Growth has been moderate — consistency in practice will steepen the curve.',
+                'Some improvement visible but not yet breaking away from the baseline.',
+                'The learning curve is there — pushing harder difficulties could accelerate it.',
+            ],
+            early: [
+                'Improvement has plateaued or is too early to measure.',
+                'Recent performance is roughly flat — finding new strategies could help.',
+                'Growth hasn\'t kicked in yet — it often takes 20+ games to see a real trend.',
+            ],
+        },
     },
 };
 
 /**
  * Generate a natural-language analysis of a player's strengths and weaknesses.
  * 
+ * Uses enriched server data when available:
+ * - percentiles: per-component percentile within their class
+ * - class_averages: average scores for their class (peer comparison)
+ * - delta: recent performance change vs previous games
+ * - notables: personal bests, streaks, milestones
+ * 
  * @param {Object} data - Player analysis data (from get_player_analysis_data RPC or local)
- * @param {Object} data.components - The 8 skill component scores (0-100 each)
- * @param {string} data.skill_class - 'high', 'medium', or 'low'
- * @param {number} data.skill_rating - Overall skill rating
- * @param {string} data.username - Player's display name
- * @param {number} data.games_played - Total games played
- * @param {number} data.level - Current level
  * @returns {string} HTML-formatted analysis text
  */
 export function generatePlayerAnalysis(data) {
     if (!data || !data.components) return '';
 
-    const { components, skill_class, skill_rating, username, games_played, level } = data;
+    const { components, skill_class, skill_rating, username, games_played, level,
+            percentiles, class_averages, players_in_class, delta, notables } = data;
     const classInfo = getClassInfo(skill_class);
+    const seed = hashCode(username || 'player');
 
     // Sort components by score to find strengths and weaknesses
     const sorted = Object.entries(components)
         .map(([key, value]) => ({ key, value, meta: COMPONENT_META[key] }))
-        .filter(c => c.meta) // skip unknown keys
+        .filter(c => c.meta)
         .sort((a, b) => b.value - a.value);
 
     const strengths = sorted.filter(c => c.value >= 45).slice(0, 3);
     const weaknesses = sorted.filter(c => c.value < 35).slice(-3).reverse();
 
-    // Pick random phrases using a seeded approach (username hash for consistency)
-    const seed = hashCode(username || 'player');
-
     let html = '';
 
-    // Opening line
+    // ── Opening line (class-aware + master) ──
     html += `<div class="analysis-section">`;
-    if (skill_class === 'high') {
+    if (skill_class === 'master') {
+        html += `<p class="analysis-lead">A master-class player at the absolute pinnacle — near-perfect across every dimension.</p>`;
+    } else if (skill_class === 'high') {
         html += `<p class="analysis-lead">An elite-level player demonstrating mastery across multiple dimensions of the game.</p>`;
     } else if (skill_class === 'medium') {
         html += `<p class="analysis-lead">A solid competitor with clear strengths and identifiable areas for growth.</p>`;
@@ -161,74 +259,174 @@ export function generatePlayerAnalysis(data) {
     }
     html += `</div>`;
 
-    // Strengths
+    // ── Notable patterns (personal best, streak, milestone) ──
+    if (notables) {
+        const alerts = [];
+        if (notables.new_personal_best) {
+            alerts.push('🏆 <b>New personal best!</b> Set a new all-time high score in a recent game.');
+        }
+        if (notables.improvement_streak && notables.streak_length >= 3) {
+            alerts.push(`🔥 <b>${notables.streak_length}-game improvement streak</b> — each game outscoring the last.`);
+        }
+        if (notables.games_to_milestone != null && notables.games_to_milestone <= 10) {
+            alerts.push(`📍 <b>${notables.games_to_milestone} games</b> away from the ${notables.next_milestone}-game milestone.`);
+        }
+        if (alerts.length > 0) {
+            html += `<div class="analysis-section analysis-notables">`;
+            for (const alert of alerts) {
+                html += `<p class="analysis-notable">${alert}</p>`;
+            }
+            html += `</div>`;
+        }
+    }
+
+    // ── Recent trend (delta) ──
+    if (delta && games_played >= 15) {
+        const pct = delta.score_change_pct || 0;
+        if (Math.abs(pct) >= 5) {
+            html += `<div class="analysis-section">`;
+            if (pct >= 15) {
+                html += `<p class="analysis-desc">📈 Scores are <b>up ${pct}%</b> recently — on a strong upward surge.</p>`;
+            } else if (pct >= 5) {
+                html += `<p class="analysis-desc">📈 Scores are <b>up ${pct}%</b> compared to earlier games — steady improvement.</p>`;
+            } else if (pct <= -15) {
+                html += `<p class="analysis-desc">📉 Scores are <b>down ${Math.abs(pct)}%</b> recently — could be experimenting or hitting a wall.</p>`;
+            } else {
+                html += `<p class="analysis-desc">📉 Scores have <b>dipped ${Math.abs(pct)}%</b> from their earlier pace.</p>`;
+            }
+            html += `</div>`;
+        }
+    }
+
+    // ── Strengths with range-specific phrases + percentile + peer comparison ──
     if (strengths.length > 0) {
         html += `<div class="analysis-section"><h4 class="analysis-heading strengths-heading">Strengths</h4><ul class="analysis-list">`;
         for (const s of strengths) {
-            const phrases = s.meta.strongPhrases;
-            const phrase = phrases[Math.abs(seed + hashCode(s.key)) % phrases.length];
+            const phrase = _pickBandPhrase(s.meta, s.value, seed, s.key);
             const scoreBar = getScoreBar(s.value);
-            html += `<li><span class="analysis-label">${s.meta.label}</span> ${scoreBar}<br><span class="analysis-desc">${phrase}</span></li>`;
+            let extra = '';
+            // Percentile context
+            if (percentiles && percentiles[s.key] != null) {
+                extra += ` <span class="analysis-percentile">Top ${100 - percentiles[s.key]}% in ${_classLabel(skill_class)}</span>`;
+            }
+            // Peer comparison
+            if (class_averages && class_averages[s.key] != null) {
+                const diff = Math.round(s.value - class_averages[s.key]);
+                if (diff > 0) {
+                    extra += ` <span class="analysis-peer">+${diff} vs class avg</span>`;
+                }
+            }
+            html += `<li><span class="analysis-label">${s.meta.label}</span> ${scoreBar}${extra}<br><span class="analysis-desc">${phrase}</span></li>`;
         }
         html += `</ul></div>`;
     }
 
-    // Weaknesses
+    // ── Weaknesses with range-specific phrases + peer comparison ──
     if (weaknesses.length > 0) {
         html += `<div class="analysis-section"><h4 class="analysis-heading weaknesses-heading">Areas to Improve</h4><ul class="analysis-list">`;
         for (const w of weaknesses) {
-            const phrases = w.meta.weakPhrases;
-            const phrase = phrases[Math.abs(seed + hashCode(w.key)) % phrases.length];
+            const phrase = _pickBandPhrase(w.meta, w.value, seed, w.key);
             const scoreBar = getScoreBar(w.value);
-            html += `<li><span class="analysis-label">${w.meta.label}</span> ${scoreBar}<br><span class="analysis-desc">${phrase}</span></li>`;
+            let extra = '';
+            if (class_averages && class_averages[w.key] != null) {
+                const diff = Math.round(w.value - class_averages[w.key]);
+                if (diff < 0) {
+                    extra += ` <span class="analysis-peer">${diff} vs class avg</span>`;
+                }
+            }
+            html += `<li><span class="analysis-label">${w.meta.label}</span> ${scoreBar}${extra}<br><span class="analysis-desc">${phrase}</span></li>`;
         }
         html += `</ul></div>`;
     }
 
-    // Key stats summary
+    // ── Cross-component insights ──
+    const crossInsights = _getCrossInsights(components, seed);
+    if (crossInsights.length > 0) {
+        html += `<div class="analysis-section"><h4 class="analysis-heading insights-heading">Insights</h4>`;
+        for (const insight of crossInsights) {
+            html += `<p class="analysis-desc analysis-cross-insight">${insight}</p>`;
+        }
+        html += `</div>`;
+    }
+
+    // ── Key stats summary ──
     if (games_played > 0) {
         html += `<div class="analysis-section analysis-stats">`;
         html += `<span class="analysis-stat">Level ${level || 1}</span>`;
         html += `<span class="analysis-stat">${games_played} games</span>`;
         html += `<span class="analysis-stat">Rating: ${(skill_rating || 0).toFixed(1)}</span>`;
-        html += `</div>`;
-    }
-
-    // Word Search specific analysis
-    const ws = data.word_search;
-    if (ws && ws.games_played >= 3) {
-        html += `<div class="analysis-section"><h4 class="analysis-heading ws-heading">Word Search Performance</h4>`;
-        html += `<div class="analysis-ws-grid">`;
-
-        const compRate = (ws.avg_completion_rate * 100).toFixed(0);
-        const perfectRate = (ws.perfect_clear_rate * 100).toFixed(0);
-        const speedUsed = (ws.avg_time_efficiency * 100).toFixed(0);
-        const wsRating = (ws.skill_rating || 0).toFixed(1);
-
-        html += `<span class="ws-stat-item"><b>${compRate}%</b> avg completion</span>`;
-        html += `<span class="ws-stat-item"><b>${perfectRate}%</b> perfect clears</span>`;
-        html += `<span class="ws-stat-item"><b>${100 - speedUsed}%</b> speed efficiency</span>`;
-        html += `<span class="ws-stat-item"><b>${ws.highest_level || 1}</b> highest level</span>`;
-        if (ws.total_bonus_words > 0) {
-            html += `<span class="ws-stat-item"><b>${ws.total_bonus_words}</b> bonus words found</span>`;
+        if (players_in_class > 1) {
+            html += `<span class="analysis-stat">${players_in_class} in ${_classLabel(skill_class)}</span>`;
         }
-        if (ws.fastest_clear != null) {
-            const mins = Math.floor(ws.fastest_clear / 60);
-            const secs = Math.round(ws.fastest_clear % 60);
-            html += `<span class="ws-stat-item"><b>${mins}:${secs.toString().padStart(2, '0')}</b> fastest clear</span>`;
-        }
-        html += `</div>`;
-
-        // WS insight phrase
-        const wsInsight = getWsInsight(ws, seed);
-        if (wsInsight) {
-            html += `<p class="analysis-desc ws-insight">${wsInsight}</p>`;
-        }
-
         html += `</div>`;
     }
 
     return html;
+}
+
+/**
+ * Pick a phrase from the correct band (elite/strong/developing/early)
+ * based on the component score. Uses seeded selection for consistency.
+ */
+function _pickBandPhrase(meta, value, seed, key) {
+    let band;
+    if (value >= 75) band = 'elite';
+    else if (value >= 50) band = 'strong';
+    else if (value >= 25) band = 'developing';
+    else band = 'early';
+
+    const phrases = meta.bands[band];
+    return phrases[Math.abs(seed + hashCode(key)) % phrases.length];
+}
+
+/**
+ * Detect meaningful cross-component patterns.
+ * Returns an array of insight strings (0-2 max).
+ */
+function _getCrossInsights(c, seed) {
+    const insights = [];
+
+    // High difficulty + low consistency = pushing limits
+    if (c.difficulty >= 50 && c.consistency < 30) {
+        insights.push('💡 High difficulty play with variable results — pushing into hard territory where consistency hasn\'t caught up yet. The scores will stabilize with more reps.');
+    }
+    // High consistency + low versatility = comfort zone
+    else if (c.consistency >= 60 && c.versatility < 25) {
+        insights.push('💡 Very consistent but in a narrow lane — branching out to new modes and grids could unlock the next tier of overall rating.');
+    }
+
+    // High time pressure + high scoring = clutch player
+    if (c.time_pressure >= 55 && c.raw_score >= 55) {
+        insights.push('💡 A clutch performer who scores big even under the clock — the rarest and most valuable combination.');
+    }
+    // High volume(challenge) + low progression = plateau
+    else if (c.challenge >= 50 && c.progression < 25) {
+        insights.push('💡 Lots of challenge experience but growth has flattened — try harder difficulties or unfamiliar modes to reignite improvement.');
+    }
+
+    // High grid mastery + high difficulty = technical master
+    if (c.grid_mastery >= 60 && c.difficulty >= 60 && insights.length < 2) {
+        insights.push('💡 Excels on hard mode with tight grids — a technical master who thrives where margins are thinnest.');
+    }
+
+    // High versatility + high consistency = all-rounder
+    if (c.versatility >= 55 && c.consistency >= 55 && insights.length < 2) {
+        insights.push('💡 Consistent across a wide variety of modes — the hallmark of a truly well-rounded player.');
+    }
+
+    // High progression + low everything else = fast learner
+    if (c.progression >= 65 && (c.raw_score + c.grid_mastery + c.difficulty) / 3 < 35 && insights.length < 2) {
+        insights.push('💡 Improving rapidly despite still-developing skills — this growth rate suggests the ratings will climb fast.');
+    }
+
+    return insights.slice(0, 2);
+}
+
+/**
+ * Friendly class label for display
+ */
+function _classLabel(cls) {
+    return { master: 'Master', high: 'High', medium: 'Medium', low: 'Low' }[cls] || 'Low';
 }
 
 /**
