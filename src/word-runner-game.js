@@ -407,10 +407,13 @@ class WRScene {
         this.coins = 0;
         this.wordsFormed = [];
         this.wordStreak = 0;
+        this.maxWordStreak = 0;
         this.collectedLetters = [];
         this.isPaused = false;
         this.dead = false;
         this.gameOver = false;
+        this.countdownTimer = 0;
+        this._lastCountSec = 0;
 
         // ── World objects ──
         this.columns = new Map();
@@ -463,6 +466,29 @@ class WRScene {
         this.goScore.visible = false;
         this.hudLayer.addChild(this.goScore);
 
+        // ── Countdown overlay ──
+        this.countdownText = new Text({
+            text: "3",
+            style: { fontFamily: "sans-serif", fontSize: 64, fontWeight: "bold", fill: "#ffffff",
+                     stroke: { color: "#000000", width: 4 } },
+        });
+        this.countdownText.anchor.set(0.5);
+        this.countdownText.position.set(this.screenW / 2, this.screenH * 0.38);
+        this.countdownText.visible = false;
+        this.countdownText.zIndex = 200;
+        this.hudLayer.addChild(this.countdownText);
+
+        this.countdownLabel = new Text({
+            text: "GET READY",
+            style: { fontFamily: "sans-serif", fontSize: 14, fontWeight: "bold", fill: "#88aacc",
+                     letterSpacing: 4 },
+        });
+        this.countdownLabel.anchor.set(0.5);
+        this.countdownLabel.position.set(this.screenW / 2, this.screenH * 0.38 + 50);
+        this.countdownLabel.visible = false;
+        this.countdownLabel.zIndex = 200;
+        this.hudLayer.addChild(this.countdownLabel);
+
         // ── Character & Particles ──
         this.runner = new NeonRunner(this.worldLayer);
         this.particles = new Particles(this.worldLayer);
@@ -486,6 +512,21 @@ class WRScene {
         if (this.callbacks.onResumed && savedState) {
             this.callbacks.onResumed(this.collectedLetters);
         }
+        // Start 3-second countdown (both fresh and resumed games)
+        this._startCountdown();
+    }
+
+    _startCountdown() {
+        this.countdownTimer = 3.0;
+        this._lastCountSec = 0;
+        this.countdownText.text = "3";
+        this.countdownText.visible = true;
+        this.countdownText.alpha = 1;
+        this.countdownText.scale.set(1);
+        this.countdownLabel.visible = true;
+        this.countdownLabel.alpha = 1;
+        this.isPaused = true;
+        if (this.runner._runTl) this.runner._runTl.pause();
     }
 
     _freshStart() {
@@ -510,6 +551,7 @@ class WRScene {
         this.coins = saved.coins || 0;
         this.wordsFormed = saved.wordsFormed || [];
         this.wordStreak = saved.wordStreak || 0;
+        this.maxWordStreak = saved.maxWordStreak || saved.wordStreak || 0;
         this.collectedLetters = saved.collectedLetters || [];
         this.distance = saved.distance || 0;
         this.cameraX = this.player.worldX - this.screenW * 0.25;
@@ -533,6 +575,7 @@ class WRScene {
 
     _setupInput() {
         this._keyDown = (e) => {
+            if (this.countdownTimer > 0) return;
             if (this.isPaused || this.dead) return;
             if (e.code === "Space" || e.code === "ArrowUp") {
                 e.preventDefault();
@@ -543,6 +586,7 @@ class WRScene {
         window.addEventListener("keydown", this._keyDown);
 
         this._pointerDown = () => {
+            if (this.countdownTimer > 0) return;
             if (this.isPaused || this.dead) return;
             this._tryJump();
         };
@@ -582,6 +626,35 @@ class WRScene {
     // ── Core Update Loop ────────────────────────────────────────────────────
 
     update(dt) {
+        // ── 3-second countdown ──
+        if (this.countdownTimer > 0) {
+            this.countdownTimer -= dt;
+            const sec = Math.ceil(this.countdownTimer);
+            if (this.countdownTimer <= 0) {
+                // GO!
+                this.countdownTimer = 0;
+                this.countdownText.text = "GO!";
+                this.countdownLabel.visible = false;
+                this.isPaused = false;
+                if (this.runner._runTl) this.runner._runTl.resume();
+                gsap.to(this.countdownText, {
+                    alpha: 0, duration: 0.4, ease: "power2.out",
+                });
+                gsap.to(this.countdownText.scale, {
+                    x: 1.5, y: 1.5, duration: 0.4, ease: "power2.out",
+                    onComplete: () => { this.countdownText.visible = false; },
+                });
+            } else {
+                this.countdownText.text = String(sec);
+                if (this._lastCountSec !== sec) {
+                    this._lastCountSec = sec;
+                    this.countdownText.scale.set(1.3);
+                    gsap.to(this.countdownText.scale, { x: 1, y: 1, duration: 0.2, ease: "back.out" });
+                }
+            }
+            return;
+        }
+
         if (this.isPaused || this.dead) return;
         const p = this.player;
         p.prevVy = p.vy;
@@ -1038,7 +1111,7 @@ class WRScene {
                 this.callbacks.onGameOver({
                     score: this.score, coins: this.coins,
                     wordsFormed: this.wordsFormed, wordStreak: this.wordStreak,
-                    distance: this.distance,
+                    maxWordStreak: this.maxWordStreak, distance: this.distance,
                 });
             }
         });
@@ -1048,13 +1121,22 @@ class WRScene {
 
     validateWord() {
         const letters = this.collectedLetters;
+        console.log("[WR validateWord] letters:", letters.join(""), "dictSize:", this.dictionaryRef.size);
         if (letters.length < 3) { this._wordInvalid(); return null; }
 
+        // Find longest valid contiguous substring from ANY starting position
         let bestWord = null;
+        let bestStart = 0;
         for (let len = letters.length; len >= 3; len--) {
-            const candidate = letters.slice(0, len).join("");
-            if (this.dictionaryRef.has(candidate)) { bestWord = candidate; break; }
+            for (let start = 0; start <= letters.length - len; start++) {
+                const candidate = letters.slice(start, start + len).join("");
+                const found = this.dictionaryRef.has(candidate);
+                if (len >= letters.length - 1) console.log("[WR]  check:", candidate, "→", found);
+                if (found) { bestWord = candidate; bestStart = start; break; }
+            }
+            if (bestWord) break;
         }
+        console.log("[WR] bestWord:", bestWord, "bestStart:", bestStart);
         if (!bestWord) { this._wordInvalid(); return null; }
 
         const word = bestWord;
@@ -1068,6 +1150,7 @@ class WRScene {
         pts += letterBonus;
 
         this.wordStreak++;
+        if (this.wordStreak > this.maxWordStreak) this.maxWordStreak = this.wordStreak;
         const streakMult = Math.min(3.0, 1.0 + (this.wordStreak - 1) * 0.5);
         pts = Math.floor(pts * streakMult);
         this.wordScore += pts;
@@ -1087,13 +1170,10 @@ class WRScene {
 
         try { this.audioRef?._beep(880, 0.15, "sine", 0.15); } catch (e) { /* */ }
 
-        if (word.length >= letters.length) {
-            this.collectedLetters = [];
-        } else {
-            this.collectedLetters = letters.slice(word.length);
-        }
+        // Clear all letters after extracting the word
+        this.collectedLetters = [];
 
-        return { word, pts, coins: wordCoins, streak: this.wordStreak };
+        return { word, pts, coins: wordCoins, streak: this.wordStreak, startIndex: bestStart };
     }
 
     _wordInvalid() {
@@ -1202,8 +1282,8 @@ class WRScene {
     }
 
     resumeGame() {
-        this.isPaused = false;
-        if (this.runner._runTl) this.runner._runTl.resume();
+        // Don't immediately resume — start a countdown
+        this._startCountdown();
     }
 
     // ── State Serialization ─────────────────────────────────────────────────
@@ -1221,7 +1301,8 @@ class WRScene {
             score: this.score, coins: this.coins,
             wordsFormed: [...this.wordsFormed],
             distance: this.distance, wordScore: this.wordScore,
-            wordStreak: this.wordStreak, highScore: this.highScore,
+            wordStreak: this.wordStreak, maxWordStreak: this.maxWordStreak,
+            highScore: this.highScore,
         };
     }
 

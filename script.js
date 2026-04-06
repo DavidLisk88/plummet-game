@@ -7167,7 +7167,7 @@ class Game {
         // Track active timers for cleanup on game over / resume
         if (!this._wordPopupTimers) this._wordPopupTimers = [];
 
-        const holdMs = Math.min((animDuration + 0.5) * 1000, 1500);
+        const holdMs = Math.min((animDuration + 0.05) * 1000, 200);
 
         // Each row exits on its own timer after its animation completes
         const timerId = setTimeout(() => {
@@ -7190,7 +7190,7 @@ class Game {
         }, holdMs);
         this._wordPopupTimers.push(timerId);
 
-        // Absolute failsafe: if this popup still hasn't cleared after 2s, force-clear it
+        // Absolute failsafe: if this popup still hasn't cleared after 1.5s, force-clear it
         const failsafeId = setTimeout(() => {
             this._removePopupTimer(failsafeId);
             if (row.parentNode) row.parentNode.removeChild(row);
@@ -7198,7 +7198,7 @@ class Game {
             if (this._wordPopupCount > 0) {
                 this._decrementPopupCount();
             }
-        }, holdMs + 2000);
+        }, holdMs + 1500);
         this._wordPopupTimers.push(failsafeId);
     }
 
@@ -14948,15 +14948,17 @@ class Game {
         if (!this._wrGame) return;
         const result = this._wrGame.validateWord();
         if (result) {
-            // Word was valid — update boxes with remaining letters
-            this._wrUpdateBoxes();
+            // Word was valid — flash matched boxes, then update
             const boxes = this.els.wrWordBoxes?.querySelectorAll(".wr-box");
+            const start = result.startIndex || 0;
             boxes?.forEach((b, i) => {
-                if (i < result.word.length) {
+                if (i >= start && i < start + result.word.length) {
                     b.classList.add("valid-flash");
                     setTimeout(() => b.classList.remove("valid-flash"), 500);
                 }
             });
+            // Update boxes after flash starts (letters now cleared)
+            setTimeout(() => this._wrUpdateBoxes(), 350);
             // Show word popup
             this._wrShowWordPopup(result.word, result.coins);
         } else {
@@ -14990,6 +14992,8 @@ class Game {
         if (!this._wrGame) return;
         const scene = this._wrGame.getScene();
         if (!scene) return;
+        // Don't allow pause toggle during countdown
+        if (scene.countdownTimer > 0) return;
         if (scene.isPaused) {
             scene.resumeGame();
             this.els.wrPauseOverlay?.classList.remove("active");

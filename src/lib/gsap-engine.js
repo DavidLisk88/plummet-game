@@ -283,10 +283,10 @@ export function letterAssemble(row, letterSpans, opts = {}) {
 export function wordPopupExit(row) {
     if (!row) return null;
     return gsap.to(row, {
-        x: 30,
+        y: -18,
         opacity: 0,
-        scale: 0.9,
-        duration: 0.3,
+        scale: 0.7,
+        duration: 0.35,
         ease: 'power2.in',
         onComplete: () => row.remove(),
     });

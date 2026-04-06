@@ -412,6 +412,21 @@ class WRGameScene extends Phaser.Scene {
             fontSize: "14px", color: "rgba(83,83,83,0.8)",
         }).setOrigin(0.5).setDepth(100).setVisible(false);
 
+        // Countdown overlay (fresh games only — not resumed)
+        this.countdownTimer = this.savedState ? 0 : 3.0;
+        this.countdownText = this.add.text(w / 2, h * 0.38, '3', {
+            fontFamily: "Inter, sans-serif",
+            fontSize: '64px', fontStyle: 'bold', color: 'rgba(255,255,255,0.9)',
+            stroke: 'rgba(0,0,0,0.5)', strokeThickness: 4,
+        }).setOrigin(0.5).setDepth(200).setVisible(!this.savedState);
+        this.countdownLabel = this.add.text(w / 2, h * 0.38 + 50, 'GET READY', {
+            fontFamily: "Inter, sans-serif",
+            fontSize: '14px', fontStyle: 'bold', color: 'rgba(255,255,255,0.6)',
+            letterSpacing: 4,
+        }).setOrigin(0.5).setDepth(200).setVisible(!this.savedState);
+        // Freeze physics during countdown
+        if (this.countdownTimer > 0) this.physics.pause();
+
         // Depth sorting
         this.dustEmitter.setDepth(5);
         this.speedLineEmitter.setDepth(4);
@@ -623,7 +638,7 @@ class WRGameScene extends Phaser.Scene {
     // -- Input ----------------------------------------------------------------
 
     _onTap() {
-        if (this.gameOver || this.isPaused) return;
+        if (this.gameOver || this.isPaused || this.countdownTimer > 0) return;
         this._tryJump();
     }
 
@@ -660,6 +675,37 @@ class WRGameScene extends Phaser.Scene {
     update(time, delta) {
         if (this.gameOver || this.isPaused || this.playerState.dead) return;
         const dt = Math.min(delta / 1000, 0.05);
+
+        // ── 3-second countdown ──
+        if (this.countdownTimer > 0) {
+            this.countdownTimer -= dt;
+            const sec = Math.ceil(this.countdownTimer);
+            if (this.countdownTimer <= 0) {
+                // GO!
+                this.countdownText.setText('GO!');
+                this.countdownLabel.setVisible(false);
+                this.physics.resume();
+                // Fade out the GO text
+                this.tweens.add({
+                    targets: this.countdownText,
+                    alpha: 0, scale: 1.5,
+                    duration: 400, ease: 'Power2',
+                    onComplete: () => this.countdownText.setVisible(false),
+                });
+            } else {
+                this.countdownText.setText(String(sec));
+                // Pulse effect on number change
+                if (!this._lastCountSec || this._lastCountSec !== sec) {
+                    this._lastCountSec = sec;
+                    this.countdownText.setScale(1.3);
+                    this.tweens.add({
+                        targets: this.countdownText,
+                        scale: 1, duration: 200, ease: 'Back.easeOut',
+                    });
+                }
+            }
+            return;  // Everything frozen during countdown
+        }
 
         // Input polling (v1 pattern: simple JustDown → jump, no hold tracking)
         if (Phaser.Input.Keyboard.JustDown(this.escKey)) { this.pauseGame(); return; }
@@ -943,10 +989,15 @@ class WRGameScene extends Phaser.Scene {
         const letters = this.collectedLetters;
         if (letters.length < 3) { this._wordInvalid(); return null; }
 
+        // Find longest valid contiguous substring from ANY starting position
         let bestWord = null;
+        let bestStart = 0;
         for (let len = letters.length; len >= 3; len--) {
-            const candidate = letters.slice(0, len).join("");
-            if (this.dictionaryRef.has(candidate)) { bestWord = candidate; break; }
+            for (let start = 0; start <= letters.length - len; start++) {
+                const candidate = letters.slice(start, start + len).join("");
+                if (this.dictionaryRef.has(candidate)) { bestWord = candidate; bestStart = start; break; }
+            }
+            if (bestWord) break;
         }
         if (!bestWord) { this._wordInvalid(); return null; }
 
@@ -974,11 +1025,11 @@ class WRGameScene extends Phaser.Scene {
         applyJuice(this, null, "word-valid");
         this.sparkEmitter.emitParticleAt(this.playerScreenX, this.playerBody.y, 12);
 
-        if (word.length >= letters.length) { this.collectedLetters = []; }
-        else { this.collectedLetters = letters.slice(word.length); }
+        // Clear all letters after extracting the word
+        this.collectedLetters = [];
 
         if (this.audioRef) { try { this.audioRef._beep(880, 0.15, "sine", 0.15); } catch (e) { /* */ } }
-        return { word, pts, coins: wordCoins, streak: this.wordStreak };
+        return { word, pts, coins: wordCoins, streak: this.wordStreak, startIndex: bestStart };
     }
 
     _wordInvalid() {
