@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.plummetgame.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -19,10 +25,10 @@ android {
 
     signingConfigs {
         release {
-            storeFile file('plummet-release.jks')
-            storePassword 'Northwest101'
-            keyAlias 'key0'
-            keyPassword 'Northwest101'
+            storeFile file(keystoreProperties['storeFile'] ?: 'plummet-release.jks')
+            storePassword keystoreProperties['storePassword'] ?: ''
+            keyAlias keystoreProperties['keyAlias'] ?: 'key0'
+            keyPassword keystoreProperties['keyPassword'] ?: ''
         }
     }
 

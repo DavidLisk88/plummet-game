@@ -18,6 +18,7 @@ android/app/build/
 android/.gradle/
 android/all-builds/
 android/build-artifacts/
+android/keystore.properties
 
 coverage/
 .cache/
