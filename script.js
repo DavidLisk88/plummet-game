@@ -8012,6 +8012,7 @@ class Game {
             'wf_playlists', 'wf_music_volume', 'wf_music_shuffle',
             'wf_music_repeat', 'wf_music_paused', 'wf_music_state',
             'wf_hints_enabled', 'wf_music_muted', 'plummet_verification_codes',
+            'wf_auth_user_id',
         ];
         keysToRemove.forEach(k => localStorage.removeItem(k));
         this._authUser = null;
@@ -13115,6 +13116,11 @@ class Game {
             } catch (e) {
                 console.error('[auth] logout error:', e);
             }
+            this.profileMgr.profiles = [];
+            this.profileMgr.activeId = null;
+            this.profileMgr._save();
+            this._authUser = null;
+            localStorage.removeItem("wf_auth_user_id");
             this._showScreen("auth");
         });
 
@@ -13374,6 +13380,15 @@ class Game {
     }
 
     async _onAuthSuccess(user) {
+        // If a different user logged in, clear local profiles from previous account
+        const prevUserId = localStorage.getItem("wf_auth_user_id");
+        if (prevUserId && prevUserId !== user.id) {
+            this.profileMgr.profiles = [];
+            this.profileMgr.activeId = null;
+            this.profileMgr._save();
+        }
+        localStorage.setItem("wf_auth_user_id", user.id);
+
         this._authUser = user;
         // Load profiles from Supabase and sync with local ProfileManager
         try {
