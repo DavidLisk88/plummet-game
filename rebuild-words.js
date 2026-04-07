@@ -558,7 +558,52 @@ bile brat carp chow clamp cloak crate crumb crypt felt flask fury gig gist grub 
 hex hinge lever lobe lull max mess molt mush nave nook oats pore rein rind romp rump
 scab shawl slag slob snag soot spec sway tact tarp tier tint torch trench turf welt
 womb wrench yolk clasp flint plume pouch prism sheath cuff crux daub daze fowl jinx
-bluff notch pants`.split(/\s+/).filter(w => w.length >= 3);
+bluff notch pants
+sloth thirst organ artery nostril eyelid jawline ribcage pelvis tendon ligament
+bladder intestine colon thyroid tonsil marrow cartilage fracture sprain dosage
+capsule splint crutch wheelchair asthma diabetes seizure concussion insomnia
+fatigue disorder calcium magnesium potassium sodium cholesterol antibody
+adrenaline cortisol serotonin dopamine melatonin childbirth puberty adolescent
+dementia arthritis osteoporosis anemia pneumonia tuberculosis hepatitis malaria
+influenza measles chickenpox smallpox polio tetanus rabies
+salamander seagull hippopotamus piglet joey filly guinea
+carton crust porridge granola veal fillet patty meatloaf drumstick squash broth
+omelet crepe custard nutmeg basil oregano thyme rosemary cumin paprika cayenne
+lemonade whiskey vodka rum tequila champagne cocktail
+ledge cavern mesa inlet thicket grassland iceberg crater drizzle downpour icicle
+typhoon overcast smog twilight moonlight starlight tremor aftershock landslide
+avalanche sinkhole fern daisy pansy petunia bramble redwood
+condo villa bungalow cellar hardwood laminate hearth duct staircase railing
+banister elevator escalator quilt bedspread headboard loveseat recliner armchair
+ottoman footstool endtable coffeetable chandelier sconce lantern vanity shampoo
+dishwasher dustpan corkscrew opener garbage compost drywall lumber screwdriver
+sandpaper sprinkler shovel wheelbarrow
+leggings jumpsuit romper panties sneaker beanie bonnet beret helmet visor
+headband bandana turban bowtie poncho ribbon fringe tassel brooch pendant anklet
+goggles clutch briefcase tote satchel polyester denim suede satin corduroy fleece
+cashmere tweed polka attire accessory starch tailor seamstress
+mama papa mommy daddy triplet grandma grandpa nephew madam mister missus resident
+foreigner duchess baron pharmacist psychologist plaintiff priest pastor rabbi
+imam bishop monk colonel butcher fisherman rancher cowboy navigator anchor
+correspondent waitress receptionist
+december medieval countdown seventh ninth tenth
+limo firetruck tram streetcar monorail blimp balloon glider parachute rowboat
+avenue crossroad roundabout crosswalk median hangar wharf berth buoy pedal
+fender airbag honk siren boarding visa campground
+volley disqualify judo snowboard skating checkers blackjack domino controller
+joystick headset treadmill barbell dumbbell lunge interception
+tragedy prequel funk violin cello trumpet saxophone waltz tango breakdance
+statue photography exposure aperture vinyl cassette stanza climax prank skit
+satire sarcasm spotlight
+probation felony misdemeanor infraction investigator inmate shutdown marines
+pistol shotgun cannon missile
+atom acceleration celsius fahrenheit vibration resonance electricity magnet
+beaker gene dna rna ecology endangered astronomy cosmos nebula comet meteor
+zodiac relativity electron
+concept belief digit kilometer liter kilogram barrel bushel quart triangle oval
+aluminum amethyst parchment envelope cardboard concrete cement mortar varnish
+staple needle demon witch potion oracle prophecy
+`.split(/\s+/).filter(w => w.length >= 3);
 
 const VERBS = `
 ace act add age aid aim air ask ate ban bar bat bay bed bet bid bit boo bow bug bum
@@ -684,7 +729,9 @@ loot lope maim molt pout brace churn clamp clasp cramp crave curse deter graze g
 grunt heave mangle notch nudge poach poise pounce purge quash repel ripen savor scold
 scoop scour scrub shove shriek shrug skimp slant slash smear spool splat squat stoop
 stroll strut swerve taunt thaw topple trample unwind vouch wallow whisk wince wrench
-mess fib torch hex max`.split(/\s+/).filter(w => w.length >= 3);
+mess fib torch hex max
+scorch singe swirl demote honk disqualify rehearse retake
+`.split(/\s+/).filter(w => w.length >= 3);
 
 const ADJECTIVES = `
 bad big dry done dull due far fat few fit fun gay hot ill key mad new odd old raw red sad
@@ -851,7 +898,16 @@ snowy snug tacky dreary flashy flimsy folksy frosty homely jaunty limber mangy m
 morbid snooty stale steamy stocky stormy stout stubby sultry supple swanky touchy
 trendy tricky filthy grumpy prissy quirky queasy ragged rancid rugged scarce sleazy
 snappy sordid terse thorny tipsy vulgar wacky wobbly woolly wordy wiry woody zany
-cranky crispy evasive brainy`.split(/\s+/).filter(w => w.length >= 3);
+cranky crispy evasive brainy
+goofy speedy hurried petite compact terrific dreadful atrocious updated outdated
+phony counterfeit bogus shiny sparkling radiant thunderous deafening blaring muted
+muffled shadowy thrilled courageous meek abandoned forsaken overlooked outraged
+savage petrified jittery perplexed disoriented astonished awestruck speechless
+drained lethargic sluggish mortified repulsed revolted nauseated appalled sickened
+rebellious disobedient willful headstrong straightforward sneaky devious crafty
+manipulative deceptive dishonest clueless oblivious shielded defended spotless
+sanitary
+`.split(/\s+/).filter(w => w.length >= 3);
 
 // Common irregular plurals
 const IRREGULAR_PLURALS = {
@@ -1040,6 +1096,12 @@ const BANNED = new Set([
 // Quick-add words here — no inflection, added exactly as written.
 // Just toss in any missing words you find during gameplay.
 const MANUAL_EXTRAS = `fever fevers bye hey racist should
+severance deduction withdrawal ledger nickel bankrupt millionaire billionaire copier
+stapler binder apprentice trainee qualification sophomore module dissertation
+trigonometry statistics probability astronomy ecology economics sociology
+punctuation nonfiction fellowship tuition registration admission commencement
+valedictorian salutatorian chalkboard whiteboard projector bulletin warmth fright
+genius wrinkle flop tote jeopardy puff dislike fatigued artificial sham hoax
 turkey audit builder painter expel agony arrogant ashamed astonish attitude awe
 carefree contempt coward cranky despair despise disgust doubtful dread frantic
 frenzy giddy glee gloomy greed grumpy humorous hysterical impatient impulse
