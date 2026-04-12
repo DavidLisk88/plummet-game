@@ -31,6 +31,8 @@ function copyRecursive(src, dest) {
   if (stat.isDirectory()) {
     ensureDir(dest);
     for (const child of fs.readdirSync(src)) {
+      // Skip .wav files — only bundle .mp3 for mobile builds
+      if (child.toLowerCase().endsWith('.wav')) continue;
       copyRecursive(path.join(src, child), path.join(dest, child));
     }
   } else {

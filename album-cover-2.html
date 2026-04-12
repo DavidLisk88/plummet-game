@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Album Cover 2 — Freefall</title>
+<style>
+  body { background:#222; display:flex; flex-direction:column; align-items:center; padding:30px; font-family:sans-serif; color:#fff; }
+  canvas { border:1px solid #555; max-width:540px; width:100%; }
+  button { margin-top:16px; padding:14px 40px; font-size:18px; cursor:pointer; background:#e2d8a6; color:#2f3029; border:none; border-radius:8px; font-weight:bold; }
+  button:hover { background:#f0e8b8; }
+  h3 { margin-bottom:12px; opacity:0.7; }
+</style>
+</head>
+<body>
+<h3>Album 2 — "Freefall"</h3>
+<canvas id="c" width="1080" height="1080"></canvas>
+<button onclick="download()">Download PNG</button>
+
+<script>
+const W = 1080, H = 1080;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const BG       = '#2f3029';
+const CREAM    = '#e2d8a6';
+const MUTED    = '#b0a878';
+const DIM      = '#8a8570';
+
+// Seeded random for consistency
+let seed = 42;
+function rand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+
+function draw() {
+  // Background
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Radial vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, 100, W/2, H/2, W * 0.75);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.25)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  // Concentric circle ripples emanating from center
+  for (let r = 80; r < 520; r += 55) {
+    const alpha = 0.04 + (520 - r) / 520 * 0.06;
+    ctx.strokeStyle = `rgba(176, 168, 120, ${alpha})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2 - 40, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Scattered tumbling letters at various angles
+  const scattered = [
+    // ch, x, y, size, rotation(deg), opacity
+    { ch: 'P', x: 160, y: 140, size: 88, rot: -15, opacity: 0.6 },
+    { ch: 'L', x: 780, y: 180, size: 52, rot: 25, opacity: 0.35 },
+    { ch: 'U', x: 400, y: 100, size: 44, rot: -8, opacity: 0.25 },
+    { ch: 'M', x: 640, y: 260, size: 72, rot: 18, opacity: 0.5 },
+    { ch: 'M', x: 280, y: 340, size: 36, rot: -30, opacity: 0.2 },
+    { ch: 'E', x: 850, y: 400, size: 60, rot: 12, opacity: 0.4 },
+    { ch: 'T', x: 190, y: 500, size: 48, rot: -22, opacity: 0.3 },
+
+    { ch: 'W', x: 920, y: 120, size: 34, rot: 35, opacity: 0.18 },
+    { ch: 'O', x: 540, y: 200, size: 40, rot: -12, opacity: 0.22 },
+    { ch: 'R', x: 100, y: 300, size: 56, rot: 28, opacity: 0.32 },
+    { ch: 'D', x: 720, y: 480, size: 46, rot: -18, opacity: 0.28 },
+
+    { ch: 'F', x: 340, y: 560, size: 62, rot: 14, opacity: 0.38 },
+    { ch: 'A', x: 800, y: 600, size: 38, rot: -25, opacity: 0.22 },
+    { ch: 'L', x: 520, y: 440, size: 70, rot: 6, opacity: 0.45 },
+    { ch: 'L', x: 150, y: 660, size: 42, rot: -35, opacity: 0.2 },
+
+    // Deeper background letters (very faint, large)
+    { ch: 'P', x: 460, y: 360, size: 160, rot: 5, opacity: 0.07 },
+    { ch: 'M', x: 700, y: 380, size: 140, rot: -8, opacity: 0.06 },
+
+    // More scattered small letters
+    { ch: 'S', x: 950, y: 550, size: 30, rot: 40, opacity: 0.15 },
+    { ch: 'N', x: 60, y: 450, size: 28, rot: -15, opacity: 0.12 },
+    { ch: 'G', x: 680, y: 140, size: 32, rot: 20, opacity: 0.16 },
+    { ch: 'I', x: 400, y: 250, size: 26, rot: -42, opacity: 0.14 },
+    { ch: 'X', x: 240, y: 200, size: 30, rot: 32, opacity: 0.13 },
+    { ch: 'C', x: 580, y: 580, size: 34, rot: -10, opacity: 0.18 },
+  ];
+
+  scattered.forEach(s => {
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.rot * Math.PI / 180);
+
+    // Motion trail — diagonal streak behind each letter
+    const trailAngle = s.rot * Math.PI / 180;
+    const trailLen = s.size * 1.8 + 30;
+    const tx = -Math.sin(trailAngle) * trailLen * 0.3;
+    const ty = -trailLen;
+
+    const tGrad = ctx.createLinearGradient(tx, ty, 0, -s.size * 0.3);
+    tGrad.addColorStop(0, `rgba(154, 150, 128, 0)`);
+    tGrad.addColorStop(1, `rgba(154, 150, 128, ${s.opacity * 0.3})`);
+
+    ctx.strokeStyle = tGrad;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(tx + 2, ty);
+    ctx.lineTo(2, -s.size * 0.3);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(tx + s.size * 0.3, ty - 5);
+    ctx.lineTo(s.size * 0.3, -s.size * 0.4);
+    ctx.stroke();
+
+    // The letter
+    ctx.font = `300 ${s.size}px 'Helvetica Neue', 'Segoe UI Light', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(226, 216, 166, ${s.opacity})`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(s.ch, 0, 0);
+
+    ctx.restore();
+  });
+
+  // Central glow
+  const glow = ctx.createRadialGradient(W/2, H/2 - 40, 0, W/2, H/2 - 40, 200);
+  glow.addColorStop(0, 'rgba(226, 216, 166, 0.04)');
+  glow.addColorStop(1, 'rgba(226, 216, 166, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // ─── Title Block (bottom) ───
+
+  // Frosted bar at bottom
+  const barGrad = ctx.createLinearGradient(0, H - 310, 0, H);
+  barGrad.addColorStop(0, 'rgba(47, 48, 41, 0)');
+  barGrad.addColorStop(0.3, 'rgba(47, 48, 41, 0.85)');
+  barGrad.addColorStop(1, 'rgba(47, 48, 41, 0.95)');
+  ctx.fillStyle = barGrad;
+  ctx.fillRect(0, H - 310, W, 310);
+
+  ctx.textAlign = 'center';
+
+  // "plummet"
+  ctx.font = "300 72px 'Helvetica Neue', 'Segoe UI Light', Arial, sans-serif";
+  ctx.fillStyle = CREAM;
+  ctx.letterSpacing = '4px';
+  ctx.fillText('plummet', W / 2, H - 210);
+
+  // "VOLUME 2"
+  ctx.font = "300 20px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = MUTED;
+  ctx.fillText('V O L U M E   2', W / 2, H - 168);
+
+  // Thin separator
+  ctx.strokeStyle = 'rgba(226, 216, 166, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(W / 2 - 100, H - 148);
+  ctx.lineTo(W / 2 + 100, H - 148);
+  ctx.stroke();
+
+  // "Original Soundtrack"
+  ctx.font = "300 14px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = DIM;
+  ctx.fillText('O R I G I N A L   S O U N D T R A C K', W / 2, H - 124);
+
+  // "Freddy River"
+  ctx.font = "400 18px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = MUTED;
+  ctx.fillText('Freddy River', W / 2, H - 80);
+
+  ctx.textAlign = 'left';
+}
+
+draw();
+
+function download() {
+  const link = document.createElement('a');
+  link.download = 'plummet-freefall-album-cover.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+</script>
+</body>
+</html>

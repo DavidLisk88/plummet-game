@@ -25,7 +25,7 @@ android {
 
     signingConfigs {
         release {
-            storeFile file(keystoreProperties['storeFile'] ?: 'plummet-release.jks')
+            storeFile file('plummet-release.jks')
             storePassword keystoreProperties['storePassword'] ?: ''
             keyAlias keystoreProperties['keyAlias'] ?: 'key0'
             keyPassword keystoreProperties['keyPassword'] ?: ''

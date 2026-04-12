@@ -51,10 +51,11 @@ const CLASS_THRESHOLDS = {
  * @param {Array} playerData.gameScores - All game_scores rows for this profile
  * @param {Array} playerData.highScores - All profile_high_scores rows
  * @param {Array} playerData.challengeStats - All profile_challenge_stats rows
+ * @param {number} [playerData.previousRating=0] - Previous skill rating (ratchet: never goes down)
  * @returns {Object} { skillRating, components, skillClass }
  */
 export function computeSkillRating(playerData) {
-    const { gameScores = [], highScores = [], challengeStats = [] } = playerData;
+    const { gameScores = [], highScores = [], challengeStats = [], previousRating = 0 } = playerData;
 
     if (gameScores.length === 0) {
         return {
@@ -226,6 +227,12 @@ export function computeSkillRating(playerData) {
     // ═══ GAMES-PLAYED CONFIDENCE GATE ═══
     // Scale down rating for players with few games (full at 50 games)
     skillRating = skillRating * Math.min(1, totalGames / 50);
+
+    // ═══ RATCHET: NEVER DECREASE ═══
+    // Skill rating should only ever go up or stay the same
+    if (previousRating > 0 && skillRating < previousRating) {
+        skillRating = previousRating;
+    }
 
     // ═══ DETERMINE CLASS ═══
     let skillClass = 'low';

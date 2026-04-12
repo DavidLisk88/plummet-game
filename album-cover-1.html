@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Album Cover 1 — Descent</title>
+<style>
+  body { background:#222; display:flex; flex-direction:column; align-items:center; padding:30px; font-family:sans-serif; color:#fff; }
+  canvas { border:1px solid #555; max-width:540px; width:100%; }
+  button { margin-top:16px; padding:14px 40px; font-size:18px; cursor:pointer; background:#e2d8a6; color:#2f3029; border:none; border-radius:8px; font-weight:bold; }
+  button:hover { background:#f0e8b8; }
+  h3 { margin-bottom:12px; opacity:0.7; }
+</style>
+</head>
+<body>
+<h3>Album 1 — "Descent"</h3>
+<canvas id="c" width="1080" height="1080"></canvas>
+<button onclick="download()">Download PNG</button>
+
+<script>
+const W = 1080, H = 1080;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// Palette
+const BG       = '#2f3029';
+const CREAM    = '#e2d8a6';
+const MUTED    = '#b0a878';
+const DIM      = '#8a8570';
+const DIMMER   = '#5c5b4c';
+const DIMMEST  = '#4a493e';
+
+function draw() {
+  // Background
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle vertical gradient overlay (darker at top, slightly lighter at bottom)
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(0,0,0,0.15)');
+  grad.addColorStop(0.5, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.08)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Letter rain — many letters streaming down in columns
+  const letters = 'PLUMMETWORDFALLETTERSABCDEFGHIJKLNOPQRSUVXYZ';
+  const columns = [
+    { x: 80,  chars: 'P L U M M E T'.split(' '), speed: 1.0 },
+    { x: 170, chars: 'W O R D F A L'.split(' '), speed: 0.8 },
+    { x: 260, chars: 'L E T T E R S'.split(' '), speed: 1.2 },
+    { x: 350, chars: 'F A L L I N G'.split(' '), speed: 0.6 },
+    { x: 440, chars: 'D E S C E N T'.split(' '), speed: 1.1 },
+    { x: 530, chars: 'P O I N T S W'.split(' '), speed: 0.7 },
+    { x: 620, chars: 'D R E A M S O'.split(' '), speed: 0.9 },
+    { x: 710, chars: 'S O U L G A L'.split(' '), speed: 1.3 },
+    { x: 800, chars: 'C A N D Y L I'.split(' '), speed: 0.5 },
+    { x: 890, chars: 'L I N E S T U'.split(' '), speed: 1.0 },
+    { x: 980, chars: 'M B L E X I C'.split(' '), speed: 0.75 },
+  ];
+
+  // Draw motion trail lines and letters for each column
+  columns.forEach((col, ci) => {
+    const baseOpacity = 0.12 + (ci % 3) * 0.08;
+    const spacing = 85 + (ci % 4) * 10;
+
+    col.chars.forEach((ch, i) => {
+      const y = 40 + i * spacing + (ci % 3) * 25;
+      if (y > H - 200) return;
+
+      const depth = 0.3 + (ci % 5) * 0.14;
+      const alpha = baseOpacity + depth * 0.3;
+      const fontSize = 22 + (ci % 3) * 6;
+
+      // Motion trail lines above each letter
+      const trailLen = 40 + (ci % 4) * 25 + i * 8;
+      const trailAlpha = alpha * 0.4;
+
+      ctx.strokeStyle = `rgba(154, 150, 128, ${trailAlpha})`;
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'round';
+
+      // Two thin parallel lines
+      ctx.beginPath();
+      ctx.moveTo(col.x - 3, y - trailLen - fontSize);
+      ctx.lineTo(col.x - 3, y - fontSize + 4);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(col.x + 5, y - trailLen - fontSize - 6);
+      ctx.lineTo(col.x + 5, y - fontSize + 2);
+      ctx.stroke();
+
+      // The letter itself
+      ctx.font = `300 ${fontSize}px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif`;
+      ctx.fillStyle = `rgba(176, 168, 120, ${alpha})`;
+      ctx.fillText(ch, col.x - 6, y);
+    });
+  });
+
+  // Subtle horizontal line divider above the title area
+  ctx.strokeStyle = 'rgba(226, 216, 166, 0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(120, H - 310);
+  ctx.lineTo(W - 120, H - 310);
+  ctx.stroke();
+
+  // A few larger "hero" falling letters with longer trails near center
+  const heroLetters = [
+    { ch: 'P', x: 320, y: 520, size: 72, opacity: 0.55, trail: 180 },
+    { ch: 'L', x: 480, y: 380, size: 64, opacity: 0.45, trail: 160 },
+    { ch: 'U', x: 620, y: 600, size: 58, opacity: 0.50, trail: 140 },
+    { ch: 'M', x: 760, y: 460, size: 68, opacity: 0.40, trail: 170 },
+  ];
+
+  heroLetters.forEach(h => {
+    // Long trail
+    const trailGrad = ctx.createLinearGradient(h.x, h.y - h.trail, h.x, h.y - h.size * 0.5);
+    trailGrad.addColorStop(0, 'rgba(154, 150, 128, 0)');
+    trailGrad.addColorStop(1, `rgba(154, 150, 128, ${h.opacity * 0.35})`);
+    ctx.strokeStyle = trailGrad;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(h.x + 4, h.y - h.trail);
+    ctx.lineTo(h.x + 4, h.y - h.size * 0.6);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(h.x + 14, h.y - h.trail - 10);
+    ctx.lineTo(h.x + 14, h.y - h.size * 0.7);
+    ctx.stroke();
+
+    // Letter
+    ctx.font = `300 ${h.size}px 'Helvetica Neue', 'Segoe UI Light', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(226, 216, 166, ${h.opacity})`;
+    ctx.fillText(h.ch, h.x, h.y);
+  });
+
+  // ─── Title Block ───
+
+  // "plummet" main title
+  ctx.font = "300 72px 'Helvetica Neue', 'Segoe UI Light', Arial, sans-serif";
+  ctx.fillStyle = CREAM;
+  ctx.textAlign = 'center';
+  ctx.letterSpacing = '4px';
+  ctx.fillText('plummet', W / 2, H - 210);
+
+  // "VOLUME 1"
+  ctx.font = "300 20px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = MUTED;
+  ctx.fillText('V O L U M E   1', W / 2, H - 168);
+
+  // Thin line
+  ctx.strokeStyle = 'rgba(226, 216, 166, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(W / 2 - 100, H - 148);
+  ctx.lineTo(W / 2 + 100, H - 148);
+  ctx.stroke();
+
+  // "Original Soundtrack" 
+  ctx.font = "300 14px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = DIM;
+  ctx.fillText('O R I G I N A L   S O U N D T R A C K', W / 2, H - 124);
+
+  // "Freddy River"
+  ctx.font = "400 18px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = MUTED;
+  ctx.fillText('Freddy River', W / 2, H - 80);
+
+  ctx.textAlign = 'left';
+}
+
+draw();
+
+function download() {
+  const link = document.createElement('a');
+  link.download = 'plummet-descent-album-cover.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+</script>
+</body>
+</html>

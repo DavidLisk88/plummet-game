@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Album Cover 3 — Impact</title>
+<style>
+  body { background:#222; display:flex; flex-direction:column; align-items:center; padding:30px; font-family:sans-serif; color:#fff; }
+  canvas { border:1px solid #555; max-width:540px; width:100%; }
+  button { margin-top:16px; padding:14px 40px; font-size:18px; cursor:pointer; background:#e2d8a6; color:#2f3029; border:none; border-radius:8px; font-weight:bold; }
+  button:hover { background:#f0e8b8; }
+  h3 { margin-bottom:12px; opacity:0.7; }
+</style>
+</head>
+<body>
+<h3>Album 3 — ""</h3>
+<canvas id="c" width="1080" height="1080"></canvas>
+<button onclick="download()">Download PNG</button>
+
+<script>
+const W = 1080, H = 1080;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const BG       = '#2f3029';
+const CREAM    = '#e2d8a6';
+const MUTED    = '#b0a878';
+const DIM      = '#8a8570';
+const DIMMER   = '#5c5b4c';
+
+let seed = 77;
+function rand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+
+function draw() {
+  // Background
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Darker bottom half gradient (ground zone)
+  const groundGrad = ctx.createLinearGradient(0, H * 0.4, 0, H);
+  groundGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  groundGrad.addColorStop(1, 'rgba(0,0,0,0.18)');
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Impact point
+  const impactX = W / 2;
+  const impactY = H * 0.52;
+
+  // Radial crack/shatter lines from impact point
+  const crackCount = 24;
+  for (let i = 0; i < crackCount; i++) {
+    const angle = (i / crackCount) * Math.PI * 2 + (i % 3) * 0.08;
+    const len = 120 + (i % 5) * 80 + (i % 3) * 50;
+    const alpha = 0.06 + (i % 4) * 0.02;
+
+    ctx.strokeStyle = `rgba(176, 168, 120, ${alpha})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(impactX, impactY);
+    ctx.lineTo(
+      impactX + Math.cos(angle) * len,
+      impactY + Math.sin(angle) * len
+    );
+    ctx.stroke();
+
+    // Fork at the end of some cracks
+    if (i % 3 === 0) {
+      const forkLen = len * 0.4;
+      const forkAngle1 = angle + 0.3;
+      const forkAngle2 = angle - 0.25;
+      const startX = impactX + Math.cos(angle) * len * 0.7;
+      const startY = impactY + Math.sin(angle) * len * 0.7;
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(startX + Math.cos(forkAngle1) * forkLen, startY + Math.sin(forkAngle1) * forkLen);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(startX + Math.cos(forkAngle2) * forkLen, startY + Math.sin(forkAngle2) * forkLen);
+      ctx.stroke();
+    }
+  }
+
+  // Concentric impact ripple rings
+  for (let r = 40; r < 380; r += 45) {
+    const alpha = 0.08 * (380 - r) / 380;
+    ctx.strokeStyle = `rgba(226, 216, 166, ${alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(impactX, impactY, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Central impact glow
+  const impactGlow = ctx.createRadialGradient(impactX, impactY, 0, impactX, impactY, 160);
+  impactGlow.addColorStop(0, 'rgba(226, 216, 166, 0.12)');
+  impactGlow.addColorStop(0.5, 'rgba(226, 216, 166, 0.04)');
+  impactGlow.addColorStop(1, 'rgba(226, 216, 166, 0)');
+  ctx.fillStyle = impactGlow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Letters crashed at various positions around the impact zone —
+  // some tilted, partially "embedded", overlapping the crack lines
+  const crashed = [
+    { ch: 'P', x: impactX - 180, y: impactY + 30,  size: 96, rot: -8,  opacity: 0.7 },
+    { ch: 'L', x: impactX - 60,  y: impactY - 20,  size: 80, rot: 5,   opacity: 0.6 },
+    { ch: 'U', x: impactX + 50,  y: impactY + 40,  size: 88, rot: -12, opacity: 0.65 },
+    { ch: 'M', x: impactX + 180, y: impactY - 10,  size: 76, rot: 15,  opacity: 0.55 },
+    { ch: 'M', x: impactX + 300, y: impactY + 20,  size: 70, rot: -20, opacity: 0.5 },
+    { ch: 'E', x: impactX - 280, y: impactY - 30,  size: 68, rot: 22,  opacity: 0.45 },
+    { ch: 'T', x: impactX + 400, y: impactY + 50,  size: 64, rot: -28, opacity: 0.4 },
+  ];
+
+  crashed.forEach(c => {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot * Math.PI / 180);
+
+    // Shadow/displacement beneath each crashed letter
+    ctx.font = `400 ${c.size}px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(0, 0, 0, ${c.opacity * 0.3})`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(c.ch, 3, 4);
+
+    // The letter
+    ctx.fillStyle = `rgba(226, 216, 166, ${c.opacity})`;
+    ctx.fillText(c.ch, 0, 0);
+
+    ctx.restore();
+  });
+
+  // Rising debris particles floating upward from impact
+  const particles = [];
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      x: impactX + (rand() - 0.5) * 600,
+      y: impactY - rand() * 400 - 40,
+      size: 1 + rand() * 3.5,
+      opacity: 0.08 + rand() * 0.2,
+    });
+  }
+
+  particles.forEach(p => {
+    ctx.fillStyle = `rgba(226, 216, 166, ${p.opacity})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Small debris fragments (tiny rectangles at angles)
+  for (let i = 0; i < 30; i++) {
+    const fx = impactX + (rand() - 0.5) * 500;
+    const fy = impactY - rand() * 300 - 20;
+    const fw = 2 + rand() * 6;
+    const fh = 1 + rand() * 3;
+    const fRot = rand() * Math.PI;
+    const fAlpha = 0.05 + rand() * 0.12;
+
+    ctx.save();
+    ctx.translate(fx, fy);
+    ctx.rotate(fRot);
+    ctx.fillStyle = `rgba(176, 168, 120, ${fAlpha})`;
+    ctx.fillRect(-fw / 2, -fh / 2, fw, fh);
+    ctx.restore();
+  }
+
+  // ─── Title Block (bottom) ───
+
+  // Fade to background at bottom for title area
+  const bottomFade = ctx.createLinearGradient(0, H - 340, 0, H - 240);
+  bottomFade.addColorStop(0, 'rgba(47, 48, 41, 0)');
+  bottomFade.addColorStop(1, 'rgba(47, 48, 41, 0.9)');
+  ctx.fillStyle = bottomFade;
+  ctx.fillRect(0, H - 340, W, 100);
+
+  ctx.fillStyle = 'rgba(47, 48, 41, 0.9)';
+  ctx.fillRect(0, H - 240, W, 240);
+
+  ctx.textAlign = 'center';
+
+  // "plummet"
+  ctx.font = "300 72px 'Helvetica Neue', 'Segoe UI Light', Arial, sans-serif";
+  ctx.fillStyle = CREAM;
+  ctx.letterSpacing = '4px';
+  ctx.fillText('plummet', W / 2, H - 210);
+
+  // "VOLUME 3"
+  ctx.font = "300 20px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = MUTED;
+  ctx.fillText('V O L U M E   3', W / 2, H - 168);
+
+  // Thin separator
+  ctx.strokeStyle = 'rgba(226, 216, 166, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(W / 2 - 100, H - 148);
+  ctx.lineTo(W / 2 + 100, H - 148);
+  ctx.stroke();
+
+  // "Original Soundtrack"
+  ctx.font = "300 14px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = DIM;
+  ctx.fillText('O R I G I N A L   S O U N D T R A C K', W / 2, H - 124);
+
+  // "Freddy River"
+  ctx.font = "400 18px 'Helvetica Neue', 'Segoe UI', Arial, sans-serif";
+  ctx.fillStyle = MUTED;
+  ctx.fillText('Freddy River', W / 2, H - 80);
+
+  ctx.textAlign = 'left';
+}
+
+draw();
+
+function download() {
+  const link = document.createElement('a');
+  link.download = 'plummet-impact-album-cover.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+</script>
+</body>
+</html>

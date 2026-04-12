@@ -11670,7 +11670,9 @@ class Game {
             const comboMult = Math.min(COMBO_MAX_MULTIPLIER, 1 + (this.comboCount - 1) * COMBO_MULTIPLIER_STEP);
             const comboBonus = Math.floor(toClaim.reduce((s, g) => s + g.pts, 0) * (comboMult - 1));
             if (comboBonus > 0) {
+                const prevScoreCombo = this.score;
                 this.score += comboBonus;
+                this._checkBonusUnlock(prevScoreCombo, this.score);
                 this._updateScoreDisplay();
             }
         }
@@ -12927,7 +12929,10 @@ class Game {
             }
 
             if (this.timeLimitSeconds > 0) {
-                this.timeRemainingSeconds = Math.max(0, this.timeRemainingSeconds - dt);
+                // Pause the game clock while freeze bonus is active
+                if (!this.freezeActive) {
+                    this.timeRemainingSeconds = Math.max(0, this.timeRemainingSeconds - dt);
+                }
                 this._updateTimerDisplay();
                 if (this.timeRemainingSeconds <= 0) {
                     this._gameOver("time");

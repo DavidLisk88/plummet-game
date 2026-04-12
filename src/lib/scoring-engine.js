@@ -215,7 +215,7 @@ const SKILL_WEIGHTS = {
  * @returns {{ skillRating: number, components: object, skillClass: string, openSkillOrdinal: number }}
  */
 export function computeEnhancedSkillRating(playerData) {
-    const { gameScores = [], highScores = [], challengeStats = [], openSkillRating } = playerData;
+    const { gameScores = [], highScores = [], challengeStats = [], openSkillRating, previousRating = 0 } = playerData;
 
     if (gameScores.length === 0) {
         return {
@@ -336,7 +336,12 @@ export function computeEnhancedSkillRating(playerData) {
 
     // Confidence gate: need 50+ games for full rating
     const confidence = math.evaluate('min(1, gp / 50)', { gp: totalGames });
-    const skillRating = Math.round(scaledRating * confidence);
+    let skillRating = Math.round(scaledRating * confidence);
+
+    // Ratchet: never decrease from previous rating
+    if (previousRating > 0 && skillRating < previousRating) {
+        skillRating = previousRating;
+    }
 
     const skillClass = skillRating >= 5000 ? 'high' : skillRating >= 1500 ? 'medium' : 'low';
 
