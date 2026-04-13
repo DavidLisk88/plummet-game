@@ -12,6 +12,71 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- ═══════════════════════════════════════════════════════════════════
+         LOADING SCREEN - Falling letters animation
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-content">
+            <h1 class="loading-title">PLUMMET</h1>
+            <div class="loading-bar-container">
+                <div class="loading-bar-track">
+                    <div class="loading-bar-fill" id="loading-bar-fill"></div>
+                </div>
+                <div class="loading-text" id="loading-text">Loading...</div>
+            </div>
+        </div>
+        <div class="falling-letters-container" id="falling-letters"></div>
+    </div>
+    
+    <!-- Start falling letters animation immediately -->
+    <script>
+    (function() {
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const sizes = ['size-sm', 'size-md', 'size-lg', 'size-xl'];
+        const colors = ['color-accent', 'color-success', 'color-special', 'color-bonus', 'color-blue', ''];
+        const container = document.getElementById('falling-letters');
+        const screen = document.getElementById('loading-screen');
+        
+        function createLetter() {
+            if (!container || screen?.classList.contains('hidden')) return;
+            
+            const letter = document.createElement('div');
+            letter.className = 'falling-letter';
+            letter.textContent = letters[Math.floor(Math.random() * letters.length)];
+            letter.classList.add(sizes[Math.floor(Math.random() * sizes.length)]);
+            
+            if (Math.random() > 0.4) {
+                const c = colors[Math.floor(Math.random() * colors.length)];
+                if (c) letter.classList.add(c);
+            }
+            
+            const barContainer = document.querySelector('.loading-bar-container');
+            const barRect = barContainer?.getBoundingClientRect();
+            const startY = barRect ? barRect.bottom : window.innerHeight * 0.55;
+            
+            letter.style.left = Math.random() * 100 + '%';
+            letter.style.top = startY + 'px';
+            letter.style.setProperty('--rotation', ((Math.random() - 0.5) * 60) + 'deg');
+            
+            const duration = 2 + Math.random() * 2;
+            letter.style.animationDuration = duration + 's';
+            letter.style.animationDelay = Math.random() * 0.3 + 's';
+            
+            container.appendChild(letter);
+            setTimeout(() => letter.remove(), (duration + 0.3) * 1000);
+        }
+        
+        // Start immediately
+        for (let i = 0; i < 8; i++) setTimeout(createLetter, i * 100);
+        
+        // Continue at intervals - store ID globally so LoadingScreen can stop it
+        window._loadingLettersInterval = setInterval(() => {
+            const count = 1 + Math.floor(Math.random() * 3);
+            for (let i = 0; i < count; i++) setTimeout(createLetter, i * 50);
+        }, 200);
+    })();
+    </script>
+
     <!--
         PLUMMET - A falling-letter word puzzle game
         ============================================
@@ -664,10 +729,11 @@
                 <div class="overlay-content">
                     <h2>Paused</h2>
                     <button id="ws-resume-btn" class="primary-btn">Resume</button>
-                    <button id="ws-dict-btn" class="secondary-btn">📖 Dictionary</button>
+                    <button id="ws-dict-btn" class="secondary-btn btn-gold">📖 Dictionary</button>
                     <button id="ws-music-btn" class="secondary-btn btn-pink">Music</button>
+                    <button id="ws-howtoplay-btn" class="secondary-btn btn-olive">How To Play</button>
                     <button id="ws-end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
-                    <button id="ws-save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
+                    <button id="ws-save-quit-btn" class="secondary-btn quit-btn-save btn-purple">Save & Quit</button>
                 </div>
             </div>
         </div>
@@ -711,12 +777,13 @@
                 <div class="overlay-content">
                     <h2>PAUSED</h2>
                     <button id="wr-resume-btn" class="primary-btn">Resume</button>
-                    <button id="wr-words-found-btn" class="secondary-btn">Words So Far</button>
-                    <button id="wr-dict-btn" class="secondary-btn">📖 Dictionary</button>
+                    <button id="wr-words-found-btn" class="secondary-btn btn-brown">Words So Far</button>
+                    <button id="wr-dict-btn" class="secondary-btn btn-gold">📖 Dictionary</button>
                     <button id="wr-music-btn" class="secondary-btn btn-pink">Music</button>
-                    <button id="wr-shop-btn" class="secondary-btn">Shop</button>
+                    <button id="wr-howtoplay-btn" class="secondary-btn btn-olive">How To Play</button>
+                    <button id="wr-shop-btn" class="secondary-btn btn-orange">Shop</button>
                     <button id="wr-end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
-                    <button id="wr-save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
+                    <button id="wr-save-quit-btn" class="secondary-btn quit-btn-save btn-purple">Save & Quit</button>
                 </div>
             </div>
         </div>
@@ -787,7 +854,7 @@
                     <button id="line-cancel-btn" class="line-clear-action-btn cancel-btn">Cancel</button>
                 </div>
             </div>
-            <button id="play-words-found-btn" class="secondary-btn in-game-words-btn">Words So Far</button>
+            <button id="play-words-found-btn" class="secondary-btn in-game-words-btn btn-brown">Words So Far</button>
             <div id="mobile-controls">
                 <button id="btn-left" class="control-btn" aria-label="Move Left">◀</button>
                 <button id="btn-drop" class="control-btn drop-btn" aria-label="Fast Drop">▼</button>
@@ -805,12 +872,13 @@
             <div class="overlay-content">
                 <h2>PAUSED</h2>
                 <button id="resume-btn" class="primary-btn">Resume</button>
-                <button id="pause-words-found-btn" class="secondary-btn">Words So Far</button>
-                <button id="pause-dict-btn" class="secondary-btn">📖 Dictionary</button>
+                <button id="pause-words-found-btn" class="secondary-btn btn-brown">Words So Far</button>
+                <button id="pause-dict-btn" class="secondary-btn btn-gold">📖 Dictionary</button>
                 <button id="pause-music-btn" class="secondary-btn btn-pink">Music</button>
-                <button id="pause-shop-btn" class="secondary-btn">Shop</button>
+                <button id="pause-howtoplay-btn" class="secondary-btn btn-olive">How To Play</button>
+                <button id="pause-shop-btn" class="secondary-btn btn-orange">Shop</button>
                 <button id="end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
-                <button id="save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
+                <button id="save-quit-btn" class="secondary-btn quit-btn-save btn-purple">Save & Quit</button>
             </div>
         </div>
 
@@ -841,6 +909,18 @@
                 <div id="perk-select-grid"></div>
                 <div class="modal-buttons">
                     <button id="perk-select-skip-btn" class="secondary-btn">No Thanks</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirm new game modal (when saved game exists) -->
+        <div id="confirm-new-game-modal" class="overlay">
+            <div class="overlay-content">
+                <h2>Game In Progress</h2>
+                <p class="subtitle" id="confirm-new-game-text">You have a saved game. Starting a new game will erase your progress.</p>
+                <div class="modal-buttons" style="gap: 12px; margin-top: 20px;">
+                    <button id="confirm-new-game-btn" class="primary-btn">New Game</button>
+                    <button id="confirm-new-game-cancel-btn" class="secondary-btn">Cancel</button>
                 </div>
             </div>
         </div>

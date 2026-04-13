@@ -4296,6 +4296,10 @@ class Game {
             perkSelectModal: document.getElementById("perk-select-modal"),
             perkSelectGrid: document.getElementById("perk-select-grid"),
             perkSelectSkipBtn: document.getElementById("perk-select-skip-btn"),
+            confirmNewGameModal: document.getElementById("confirm-new-game-modal"),
+            confirmNewGameBtn: document.getElementById("confirm-new-game-btn"),
+            confirmNewGameCancelBtn: document.getElementById("confirm-new-game-cancel-btn"),
+            confirmNewGameText: document.getElementById("confirm-new-game-text"),
             gameTimer: document.getElementById("game-timer"),
             timerScoreItem: document.getElementById("timer-score-item"),
             letterChoiceModal: document.getElementById("letter-choice-modal"),
@@ -4636,6 +4640,9 @@ class Game {
             pauseDictBtn: document.getElementById("pause-dict-btn"),
             wsDictBtn: document.getElementById("ws-dict-btn"),
             wrDictBtn: document.getElementById("wr-dict-btn"),
+            pauseHowToPlayBtn: document.getElementById("pause-howtoplay-btn"),
+            wsHowToPlayBtn: document.getElementById("ws-howtoplay-btn"),
+            wrHowToPlayBtn: document.getElementById("wr-howtoplay-btn"),
         };
 
         this.state = State.MENU;
@@ -5072,6 +5079,26 @@ class Game {
             });
         }
 
+        // How To Play in pause menus
+        if (this.els.pauseHowToPlayBtn) {
+            this.els.pauseHowToPlayBtn.addEventListener("click", () => {
+                this.els.pauseOverlay.classList.remove("active");
+                this._openTutorial();
+            });
+        }
+        if (this.els.wsHowToPlayBtn) {
+            this.els.wsHowToPlayBtn.addEventListener("click", () => {
+                if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.remove("active");
+                this._openTutorial();
+            });
+        }
+        if (this.els.wrHowToPlayBtn) {
+            this.els.wrHowToPlayBtn.addEventListener("click", () => {
+                this.els.wrPauseOverlay.classList.remove("active");
+                this._openTutorial();
+            });
+        }
+
         // Dict back button
         if (this.els.dictBackBtn) {
             this.els.dictBackBtn.addEventListener("click", () => this._closeDict());
@@ -5371,6 +5398,63 @@ class Game {
             this._closePerkSelectModal();
             this._beginNewGame(this._pendingTimeLimitSeconds || 0);
         });
+
+        // Confirm new game modal
+        this.els.confirmNewGameBtn.addEventListener("click", () => {
+            // Must proceed BEFORE closing (close clears the pending values)
+            this._proceedWithNewGame();
+            this._closeConfirmNewGameModal();
+        });
+        this.els.confirmNewGameCancelBtn.addEventListener("click", () => {
+            this._closeConfirmNewGameModal();
+        });
+    }
+
+    _openConfirmNewGameModal(gameType, challengeType = null) {
+        this._pendingNewGameType = gameType; // "main" or "challenge"
+        this._pendingNewGameChallenge = challengeType;
+        
+        // Set appropriate message based on game type
+        let message = "You have a saved game. Starting a new game will erase your progress.";
+        if (challengeType) {
+            const challengeNames = {
+                "target-word": "Target Word",
+                "speed-round": "Speed Round",
+                "word-category": "Word Category",
+                "word-search": "Word Search",
+                "word-runner": "Word Runner"
+            };
+            const name = challengeNames[challengeType] || "this challenge";
+            message = `You have a ${name} game in progress. Starting a new game will erase your progress.`;
+        }
+        this.els.confirmNewGameText.textContent = message;
+        this.els.confirmNewGameModal.classList.add("active");
+    }
+
+    _closeConfirmNewGameModal() {
+        this.els.confirmNewGameModal.classList.remove("active");
+        this._pendingNewGameType = null;
+        this._pendingNewGameChallenge = null;
+    }
+
+    _proceedWithNewGame() {
+        const gameType = this._pendingNewGameType;
+        const challengeType = this._pendingNewGameChallenge;
+        
+        if (gameType === "main") {
+            // Clear main game save and start
+            this._clearSavedGameForType(null);
+            this._startGameDirect();
+        } else if (gameType === "challenge") {
+            // Clear challenge save and start
+            this._clearSavedGameForType(challengeType);
+            this._startChallengeGameDirect();
+        }
+    }
+
+    _clearSavedGameForType(challengeType) {
+        const key = this._saveKey(challengeType);
+        if (key) localStorage.removeItem(key);
     }
 
     _bindLetterChoice() {
@@ -8066,6 +8150,16 @@ class Game {
 
     // ── Game start / reset ──
     _startGame() {
+        // Check if there's a saved game - if so, confirm before starting new
+        if (this._hasSavedGame(null)) {
+            this._openConfirmNewGameModal("main", null);
+            return;
+        }
+        this._startGameDirect();
+    }
+
+    /** Direct start without saved game check (called after confirmation) */
+    _startGameDirect() {
         this.activeChallenge = null;
         // Clean up any stale challenge tags
         delete this.els.restartBtn.dataset.challenge;
@@ -15904,6 +15998,16 @@ class Game {
     }
 
     _startChallengeGame() {
+        // Check if there's a saved game for this challenge - if so, confirm before starting new
+        if (this._hasSavedGame(this.activeChallenge)) {
+            this._openConfirmNewGameModal("challenge", this.activeChallenge);
+            return;
+        }
+        this._startChallengeGameDirect();
+    }
+
+    /** Direct challenge start without saved game check (called after confirmation) */
+    _startChallengeGameDirect() {
         this._stopChallengePreviewAnimations();
 
         // Word Search uses its own screen and game flow
@@ -19278,23 +19382,90 @@ window.addEventListener("beforeunload", () => {
     if (g && g.music) g.music._saveMusicState();
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOADING SCREEN - Falling letters animation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const LoadingScreen = {
+    progress: 0,
+    
+    init() {
+        this.progressBar = document.getElementById('loading-bar-fill');
+        this.loadingText = document.getElementById('loading-text');
+        this.screen = document.getElementById('loading-screen');
+        // Falling letters already started by inline script in HTML
+    },
+    
+    stopFallingLetters() {
+        // Stop the interval started by the inline script
+        if (window._loadingLettersInterval) {
+            clearInterval(window._loadingLettersInterval);
+            window._loadingLettersInterval = null;
+        }
+    },
+    
+    setProgress(percent, text) {
+        this.progress = Math.min(100, Math.max(0, percent));
+        if (this.progressBar) {
+            this.progressBar.style.width = this.progress + '%';
+        }
+        if (this.loadingText && text) {
+            this.loadingText.textContent = text;
+        }
+    },
+    
+    hide() {
+        this.setProgress(100, 'Ready!');
+        
+        // Short delay to show 100%, then fade out
+        setTimeout(() => {
+            this.stopFallingLetters();
+            if (this.screen) {
+                this.screen.classList.add('hidden');
+            }
+            // Remove from DOM after transition
+            setTimeout(() => {
+                if (this.screen) {
+                    this.screen.remove();
+                }
+            }, 700);
+        }, 400);
+    }
+};
+
+// Initialize loading screen immediately
+LoadingScreen.init();
+
 // ── Bootstrap ──
 // Load track list + dictionary, then start the game
+LoadingScreen.setProgress(5, 'Loading assets...');
+
 Promise.all([
-    loadTrackList(),
-    loadDictionary().catch((err) => {
+    loadTrackList().then(() => {
+        LoadingScreen.setProgress(30, 'Loading music...');
+    }),
+    loadDictionary().then(() => {
+        LoadingScreen.setProgress(60, 'Loading dictionary...');
+    }).catch((err) => {
         console.error("Dictionary initialization failed.", err);
         DICTIONARY = new Set();
         _buildHintSets();
+        LoadingScreen.setProgress(60, 'Loading dictionary...');
     }),
-    loadEnrichedDict()
+    loadEnrichedDict().then(() => {
+        LoadingScreen.setProgress(85, 'Loading definitions...');
+    })
 ]).then(async () => {
+    LoadingScreen.setProgress(90, 'Initializing game...');
+    
     // Clean up previous instance (HMR reload) to prevent double audio / double game loops
     const prev = window._game;
     if (prev && prev.destroy) prev.destroy();
     window._game = new Game();
     // Mount Preact UI layer after game initializes
     mountPreactUI();
+    
+    LoadingScreen.setProgress(95, 'Setting up notifications...');
     
     // Word of the Day notifications - initialize on first launch or reschedule if enabled
     try {
@@ -19316,4 +19487,7 @@ Promise.all([
         // Word of Day module not available or not on native platform
         console.log('[WOTD] Not initialized:', e.message);
     }
+    
+    // Hide loading screen
+    LoadingScreen.hide();
 });
