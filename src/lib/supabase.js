@@ -2,27 +2,26 @@
  * supabase.js — Supabase client for PLUMMET
  * 
  * Handles auth, profile CRUD, game score recording, and leaderboard queries.
- * Falls back to localStorage when Supabase credentials are not configured.
+ * Always connects to Supabase when credentials are available.
+ * The anon key is public (RLS-protected) — safe to embed.
  */
 import { createClient } from '@supabase/supabase-js';
 
 // ── Environment config ──
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Hardcoded fallbacks ensure every environment (dev, preview, prod) connects.
+// The anon key is public by design — Row Level Security controls all access.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://gwzdevcespqtrhivkegf.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd3emRldmNlc3BxdHJoaXZrZWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNTA4NTIsImV4cCI6MjA5MDgyNjg1Mn0._dkO4Q4A56XZ707dn5mUae3MHVqbw3GiatN1gTntkZo';
 
-export const isLocalMode = !SUPABASE_URL || !SUPABASE_ANON_KEY;
+export const isLocalMode = false; // Always connected — no silent localStorage-only fallback
 
-export let supabase = null;
-
-if (!isLocalMode) {
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: {
-            autoRefreshToken: true,
-            persistSession: true,
-            detectSessionInUrl: false,
-        },
-    });
-}
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+    },
+});
 
 // ════════════════════════════════════════
 // AUTH
@@ -209,6 +208,46 @@ export async function addInventoryItem(profileId, itemId) {
     return data;
 }
 
+export async function getInventory(profileId) {
+    if (isLocalMode) return [];
+    const { data, error } = await supabase
+        .from('profile_inventory')
+        .select('item_id')
+        .eq('profile_id', profileId);
+    if (error) throw error;
+    return (data || []).map(row => row.item_id);
+}
+
+export async function getChallengeStats(profileId) {
+    if (isLocalMode) return [];
+    const { data, error } = await supabase
+        .from('profile_challenge_stats')
+        .select('*')
+        .eq('profile_id', profileId);
+    if (error) throw error;
+    return data || [];
+}
+
+export async function upsertChallengeStats(profileId, challengeType, stats) {
+    if (isLocalMode) return null;
+    const { data, error } = await supabase
+        .from('profile_challenge_stats')
+        .upsert({
+            profile_id: profileId,
+            challenge_type: challengeType,
+            high_score: stats.highScore || 0,
+            games_played: stats.gamesPlayed || 0,
+            total_words: stats.totalWords || 0,
+            target_word_level: stats.targetWordLevel || stats.wordSearchLevel || 1,
+            unique_words_found: stats.uniqueWordsFound || [],
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'profile_id,challenge_type' })
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
 // ════════════════════════════════════════
 // LEADERBOARD
 // ════════════════════════════════════════
@@ -307,4 +346,36 @@ export async function deleteAccount() {
     const { error } = await supabase.from('accounts').delete().eq('id', user.id);
     if (error) throw error;
     await signOut();
+}
+
+// ════════════════════════════════════════
+// MILESTONES
+// ════════════════════════════════════════
+
+/**
+ * Record a milestone achievement. Idempotent — the UNIQUE constraint
+ * on (profile_id, milestone_id) means duplicates are silently ignored.
+ */
+export async function recordMilestone(profileId, milestoneId, coinsAwarded) {
+    if (isLocalMode) return;
+    const { error } = await supabase
+        .from('profile_milestones')
+        .upsert(
+            { profile_id: profileId, milestone_id: milestoneId, coins_awarded: coinsAwarded },
+            { onConflict: 'profile_id,milestone_id', ignoreDuplicates: true }
+        );
+    if (error) throw error;
+}
+
+/**
+ * Fetch all milestones for a profile. Returns array of { milestone_id, coins_awarded, earned_at }.
+ */
+export async function getProfileMilestones(profileId) {
+    if (isLocalMode) return [];
+    const { data, error } = await supabase
+        .from('profile_milestones')
+        .select('milestone_id, coins_awarded, earned_at')
+        .eq('profile_id', profileId);
+    if (error) throw error;
+    return data || [];
 }

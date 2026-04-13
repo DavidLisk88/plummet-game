@@ -1,46 +1,52 @@
 -- ────────────────────────────────────────────────────────────────
 -- Migration 013: Skill Rating Ratchet — ratings never decrease
 -- ────────────────────────────────────────────────────────────────
--- Skill ratings should only go up. This migration updates both
--- update_my_ranking() and update_my_challenge_rankings() to use
--- GREATEST(old_rating, new_rating) so computed ratings never drop.
+-- Skill ratings should only go up for a given profile. When the
+-- account's representative profile changes (e.g. due to deletion
+-- or restoration), the new profile's own rating is used directly.
+--
+-- Core logic lives in update_ranking_for_account(UUID) so it can
+-- be called from triggers, service-role functions, and the
+-- client-facing update_my_ranking() wrapper.
 -- ────────────────────────────────────────────────────────────────
 
 -- ════════════════════════════════════════
--- 1. update_my_ranking() — GREATEST ratchet on ON CONFLICT
+-- 1a. Core helper: update_ranking_for_account(UUID)
+--     Ratchet is PROFILE-AWARE: only applies GREATEST when the
+--     same profile is still the best. When a different profile
+--     takes over, its own rating is used as-is.
 -- ════════════════════════════════════════
-CREATE OR REPLACE FUNCTION update_my_ranking()
+CREATE OR REPLACE FUNCTION update_ranking_for_account(p_account_id UUID)
 RETURNS void AS $$
 DECLARE
-    v_account_id UUID;
     v_best_profile_id UUID;
     v_best_username TEXT;
     v_skill RECORD;
 BEGIN
-    v_account_id := auth.uid();
-    IF v_account_id IS NULL THEN RETURN; END IF;
+    IF p_account_id IS NULL THEN RETURN; END IF;
 
     -- Check if account is banned
-    IF EXISTS (SELECT 1 FROM accounts WHERE id = v_account_id AND is_banned = TRUE) THEN RETURN; END IF;
+    IF EXISTS (SELECT 1 FROM accounts WHERE id = p_account_id AND is_banned = TRUE) THEN RETURN; END IF;
 
     -- Find the best-skilled profile for this account
     SELECT p.id, p.username INTO v_best_profile_id, v_best_username
     FROM profiles p
     CROSS JOIN LATERAL compute_profile_skill(p.id) s
-    WHERE p.account_id = v_account_id AND p.games_played > 0
+    WHERE p.account_id = p_account_id AND p.games_played > 0
     ORDER BY s.skill_rating DESC
     LIMIT 1;
 
     IF v_best_profile_id IS NULL THEN
         -- No profiles with games — remove from leaderboard if present
-        DELETE FROM leaderboard_rankings WHERE account_id = v_account_id;
+        DELETE FROM leaderboard_rankings WHERE account_id = p_account_id;
         RETURN;
     END IF;
 
     -- Compute skill for the best profile
     SELECT * INTO v_skill FROM compute_profile_skill(v_best_profile_id);
 
-    -- Upsert into leaderboard — GREATEST ensures rating never decreases
+    -- Upsert into leaderboard
+    -- Ratchet: GREATEST only when SAME profile; when profile changes, use new rating directly
     INSERT INTO leaderboard_rankings (
         account_id, profile_id, username,
         skill_rating, raw_score_component, grid_mastery_component,
@@ -48,7 +54,7 @@ BEGIN
         consistency_component, versatility_component, progression_component,
         skill_class, computed_at
     ) VALUES (
-        v_account_id, v_best_profile_id, v_best_username,
+        p_account_id, v_best_profile_id, v_best_username,
         v_skill.skill_rating, v_skill.raw_score_component, v_skill.grid_mastery_component,
         v_skill.difficulty_component, v_skill.time_pressure_component, v_skill.challenge_component,
         v_skill.consistency_component, v_skill.versatility_component, v_skill.progression_component,
@@ -57,25 +63,39 @@ BEGIN
     ON CONFLICT (account_id) DO UPDATE SET
         profile_id = EXCLUDED.profile_id,
         username = EXCLUDED.username,
-        skill_rating = GREATEST(leaderboard_rankings.skill_rating, EXCLUDED.skill_rating),
-        raw_score_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.raw_score_component ELSE leaderboard_rankings.raw_score_component END,
-        grid_mastery_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.grid_mastery_component ELSE leaderboard_rankings.grid_mastery_component END,
-        difficulty_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.difficulty_component ELSE leaderboard_rankings.difficulty_component END,
-        time_pressure_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.time_pressure_component ELSE leaderboard_rankings.time_pressure_component END,
-        challenge_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.challenge_component ELSE leaderboard_rankings.challenge_component END,
-        consistency_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.consistency_component ELSE leaderboard_rankings.consistency_component END,
-        versatility_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.versatility_component ELSE leaderboard_rankings.versatility_component END,
-        progression_component = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.progression_component ELSE leaderboard_rankings.progression_component END,
-        skill_class = CASE WHEN EXCLUDED.skill_rating >= leaderboard_rankings.skill_rating
-            THEN EXCLUDED.skill_class ELSE leaderboard_rankings.skill_class END,
+        -- Same profile → ratchet (never decrease). Different profile → use its own rating.
+        skill_rating = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id
+            THEN GREATEST(leaderboard_rankings.skill_rating, EXCLUDED.skill_rating)
+            ELSE EXCLUDED.skill_rating
+        END,
+        raw_score_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.raw_score_component ELSE EXCLUDED.raw_score_component END,
+        grid_mastery_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.grid_mastery_component ELSE EXCLUDED.grid_mastery_component END,
+        difficulty_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.difficulty_component ELSE EXCLUDED.difficulty_component END,
+        time_pressure_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.time_pressure_component ELSE EXCLUDED.time_pressure_component END,
+        challenge_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.challenge_component ELSE EXCLUDED.challenge_component END,
+        consistency_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.consistency_component ELSE EXCLUDED.consistency_component END,
+        versatility_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.versatility_component ELSE EXCLUDED.versatility_component END,
+        progression_component = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.progression_component ELSE EXCLUDED.progression_component END,
+        skill_class = CASE
+            WHEN leaderboard_rankings.profile_id = EXCLUDED.profile_id AND EXCLUDED.skill_rating < leaderboard_rankings.skill_rating
+            THEN leaderboard_rankings.skill_class ELSE EXCLUDED.skill_class END,
         analysis_text = NULL,
         computed_at = NOW();
 
@@ -95,14 +115,25 @@ BEGIN
     UPDATE leaderboard_rankings lr SET class_rank = class_ranked.rn
     FROM class_ranked WHERE lr.id = class_ranked.id;
 
-    -- Also update challenge leaderboards for this user
-    PERFORM update_my_challenge_rankings(v_account_id);
+    -- Also update challenge leaderboards for this account
+    PERFORM update_my_challenge_rankings(p_account_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ════════════════════════════════════════
+-- 1b. Client-facing wrapper (uses auth.uid())
+-- ════════════════════════════════════════
+CREATE OR REPLACE FUNCTION update_my_ranking()
+RETURNS void AS $$
+BEGIN
+    PERFORM update_ranking_for_account(auth.uid());
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 -- ════════════════════════════════════════
--- 2. update_my_challenge_rankings() — ratchet via ON CONFLICT instead of DELETE+INSERT
+-- 2. update_my_challenge_rankings() — profile-aware ratchet
+--    Same profile → GREATEST. Different profile → use new rating directly.
 -- ════════════════════════════════════════
 CREATE OR REPLACE FUNCTION update_my_challenge_rankings(p_account_id UUID)
 RETURNS VOID AS $$
@@ -133,11 +164,15 @@ BEGIN
         ON CONFLICT (account_id, challenge_type) DO UPDATE SET
             profile_id = EXCLUDED.profile_id,
             username = EXCLUDED.username,
-            challenge_skill_rating = GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating),
+            challenge_skill_rating = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id
+                THEN GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating)
+                ELSE EXCLUDED.challenge_skill_rating END,
             high_score = GREATEST(challenge_leaderboards.high_score, EXCLUDED.high_score),
             games_played = EXCLUDED.games_played,
-            skill_class = CASE WHEN EXCLUDED.challenge_skill_rating >= challenge_leaderboards.challenge_skill_rating
-                THEN EXCLUDED.skill_class ELSE challenge_leaderboards.skill_class END,
+            skill_class = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id AND EXCLUDED.challenge_skill_rating < challenge_leaderboards.challenge_skill_rating
+                THEN challenge_leaderboards.skill_class ELSE EXCLUDED.skill_class END,
             computed_at = NOW();
     END LOOP;
 
@@ -179,11 +214,15 @@ BEGIN
         ON CONFLICT (account_id, challenge_type) DO UPDATE SET
             profile_id = EXCLUDED.profile_id,
             username = EXCLUDED.username,
-            challenge_skill_rating = GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating),
+            challenge_skill_rating = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id
+                THEN GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating)
+                ELSE EXCLUDED.challenge_skill_rating END,
             high_score = GREATEST(challenge_leaderboards.high_score, EXCLUDED.high_score),
             games_played = EXCLUDED.games_played,
-            skill_class = CASE WHEN EXCLUDED.challenge_skill_rating >= challenge_leaderboards.challenge_skill_rating
-                THEN EXCLUDED.skill_class ELSE challenge_leaderboards.skill_class END,
+            skill_class = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id AND EXCLUDED.challenge_skill_rating < challenge_leaderboards.challenge_skill_rating
+                THEN challenge_leaderboards.skill_class ELSE EXCLUDED.skill_class END,
             computed_at = NOW();
     END LOOP;
 
@@ -225,11 +264,15 @@ BEGIN
         ON CONFLICT (account_id, challenge_type) DO UPDATE SET
             profile_id = EXCLUDED.profile_id,
             username = EXCLUDED.username,
-            challenge_skill_rating = GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating),
+            challenge_skill_rating = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id
+                THEN GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating)
+                ELSE EXCLUDED.challenge_skill_rating END,
             high_score = GREATEST(challenge_leaderboards.high_score, EXCLUDED.high_score),
             games_played = EXCLUDED.games_played,
-            skill_class = CASE WHEN EXCLUDED.challenge_skill_rating >= challenge_leaderboards.challenge_skill_rating
-                THEN EXCLUDED.skill_class ELSE challenge_leaderboards.skill_class END,
+            skill_class = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id AND EXCLUDED.challenge_skill_rating < challenge_leaderboards.challenge_skill_rating
+                THEN challenge_leaderboards.skill_class ELSE EXCLUDED.skill_class END,
             computed_at = NOW();
     END LOOP;
 
@@ -275,11 +318,15 @@ BEGIN
         ON CONFLICT (account_id, challenge_type) DO UPDATE SET
             profile_id = EXCLUDED.profile_id,
             username = EXCLUDED.username,
-            challenge_skill_rating = GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating),
+            challenge_skill_rating = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id
+                THEN GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating)
+                ELSE EXCLUDED.challenge_skill_rating END,
             high_score = GREATEST(challenge_leaderboards.high_score, EXCLUDED.high_score),
             games_played = EXCLUDED.games_played,
-            skill_class = CASE WHEN EXCLUDED.challenge_skill_rating >= challenge_leaderboards.challenge_skill_rating
-                THEN EXCLUDED.skill_class ELSE challenge_leaderboards.skill_class END,
+            skill_class = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id AND EXCLUDED.challenge_skill_rating < challenge_leaderboards.challenge_skill_rating
+                THEN challenge_leaderboards.skill_class ELSE EXCLUDED.skill_class END,
             computed_at = NOW();
     END LOOP;
 
@@ -321,11 +368,15 @@ BEGIN
         ON CONFLICT (account_id, challenge_type) DO UPDATE SET
             profile_id = EXCLUDED.profile_id,
             username = EXCLUDED.username,
-            challenge_skill_rating = GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating),
+            challenge_skill_rating = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id
+                THEN GREATEST(challenge_leaderboards.challenge_skill_rating, EXCLUDED.challenge_skill_rating)
+                ELSE EXCLUDED.challenge_skill_rating END,
             high_score = GREATEST(challenge_leaderboards.high_score, EXCLUDED.high_score),
             games_played = EXCLUDED.games_played,
-            skill_class = CASE WHEN EXCLUDED.challenge_skill_rating >= challenge_leaderboards.challenge_skill_rating
-                THEN EXCLUDED.skill_class ELSE challenge_leaderboards.skill_class END,
+            skill_class = CASE
+                WHEN challenge_leaderboards.profile_id = EXCLUDED.profile_id AND EXCLUDED.challenge_skill_rating < challenge_leaderboards.challenge_skill_rating
+                THEN challenge_leaderboards.skill_class ELSE EXCLUDED.skill_class END,
             computed_at = NOW();
     END LOOP;
 

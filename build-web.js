@@ -15,6 +15,7 @@ const DEST = path.join(__dirname, "www");
 // Static assets that Vite doesn't process (loaded at runtime)
 const assets = [
   "words.json",
+  "words-enriched.json",
   "logo.svg",
   "Music",
   "TUTORIAL",

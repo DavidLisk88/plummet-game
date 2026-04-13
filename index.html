@@ -31,8 +31,30 @@
 
     <div id="game-container">
         <canvas id="bg-canvas"></canvas>
-        <!-- Global music mute button (visible on all screens) -->
-        <button id="global-mute-btn" class="global-mute-btn" title="Toggle Music">♪</button>
+        <!-- Global music control dropdown (visible on all screens) -->
+        <div id="global-music-dropdown" class="global-music-dropdown">
+            <button id="global-mute-btn" class="global-mute-btn" title="Toggle Music" aria-label="Music"></button>
+            <div id="global-music-panel" class="global-music-panel">
+                <div class="gmp-track-name" id="gmp-track-name">---</div>
+                <div class="gmp-progress-row">
+                    <span class="gmp-time" id="gmp-current-time">0:00</span>
+                    <div class="gmp-progress-bar" id="gmp-progress-bar">
+                        <div class="gmp-progress-fill" id="gmp-progress-fill"></div>
+                        <div class="gmp-progress-thumb" id="gmp-progress-thumb"></div>
+                    </div>
+                    <span class="gmp-time" id="gmp-duration">0:00</span>
+                </div>
+                <div class="gmp-controls">
+                    <button id="gmp-prev" class="icon-btn gmp-btn" title="Previous Track" aria-label="Previous"></button>
+                    <button id="gmp-toggle" class="icon-btn gmp-btn gmp-toggle-btn" title="Play / Pause" aria-label="Play"></button>
+                    <button id="gmp-next" class="icon-btn gmp-btn" title="Next Track" aria-label="Next"></button>
+                </div>
+                <div class="gmp-volume-row">
+                    <button id="gmp-mute" class="icon-btn gmp-btn gmp-mute-btn" title="Mute / Unmute" aria-label="Mute"></button>
+                    <input type="range" id="gmp-volume" class="gmp-volume-slider" min="0" max="100" value="80" aria-label="Volume">
+                </div>
+            </div>
+        </div>
         <!-- AUTH SCREEN (shown on launch when not logged in) -->
         <div id="auth-screen" class="screen active">
             <h1 class="title">PLUMMET</h1>
@@ -112,7 +134,19 @@
         <div id="menu-screen" class="screen menu-swipe-screen">
             <div id="menu-slide-view">
                 <div id="menu-slide-strip">
-                    <!-- Page 0: Community & Links -->
+                    <!-- Page 0: Milestones -->
+                    <div class="menu-page menu-page-milestones">
+                        <div class="milestones-page-content">
+                            <h2 class="milestones-page-title">Milestones</h2>
+                            <p class="milestones-page-subtitle">Track your achievements</p>
+                            <div id="milestones-progress-bar">
+                                <div id="milestones-progress-fill"></div>
+                                <span id="milestones-progress-text">0 / 17</span>
+                            </div>
+                            <div id="milestones-grid"></div>
+                        </div>
+                    </div>
+                    <!-- Page 1: Community & Links -->
                     <div class="menu-page menu-page-links">
                         <div class="links-page-content">
                             <h2 class="links-page-title">Connect</h2>
@@ -146,6 +180,7 @@
                     <!-- Page 1: Main Menu (original) -->
                     <div class="menu-page">
                         <button id="tutorial-btn-menu" class="tutorial-btn tutorial-btn-small" title="Tutorial">?</button>
+                        <button id="dict-btn-menu" class="dict-fab" title="Dictionary">📖</button>
                         <button id="switch-profile-btn" class="switch-profile-icon-btn" title="Switch Profile">⟳</button>
                         <h1 class="title">PLUMMET</h1>
                         <p id="menu-profile-name" class="subtitle"></p>
@@ -195,6 +230,7 @@
                     <!-- Page 2: Leaderboards & Rankings -->
                     <div class="menu-page menu-page-leaderboards">
                         <div class="leaderboard-page-content">
+                            <button id="dict-btn-rankings" class="dict-fab dict-fab-screen" title="Dictionary">📖</button>
                             <h2 class="leaderboard-page-title">Rankings</h2>
                             <p class="leaderboard-page-subtitle">See where you stand</p>
 
@@ -261,8 +297,9 @@
                 <button id="menu-prev-btn" class="menu-nav-arrow">‹</button>
                 <div id="menu-dots">
                     <button class="menu-dot" data-page="0"></button>
-                    <button class="menu-dot active" data-page="1"></button>
-                    <button class="menu-dot" data-page="2"></button>
+                    <button class="menu-dot" data-page="1"></button>
+                    <button class="menu-dot active" data-page="2"></button>
+                    <button class="menu-dot" data-page="3"></button>
                 </div>
                 <button id="menu-next-btn" class="menu-nav-arrow">›</button>
             </div>
@@ -270,6 +307,7 @@
 
         <!-- SHOP SCREEN -->
         <div id="shop-screen" class="screen">
+            <button id="dict-btn-shop" class="dict-fab dict-fab-screen" title="Dictionary">📖</button>
             <div id="shop-header">
                 <button id="shop-back-btn" class="icon-btn back-btn">←</button>
                 <h2>Shop</h2>
@@ -459,6 +497,7 @@
 
         <!-- CHALLENGES SELECTION SCREEN -->
         <div id="challenges-screen" class="screen">
+            <button id="dict-btn-challenges" class="dict-fab dict-fab-screen" title="Dictionary">📖</button>
             <div id="challenges-header">
                 <button id="challenges-back-btn" class="icon-btn back-btn">←</button>
                 <h2>Challenges</h2>
@@ -473,6 +512,7 @@
 
         <!-- CHALLENGE SETUP SCREEN -->
         <div id="challenge-setup-screen" class="screen">
+            <button id="dict-btn-challengesetup" class="dict-fab dict-fab-screen" title="Dictionary">📖</button>
             <button id="challenge-tutorial-btn" class="tutorial-btn tutorial-btn-small" title="How This Challenge Works">?</button>
             <h1 class="title">PLUMMET</h1>
             <p id="challenge-setup-name" class="subtitle challenge-mode-label"></p>
@@ -523,16 +563,6 @@
                     <span id="ws-coins" class="score-value coin-value">0</span>
                 </div>
             </div>
-            <!-- Music mini player (matches #now-playing-mini) -->
-            <div id="ws-mini-player">
-                <div id="ws-mini-progress"><div id="ws-mini-progress-fill"></div></div>
-                <span id="ws-mini-title">♪ ---</span>
-                <div id="ws-mini-controls">
-                    <button id="ws-mini-prev" class="icon-btn np-mini-btn" title="Previous Track" aria-label="Previous Track"></button>
-                    <button id="ws-mini-toggle" class="icon-btn np-mini-btn np-mini-toggle-btn" title="Play or Pause Music" aria-label="Play"></button>
-                    <button id="ws-mini-next" class="icon-btn np-mini-btn" title="Next Track" aria-label="Next Track"></button>
-                </div>
-            </div>
             <!-- Pause button — positioned between music player and grid on mobile -->
             <button id="ws-pause-btn" class="icon-btn play-fab-btn play-pause-btn ws-pause-mobile" title="Pause" aria-label="Pause">⏐⏐</button>
             <!-- The grid (matches #canvas-wrapper) -->
@@ -548,6 +578,7 @@
                 <div class="overlay-content">
                     <h2>Paused</h2>
                     <button id="ws-resume-btn" class="primary-btn">Resume</button>
+                    <button id="ws-dict-btn" class="secondary-btn">📖 Dictionary</button>
                     <button id="ws-music-btn" class="secondary-btn">Music</button>
                     <button id="ws-end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
                     <button id="ws-save-quit-btn" class="secondary-btn quit-btn-save">Save & Quit</button>
@@ -582,16 +613,6 @@
             <button id="wr-pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏐⏐</button>
             <!-- Validate word button (below pause, convenience for mobile) -->
             <button id="wr-validate-btn" class="icon-btn play-fab-btn wr-validate-fab" title="Check Word" aria-label="Check Word">✓</button>
-            <!-- Music mini player -->
-            <div id="wr-mini-player">
-                <div id="wr-mini-progress"><div id="wr-mini-progress-fill"></div></div>
-                <span id="wr-mini-title">♪ ---</span>
-                <div id="wr-mini-controls">
-                    <button id="wr-mini-prev" class="icon-btn np-mini-btn" title="Previous Track" aria-label="Previous Track"></button>
-                    <button id="wr-mini-toggle" class="icon-btn np-mini-btn np-mini-toggle-btn" title="Play or Pause Music" aria-label="Play"></button>
-                    <button id="wr-mini-next" class="icon-btn np-mini-btn" title="Next Track" aria-label="Next Track"></button>
-                </div>
-            </div>
             <!-- Game canvas -->
             <div id="wr-canvas-container">
                 <canvas id="wr-canvas"></canvas>
@@ -605,6 +626,7 @@
                     <h2>PAUSED</h2>
                     <button id="wr-resume-btn" class="primary-btn">Resume</button>
                     <button id="wr-words-found-btn" class="secondary-btn">Words So Far</button>
+                    <button id="wr-dict-btn" class="secondary-btn">📖 Dictionary</button>
                     <button id="wr-music-btn" class="secondary-btn">Music</button>
                     <button id="wr-shop-btn" class="secondary-btn">Shop</button>
                     <button id="wr-end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
@@ -639,17 +661,6 @@
                     <span id="play-coins" class="score-value coin-value">0</span>
                 </div>
             </div>
-            <button id="pause-btn" class="icon-btn play-fab-btn play-pause-btn" title="Pause" aria-label="Pause">⏐⏐</button>
-            <!-- Radial Bonus Slot Menu -->
-            <div id="radial-menu" class="radial-menu hidden">
-                <button id="radial-toggle" class="radial-toggle" title="Bonus Slots" aria-label="Bonus Slots">⬡</button>
-                <div id="radial-slots" class="radial-slots">
-                    <button class="radial-slot" data-slot="0" disabled></button>
-                    <button class="radial-slot" data-slot="1" disabled></button>
-                    <button class="radial-slot" data-slot="2" disabled></button>
-                </div>
-            </div>
-            <button id="hints-btn" class="icon-btn play-fab-btn play-hint-btn" title="Toggle Hints" aria-label="Toggle Hints">◈</button>
             <div id="bonus-popup-overlay" class="bonus-popup-overlay hidden">
                 <div id="bonus-popup-card" class="bonus-popup-card">
                     <div id="bonus-popup-icon" class="bonus-popup-icon"></div>
@@ -660,16 +671,20 @@
                 <span class="target-label">TARGET:</span>
                 <span id="target-word-text"></span>
             </div>
-            <div id="now-playing-mini">
-                <div id="np-mini-progress"><div id="np-mini-progress-fill"></div></div>
-                <span id="np-mini-title">♪ ---</span>
-                <div id="np-mini-controls">
-                    <button id="np-mini-prev" class="icon-btn np-mini-btn" title="Previous Track" aria-label="Previous Track"></button>
-                    <button id="np-mini-toggle" class="icon-btn np-mini-btn np-mini-toggle-btn" title="Play or Pause Music" aria-label="Play"></button>
-                    <button id="np-mini-next" class="icon-btn np-mini-btn" title="Next Track" aria-label="Next Track"></button>
-                </div>
-            </div>
             <div id="canvas-wrapper">
+                <div id="grid-overlay-btns">
+                    <button id="hints-btn" class="icon-btn grid-overlay-btn grid-hint-btn" title="Toggle Hints" aria-label="Toggle Hints">◈</button>
+                    <button id="pause-btn" class="icon-btn grid-overlay-btn grid-pause-btn" title="Pause" aria-label="Pause">⏐⏐</button>
+                </div>
+                <!-- Radial Bonus Slot Menu -->
+                <div id="radial-menu" class="radial-menu hidden">
+                    <button id="radial-toggle" class="radial-toggle" title="Bonus Slots" aria-label="Bonus Slots">⬡</button>
+                    <div id="radial-slots" class="radial-slots">
+                        <button class="radial-slot" data-slot="0" disabled></button>
+                        <button class="radial-slot" data-slot="1" disabled></button>
+                        <button class="radial-slot" data-slot="2" disabled></button>
+                    </div>
+                </div>
                 <button id="bonus-btn" class="bonus-btn hidden" title="Use Bonus Letter">Bonus!</button>
                 <canvas id="game-canvas"></canvas>
             </div>
@@ -705,6 +720,7 @@
                 <h2>PAUSED</h2>
                 <button id="resume-btn" class="primary-btn">Resume</button>
                 <button id="pause-words-found-btn" class="secondary-btn">Words So Far</button>
+                <button id="pause-dict-btn" class="secondary-btn">📖 Dictionary</button>
                 <button id="pause-music-btn" class="secondary-btn">Music</button>
                 <button id="pause-shop-btn" class="secondary-btn">Shop</button>
                 <button id="end-game-btn" class="secondary-btn quit-btn-end">End Game</button>
@@ -764,6 +780,7 @@
 
         <!-- GAME OVER SCREEN -->
         <div id="gameover-screen" class="screen">
+            <button id="dict-btn-gameover" class="dict-fab dict-fab-screen" title="Dictionary">📖</button>
             <h1 class="title">GAME OVER</h1>
             <p id="final-score-text">Score: 0</p>
             <p id="new-high-score-text" class="hidden">New High Score!</p>
@@ -830,6 +847,63 @@
         </div>
     </div>
 
+    <!-- ═══ DICTIONARY / THESAURUS SCREEN ═══ -->
+    <div id="dict-screen" class="screen">
+        <div id="dict-header">
+            <button id="dict-back-btn" class="icon-btn back-btn">←</button>
+            <h2 id="dict-title">Dictionary</h2>
+            <div style="width:36px"></div>
+        </div>
+
+        <!-- Search bar -->
+        <div id="dict-search-wrap">
+            <div id="dict-search-bar">
+                <span id="dict-search-icon">⌕</span>
+                <input type="text" id="dict-search" placeholder="Search words…" autocomplete="off" autocorrect="off" spellcheck="false" />
+                <button id="dict-search-clear" class="dict-search-clear hidden">✕</button>
+            </div>
+            <div id="dict-result-count"></div>
+        </div>
+
+        <!-- Filter chips (scrollable) -->
+        <div id="dict-filters">
+            <div id="dict-filter-row">
+                <!-- POS / type filters -->
+                <button class="dict-chip active" data-filter="all">All</button>
+                <button class="dict-chip" data-filter="cat-nouns">📦 Nouns</button>
+                <button class="dict-chip" data-filter="cat-verbs">⚡ Verbs</button>
+                <button class="dict-chip" data-filter="cat-adjectives">✨ Adjectives</button>
+                <button class="dict-chip" data-filter="cat-adverbs">📣 Adverbs</button>
+                <span class="dict-chip-divider"></span>
+                <!-- Length filters -->
+                <button class="dict-chip" data-filter="len-2-3">2–3</button>
+                <button class="dict-chip" data-filter="len-4-5">4–5</button>
+                <button class="dict-chip" data-filter="len-6-7">6–7</button>
+                <button class="dict-chip" data-filter="len-8+">8+</button>
+                <span class="dict-chip-divider"></span>
+                <!-- Category filters -->
+                <button class="dict-chip dict-chip-cat" data-filter="cat-food">🍕 Food</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-animals">🐾 Animals</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-nature">🌿 Nature</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-technology">💻 Tech</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-sports">⚽ Sports</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-body">🫀 Body</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-music">🎵 Music</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-home">🏠 Home</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-clothing">👗 Clothing</button>
+                <button class="dict-chip dict-chip-cat" data-filter="cat-science">🔬 Science</button>
+            </div>
+        </div>
+
+        <!-- Alphabet jump bar -->
+        <div id="dict-alpha-bar"></div>
+
+        <!-- Word list (virtual scroll) -->
+        <div id="dict-list-wrap">
+            <div id="dict-list"></div>
+        </div>
+    </div>
+
     <!-- Tutorial Overlay -->
     <div id="tutorial-overlay" class="overlay">
         <!-- Sub-menu -->
@@ -855,6 +929,27 @@
                 <button id="tutorial-prev-btn" class="tutorial-nav-btn">‹</button>
                 <div id="tutorial-dots"></div>
                 <button id="tutorial-next-btn" class="tutorial-nav-btn">›</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="guided-tour-overlay">
+        <div id="guided-tour-dim"></div>
+        <div id="guided-tour-focus"></div>
+        <div id="guided-tour-arrow"></div>
+        <div id="guided-tour-pointer"></div>
+        <button id="guided-tour-hotspot" class="hidden" aria-label="Guided tour target"></button>
+        <button id="guided-tour-back-btn" class="secondary-btn hidden">← Back</button>
+        <div id="guided-tour-card">
+            <div id="guided-tour-card-top">
+                <span id="guided-tour-counter">1 / 1</span>
+                <button id="guided-tour-exit-btn" class="secondary-btn">Exit Tour</button>
+            </div>
+            <h3 id="guided-tour-title">Guided Tour</h3>
+            <p id="guided-tour-body"></p>
+            <div id="guided-tour-hint">Tap the highlighted area to continue.</div>
+            <div id="guided-tour-actions">
+                <button id="guided-tour-continue-btn" class="primary-btn">Tap to Continue</button>
             </div>
         </div>
     </div>

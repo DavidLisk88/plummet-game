@@ -1206,7 +1206,7 @@ class WRScene {
         if (!bestWord) { this._wordInvalid(); return null; }
 
         const word = bestWord;
-        let pts = word.length * 10 * word.length;
+        let pts = word.length * 15 * word.length;
         if (word.length >= 4) pts = Math.floor(pts * (1 + 0.15 * Math.pow(word.length - 3, 1.4)));
         let letterBonus = 0;
         for (const ch of word) {

@@ -98,6 +98,7 @@ function _buildHintSets() {
 
 // ── Load dictionary from the bundled words.json ──
 let WORD_CATEGORIES = {};   // { food: { label, icon, words: Set }, ... }
+let ENRICHED_DICT = null;   // { word: { word, definitions, synonyms, partsOfSpeech } }
 
 async function loadDictionary() {
     try {
@@ -148,6 +149,18 @@ async function loadDictionary() {
     // Build trie index for prefix-based word validation and swipe hints
     buildTrie(DICTIONARY);
     console.log(`[Enhanced] Trie index built for word search hints`);
+}
+
+async function loadEnrichedDict() {
+    try {
+        const resp = await fetch("./words-enriched.json");
+        if (!resp.ok) throw new Error(`words-enriched.json fetch failed: ${resp.status}`);
+        ENRICHED_DICT = await resp.json();
+        console.log(`Enriched dictionary loaded: ${Object.keys(ENRICHED_DICT).length} entries`);
+    } catch (err) {
+        console.warn("Enriched dictionary not available:", err.message);
+        ENRICHED_DICT = {};
+    }
 }
 
 // ────────────────────────────────────────
@@ -937,9 +950,14 @@ const CATEGORY_TIERS = Object.freeze({
     adjectives: { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
     animals:    { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
     sports:     { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
+    home:       { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
+    clothing:   { tier: 1, ptsMult: 1.0,  xpMult: 1.0,  label: "" },
     food:       { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
+    body:       { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
+    music:      { tier: 2, ptsMult: 1.35, xpMult: 1.3,  label: "" },
     nature:     { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
     technology: { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
+    science:    { tier: 3, ptsMult: 1.7,  xpMult: 1.6,  label: "" },
 });
 
 const TIMED_MODE_OPTIONS_MINUTES = [1, 3, 5, 10];
@@ -989,24 +1007,271 @@ const COIN_STREAK_PER_DAY = 3;          // 3 × consecutive days (was 5)
 const COIN_STREAK_MAX = 30;             // cap on streak bonus (was 50)
 
 // ── Milestone achievements (one-time coin payouts) ──
+// Categories: words, totalWords, games, level, score, streak, xp, coins,
+//             shop, challenges, targetWord, speedRound, wordCategory,
+//             wordSearch, wordRunner, grid, meta
 const MILESTONES = [
-    { id: "words_50",       label: "Wordsmith",          desc: "Find 50 unique words",          check: p => (p.uniqueWordsFound || []).length >= 50,    coins: 15 },
-    { id: "words_200",      label: "Lexicon Builder",    desc: "Find 200 unique words",         check: p => (p.uniqueWordsFound || []).length >= 200,   coins: 40 },
-    { id: "words_500",      label: "Dictionary Diver",   desc: "Find 500 unique words",         check: p => (p.uniqueWordsFound || []).length >= 500,   coins: 60 },
-    { id: "words_1000",     label: "Word Hoarder",       desc: "Find 1,000 unique words",       check: p => (p.uniqueWordsFound || []).length >= 1000,  coins: 100 },
-    { id: "games_10",       label: "Getting Started",    desc: "Play 10 games",                 check: p => p.gamesPlayed >= 10,                       coins: 12 },
-    { id: "games_50",       label: "Dedicated",          desc: "Play 50 games",                 check: p => p.gamesPlayed >= 50,                       coins: 40 },
-    { id: "games_100",      label: "Committed",          desc: "Play 100 games",                check: p => p.gamesPlayed >= 100,                      coins: 75 },
-    { id: "level_5",        label: "Rising Star",        desc: "Reach Level 5",                 check: p => p.level >= 5,                              coins: 15 },
-    { id: "level_10",       label: "Seasoned",           desc: "Reach Level 10",                check: p => p.level >= 10,                             coins: 30 },
-    { id: "level_25",       label: "Veteran",            desc: "Reach Level 25",                check: p => p.level >= 25,                             coins: 60 },
-    { id: "level_50",       label: "Master",             desc: "Reach Level 50",                check: p => p.level >= 50,                             coins: 100 },
-    { id: "score_1000",     label: "Four Digits",        desc: "Score 1,000+ in a game",        check: p => p.highScore >= 1000,                       coins: 12 },
-    { id: "score_5000",     label: "High Roller",        desc: "Score 5,000+ in a game",        check: p => p.highScore >= 5000,                       coins: 40 },
-    { id: "score_10000",    label: "Ten Grand",          desc: "Score 10,000+ in a game",       check: p => p.highScore >= 10000,                      coins: 75 },
-    { id: "streak_3",       label: "On a Roll",          desc: "3-day play streak",             check: p => (p.playStreak || 0) >= 3,                  coins: 15 },
-    { id: "streak_7",       label: "Weekly Warrior",     desc: "7-day play streak",             check: p => (p.playStreak || 0) >= 7,                  coins: 40 },
-    { id: "streak_14",      label: "Fortnight Force",    desc: "14-day play streak",            check: p => (p.playStreak || 0) >= 14,                 coins: 75 },
+    // ─── UNIQUE WORDS (12) ───
+    { id: "words_10",       cat: "words",    label: "First Finds",         desc: "Find 10 unique words",           check: p => (p.uniqueWordsFound || []).length >= 10,     coins: 5 },
+    { id: "words_25",       cat: "words",    label: "Word Curious",        desc: "Find 25 unique words",           check: p => (p.uniqueWordsFound || []).length >= 25,     coins: 8 },
+    { id: "words_50",       cat: "words",    label: "Wordsmith",           desc: "Find 50 unique words",           check: p => (p.uniqueWordsFound || []).length >= 50,     coins: 15 },
+    { id: "words_100",      cat: "words",    label: "Century Club",        desc: "Find 100 unique words",          check: p => (p.uniqueWordsFound || []).length >= 100,    coins: 25 },
+    { id: "words_200",      cat: "words",    label: "Lexicon Builder",     desc: "Find 200 unique words",          check: p => (p.uniqueWordsFound || []).length >= 200,    coins: 40 },
+    { id: "words_300",      cat: "words",    label: "Word Collector",      desc: "Find 300 unique words",          check: p => (p.uniqueWordsFound || []).length >= 300,    coins: 50 },
+    { id: "words_500",      cat: "words",    label: "Dictionary Diver",    desc: "Find 500 unique words",          check: p => (p.uniqueWordsFound || []).length >= 500,    coins: 60 },
+    { id: "words_750",      cat: "words",    label: "Vocabulary Vault",    desc: "Find 750 unique words",          check: p => (p.uniqueWordsFound || []).length >= 750,    coins: 75 },
+    { id: "words_1000",     cat: "words",    label: "Word Hoarder",        desc: "Find 1,000 unique words",        check: p => (p.uniqueWordsFound || []).length >= 1000,   coins: 100 },
+    { id: "words_2000",     cat: "words",    label: "Lexicographer",       desc: "Find 2,000 unique words",        check: p => (p.uniqueWordsFound || []).length >= 2000,   coins: 150 },
+    { id: "words_5000",     cat: "words",    label: "Walking Dictionary",  desc: "Find 5,000 unique words",        check: p => (p.uniqueWordsFound || []).length >= 5000,   coins: 250 },
+    { id: "words_10000",    cat: "words",    label: "Word Sovereign",      desc: "Find 10,000 unique words",       check: p => (p.uniqueWordsFound || []).length >= 10000,  coins: 500 },
+
+    // ─── TOTAL WORDS FOUND (10) ───
+    { id: "tw_50",          cat: "totalWords", label: "Getting Wordy",      desc: "Find 50 total words",           check: p => p.totalWords >= 50,       coins: 5 },
+    { id: "tw_100",         cat: "totalWords", label: "Word Tally",         desc: "Find 100 total words",          check: p => p.totalWords >= 100,      coins: 8 },
+    { id: "tw_250",         cat: "totalWords", label: "Word Counter",       desc: "Find 250 total words",          check: p => p.totalWords >= 250,      coins: 15 },
+    { id: "tw_500",         cat: "totalWords", label: "Half Grand",         desc: "Find 500 total words",          check: p => p.totalWords >= 500,      coins: 25 },
+    { id: "tw_1000",        cat: "totalWords", label: "Word Thousand",      desc: "Find 1,000 total words",        check: p => p.totalWords >= 1000,     coins: 40 },
+    { id: "tw_2500",        cat: "totalWords", label: "Word Machine",       desc: "Find 2,500 total words",        check: p => p.totalWords >= 2500,     coins: 60 },
+    { id: "tw_5000",        cat: "totalWords", label: "Word Factory",       desc: "Find 5,000 total words",        check: p => p.totalWords >= 5000,     coins: 80 },
+    { id: "tw_10000",       cat: "totalWords", label: "Ten Thousand",       desc: "Find 10,000 total words",       check: p => p.totalWords >= 10000,    coins: 120 },
+    { id: "tw_25000",       cat: "totalWords", label: "Word Titan",         desc: "Find 25,000 total words",       check: p => p.totalWords >= 25000,    coins: 200 },
+    { id: "tw_50000",       cat: "totalWords", label: "Word Legend",         desc: "Find 50,000 total words",       check: p => p.totalWords >= 50000,    coins: 400 },
+
+    // ─── GAMES PLAYED (12) ───
+    { id: "games_1",        cat: "games",    label: "First Game",           desc: "Play your first game",           check: p => p.gamesPlayed >= 1,      coins: 3 },
+    { id: "games_5",        cat: "games",    label: "Warming Up",           desc: "Play 5 games",                   check: p => p.gamesPlayed >= 5,      coins: 5 },
+    { id: "games_10",       cat: "games",    label: "Getting Started",      desc: "Play 10 games",                  check: p => p.gamesPlayed >= 10,     coins: 12 },
+    { id: "games_25",       cat: "games",    label: "Quarter Century",      desc: "Play 25 games",                  check: p => p.gamesPlayed >= 25,     coins: 20 },
+    { id: "games_50",       cat: "games",    label: "Dedicated",            desc: "Play 50 games",                  check: p => p.gamesPlayed >= 50,     coins: 40 },
+    { id: "games_100",      cat: "games",    label: "Committed",            desc: "Play 100 games",                 check: p => p.gamesPlayed >= 100,    coins: 75 },
+    { id: "games_200",      cat: "games",    label: "Persistent",           desc: "Play 200 games",                 check: p => p.gamesPlayed >= 200,    coins: 100 },
+    { id: "games_300",      cat: "games",    label: "Relentless",           desc: "Play 300 games",                 check: p => p.gamesPlayed >= 300,    coins: 125 },
+    { id: "games_500",      cat: "games",    label: "Marathon Runner",      desc: "Play 500 games",                 check: p => p.gamesPlayed >= 500,    coins: 175 },
+    { id: "games_750",      cat: "games",    label: "Tenacious",            desc: "Play 750 games",                 check: p => p.gamesPlayed >= 750,    coins: 225 },
+    { id: "games_1000",     cat: "games",    label: "Thousand Games",       desc: "Play 1,000 games",               check: p => p.gamesPlayed >= 1000,   coins: 300 },
+    { id: "games_2000",     cat: "games",    label: "Eternal Player",       desc: "Play 2,000 games",               check: p => p.gamesPlayed >= 2000,   coins: 500 },
+
+    // ─── LEVEL (14) ───
+    { id: "level_2",        cat: "level",    label: "Level Up!",            desc: "Reach Level 2",                  check: p => p.level >= 2,            coins: 3 },
+    { id: "level_5",        cat: "level",    label: "Rising Star",          desc: "Reach Level 5",                  check: p => p.level >= 5,            coins: 15 },
+    { id: "level_10",       cat: "level",    label: "Seasoned",             desc: "Reach Level 10",                 check: p => p.level >= 10,           coins: 30 },
+    { id: "level_15",       cat: "level",    label: "Experienced",          desc: "Reach Level 15",                 check: p => p.level >= 15,           coins: 40 },
+    { id: "level_20",       cat: "level",    label: "Skilled",              desc: "Reach Level 20",                 check: p => p.level >= 20,           coins: 50 },
+    { id: "level_25",       cat: "level",    label: "Veteran",              desc: "Reach Level 25",                 check: p => p.level >= 25,           coins: 60 },
+    { id: "level_30",       cat: "level",    label: "Expert",               desc: "Reach Level 30",                 check: p => p.level >= 30,           coins: 70 },
+    { id: "level_40",       cat: "level",    label: "Elite",                desc: "Reach Level 40",                 check: p => p.level >= 40,           coins: 85 },
+    { id: "level_50",       cat: "level",    label: "Master",               desc: "Reach Level 50",                 check: p => p.level >= 50,           coins: 100 },
+    { id: "level_75",       cat: "level",    label: "Grandmaster",          desc: "Reach Level 75",                 check: p => p.level >= 75,           coins: 150 },
+    { id: "level_100",      cat: "level",    label: "Centurion",            desc: "Reach Level 100",                check: p => p.level >= 100,          coins: 200 },
+    { id: "level_150",      cat: "level",    label: "Legend",               desc: "Reach Level 150",                check: p => p.level >= 150,          coins: 300 },
+    { id: "level_200",      cat: "level",    label: "Mythic",               desc: "Reach Level 200",                check: p => p.level >= 200,          coins: 400 },
+    { id: "level_500",      cat: "level",    label: "Max Prestige",         desc: "Reach Level 500",                check: p => p.level >= 500,          coins: 1000 },
+
+    // ─── HIGH SCORES (12) ───
+    { id: "score_100",      cat: "score",    label: "Triple Digits",        desc: "Score 100+ in a game",           check: p => p.highScore >= 100,      coins: 3 },
+    { id: "score_250",      cat: "score",    label: "Getting Somewhere",    desc: "Score 250+ in a game",           check: p => p.highScore >= 250,      coins: 5 },
+    { id: "score_500",      cat: "score",    label: "Half a Grand",         desc: "Score 500+ in a game",           check: p => p.highScore >= 500,      coins: 8 },
+    { id: "score_1000",     cat: "score",    label: "Four Digits",          desc: "Score 1,000+ in a game",         check: p => p.highScore >= 1000,     coins: 12 },
+    { id: "score_2000",     cat: "score",    label: "Double Up",            desc: "Score 2,000+ in a game",         check: p => p.highScore >= 2000,     coins: 20 },
+    { id: "score_3000",     cat: "score",    label: "Three Grand",          desc: "Score 3,000+ in a game",         check: p => p.highScore >= 3000,     coins: 30 },
+    { id: "score_5000",     cat: "score",    label: "High Roller",          desc: "Score 5,000+ in a game",         check: p => p.highScore >= 5000,     coins: 40 },
+    { id: "score_7500",     cat: "score",    label: "Monster Score",        desc: "Score 7,500+ in a game",         check: p => p.highScore >= 7500,     coins: 55 },
+    { id: "score_10000",    cat: "score",    label: "Ten Grand",            desc: "Score 10,000+ in a game",        check: p => p.highScore >= 10000,    coins: 75 },
+    { id: "score_15000",    cat: "score",    label: "Fifteen K",            desc: "Score 15,000+ in a game",        check: p => p.highScore >= 15000,    coins: 100 },
+    { id: "score_25000",    cat: "score",    label: "Twenty-Five K",        desc: "Score 25,000+ in a game",        check: p => p.highScore >= 25000,    coins: 175 },
+    { id: "score_50000",    cat: "score",    label: "Fifty Grand",          desc: "Score 50,000+ in a game",        check: p => p.highScore >= 50000,    coins: 350 },
+
+    // ─── PLAY STREAKS (10) ───
+    { id: "streak_2",       cat: "streak",   label: "Back Again",           desc: "2-day play streak",              check: p => (p.playStreak || 0) >= 2,  coins: 5 },
+    { id: "streak_3",       cat: "streak",   label: "On a Roll",            desc: "3-day play streak",              check: p => (p.playStreak || 0) >= 3,  coins: 15 },
+    { id: "streak_5",       cat: "streak",   label: "Five Alive",           desc: "5-day play streak",              check: p => (p.playStreak || 0) >= 5,  coins: 25 },
+    { id: "streak_7",       cat: "streak",   label: "Weekly Warrior",       desc: "7-day play streak",              check: p => (p.playStreak || 0) >= 7,  coins: 40 },
+    { id: "streak_10",      cat: "streak",   label: "Ten-Day Titan",        desc: "10-day play streak",             check: p => (p.playStreak || 0) >= 10, coins: 55 },
+    { id: "streak_14",      cat: "streak",   label: "Fortnight Force",      desc: "14-day play streak",             check: p => (p.playStreak || 0) >= 14, coins: 75 },
+    { id: "streak_21",      cat: "streak",   label: "Three Weeks",          desc: "21-day play streak",             check: p => (p.playStreak || 0) >= 21, coins: 100 },
+    { id: "streak_30",      cat: "streak",   label: "Monthly Master",       desc: "30-day play streak",             check: p => (p.playStreak || 0) >= 30, coins: 150 },
+    { id: "streak_60",      cat: "streak",   label: "Two-Month Streak",     desc: "60-day play streak",             check: p => (p.playStreak || 0) >= 60, coins: 250 },
+    { id: "streak_100",     cat: "streak",   label: "Hundred Days",         desc: "100-day play streak",            check: p => (p.playStreak || 0) >= 100, coins: 500 },
+
+    // ─── TOTAL XP (10) ───
+    { id: "xp_100",         cat: "xp",       label: "XP Starter",           desc: "Earn 100 total XP",             check: p => (p.totalXp || 0) >= 100,      coins: 3 },
+    { id: "xp_500",         cat: "xp",       label: "XP Collector",         desc: "Earn 500 total XP",             check: p => (p.totalXp || 0) >= 500,      coins: 8 },
+    { id: "xp_1000",        cat: "xp",       label: "XP Enthusiast",        desc: "Earn 1,000 total XP",           check: p => (p.totalXp || 0) >= 1000,     coins: 15 },
+    { id: "xp_2500",        cat: "xp",       label: "XP Hunter",            desc: "Earn 2,500 total XP",           check: p => (p.totalXp || 0) >= 2500,     coins: 25 },
+    { id: "xp_5000",        cat: "xp",       label: "XP Grinder",           desc: "Earn 5,000 total XP",           check: p => (p.totalXp || 0) >= 5000,     coins: 40 },
+    { id: "xp_10000",       cat: "xp",       label: "XP Machine",           desc: "Earn 10,000 total XP",          check: p => (p.totalXp || 0) >= 10000,    coins: 60 },
+    { id: "xp_25000",       cat: "xp",       label: "XP Juggernaut",        desc: "Earn 25,000 total XP",          check: p => (p.totalXp || 0) >= 25000,    coins: 100 },
+    { id: "xp_50000",       cat: "xp",       label: "XP Baron",             desc: "Earn 50,000 total XP",          check: p => (p.totalXp || 0) >= 50000,    coins: 175 },
+    { id: "xp_100000",      cat: "xp",       label: "XP Overlord",          desc: "Earn 100,000 total XP",         check: p => (p.totalXp || 0) >= 100000,   coins: 300 },
+    { id: "xp_500000",      cat: "xp",       label: "XP Ascended",          desc: "Earn 500,000 total XP",         check: p => (p.totalXp || 0) >= 500000,   coins: 750 },
+
+    // ─── COINS EARNED (10) ───
+    { id: "ce_50",          cat: "coins",    label: "Pocket Change",         desc: "Earn 50 lifetime coins",        check: p => (p.totalCoinsEarned || 0) >= 50,     coins: 3 },
+    { id: "ce_100",         cat: "coins",    label: "Coin Starter",          desc: "Earn 100 lifetime coins",       check: p => (p.totalCoinsEarned || 0) >= 100,    coins: 5 },
+    { id: "ce_250",         cat: "coins",    label: "Coin Collector",        desc: "Earn 250 lifetime coins",       check: p => (p.totalCoinsEarned || 0) >= 250,    coins: 10 },
+    { id: "ce_500",         cat: "coins",    label: "Coin Hoarder",          desc: "Earn 500 lifetime coins",       check: p => (p.totalCoinsEarned || 0) >= 500,    coins: 20 },
+    { id: "ce_1000",        cat: "coins",    label: "Thousand Coins",        desc: "Earn 1,000 lifetime coins",     check: p => (p.totalCoinsEarned || 0) >= 1000,   coins: 40 },
+    { id: "ce_2500",        cat: "coins",    label: "Coin Mogul",            desc: "Earn 2,500 lifetime coins",     check: p => (p.totalCoinsEarned || 0) >= 2500,   coins: 60 },
+    { id: "ce_5000",        cat: "coins",    label: "Coin Baron",            desc: "Earn 5,000 lifetime coins",     check: p => (p.totalCoinsEarned || 0) >= 5000,   coins: 100 },
+    { id: "ce_10000",       cat: "coins",    label: "Coin Tycoon",           desc: "Earn 10,000 lifetime coins",    check: p => (p.totalCoinsEarned || 0) >= 10000,  coins: 150 },
+    { id: "ce_25000",       cat: "coins",    label: "Coin Empire",           desc: "Earn 25,000 lifetime coins",    check: p => (p.totalCoinsEarned || 0) >= 25000,  coins: 250 },
+    { id: "ce_50000",       cat: "coins",    label: "Coin Sovereign",        desc: "Earn 50,000 lifetime coins",    check: p => (p.totalCoinsEarned || 0) >= 50000,  coins: 500 },
+
+    // ─── SHOP & INVENTORY (12) ───
+    { id: "shop_first",     cat: "shop",     label: "First Purchase",        desc: "Buy your first shop item",      check: p => (p.inventory || []).length >= 1,            coins: 10 },
+    { id: "shop_3",         cat: "shop",     label: "Shopper",               desc: "Own 3 shop items",              check: p => (p.inventory || []).length >= 3,            coins: 20 },
+    { id: "shop_5",         cat: "shop",     label: "Big Spender",           desc: "Own 5 shop items",              check: p => (p.inventory || []).length >= 5,            coins: 40 },
+    { id: "shop_10",        cat: "shop",     label: "Collector",             desc: "Own 10 shop items",             check: p => (p.inventory || []).length >= 10,           coins: 75 },
+    { id: "shop_all",       cat: "shop",     label: "Completionist",         desc: "Own all 15 permanent items",    check: p => (p.inventory || []).length >= 15,           coins: 200 },
+    { id: "theme_any",      cat: "shop",     label: "New Look",              desc: "Equip a non-default theme",     check: p => p.equipped && p.equipped.gridTheme && p.equipped.gridTheme !== "theme_default", coins: 10 },
+    { id: "block_any",      cat: "shop",     label: "Style Points",          desc: "Equip a non-default block style", check: p => p.equipped && p.equipped.blockStyle && p.equipped.blockStyle !== "block_default", coins: 10 },
+    { id: "slot_1",         cat: "shop",     label: "Bonus Slot I",          desc: "Unlock your first bonus slot",  check: p => (p.inventory || []).includes("bonus_slot_1"), coins: 25 },
+    { id: "slot_2",         cat: "shop",     label: "Bonus Slot II",         desc: "Unlock your second bonus slot", check: p => (p.inventory || []).includes("bonus_slot_2"), coins: 50 },
+    { id: "slot_3",         cat: "shop",     label: "Bonus Slot III",        desc: "Unlock all three bonus slots",  check: p => (p.inventory || []).includes("bonus_slot_3"), coins: 100 },
+    { id: "grid_unlock_1",  cat: "shop",     label: "Grid Explorer",         desc: "Unlock a new grid size",        check: p => Object.keys(p.unlockedGrids || {}).length >= 1, coins: 10 },
+    { id: "grid_unlock_all",cat: "shop",     label: "Grid Master",           desc: "Unlock all grid sizes",         check: p => Object.keys(p.unlockedGrids || {}).length >= 6, coins: 75 },
+
+    // ─── CHALLENGES — GENERAL (8) ───
+    { id: "ch_first",       cat: "challenges", label: "Challenger",          desc: "Play your first challenge",     check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => s.gamesPlayed > 0); }, coins: 10 },
+    { id: "ch_types_2",     cat: "challenges", label: "Variety Pack",        desc: "Try 2 different challenge types", check: p => { const cs = p.challengeStats || {}; return Object.values(cs).filter(s => s.gamesPlayed > 0).length >= 2; }, coins: 15 },
+    { id: "ch_types_3",     cat: "challenges", label: "Triple Threat",       desc: "Try 3 different challenge types", check: p => { const cs = p.challengeStats || {}; return Object.values(cs).filter(s => s.gamesPlayed > 0).length >= 3; }, coins: 25 },
+    { id: "ch_types_5",     cat: "challenges", label: "All Rounder",         desc: "Try all 5 challenge types",     check: p => { const cs = p.challengeStats || {}; return Object.values(cs).filter(s => s.gamesPlayed > 0).length >= 5; }, coins: 60 },
+    { id: "ch_games_10",    cat: "challenges", label: "Challenge Fan",       desc: "Play 10 total challenges",      check: p => { const cs = p.challengeStats || {}; return Object.values(cs).reduce((a, s) => a + (s.gamesPlayed || 0), 0) >= 10; }, coins: 20 },
+    { id: "ch_games_25",    cat: "challenges", label: "Challenge Addict",    desc: "Play 25 total challenges",      check: p => { const cs = p.challengeStats || {}; return Object.values(cs).reduce((a, s) => a + (s.gamesPlayed || 0), 0) >= 25; }, coins: 40 },
+    { id: "ch_games_50",    cat: "challenges", label: "Challenge Veteran",   desc: "Play 50 total challenges",      check: p => { const cs = p.challengeStats || {}; return Object.values(cs).reduce((a, s) => a + (s.gamesPlayed || 0), 0) >= 50; }, coins: 75 },
+    { id: "ch_games_100",   cat: "challenges", label: "Challenge Legend",    desc: "Play 100 total challenges",     check: p => { const cs = p.challengeStats || {}; return Object.values(cs).reduce((a, s) => a + (s.gamesPlayed || 0), 0) >= 100; }, coins: 150 },
+
+    // ─── TARGET WORD CHALLENGE (10) ───
+    { id: "tw_play_1",      cat: "targetWord", label: "Target Acquired",    desc: "Play 1 Target Word challenge",  check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 1,  coins: 5 },
+    { id: "tw_play_5",      cat: "targetWord", label: "Target Practice",    desc: "Play 5 Target Word challenges", check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 5,  coins: 15 },
+    { id: "tw_play_10",     cat: "targetWord", label: "Target Veteran",     desc: "Play 10 Target Word challenges", check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 10, coins: 25 },
+    { id: "tw_play_25",     cat: "targetWord", label: "Target Master",      desc: "Play 25 Target Word challenges", check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 25, coins: 50 },
+    { id: "tw_play_50",     cat: "targetWord", label: "Target Legend",      desc: "Play 50 Target Word challenges", check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 50, coins: 100 },
+    { id: "tw_level_3",     cat: "targetWord", label: "Target Tier 3",     desc: "Reach Target Word level 3",     check: p => (p.challengeStats?.["target-word"]?.targetWordLevel || 1) >= 3,  coins: 10 },
+    { id: "tw_level_5",     cat: "targetWord", label: "Target Tier 5",     desc: "Reach Target Word level 5",     check: p => (p.challengeStats?.["target-word"]?.targetWordLevel || 1) >= 5,  coins: 25 },
+    { id: "tw_level_10",    cat: "targetWord", label: "Target Tier 10",    desc: "Reach Target Word level 10",    check: p => (p.challengeStats?.["target-word"]?.targetWordLevel || 1) >= 10, coins: 50 },
+    { id: "tw_level_20",    cat: "targetWord", label: "Target Tier 20",    desc: "Reach Target Word level 20",    check: p => (p.challengeStats?.["target-word"]?.targetWordLevel || 1) >= 20, coins: 100 },
+    { id: "tw_level_50",    cat: "targetWord", label: "Target Tier 50",    desc: "Reach Target Word level 50",    check: p => (p.challengeStats?.["target-word"]?.targetWordLevel || 1) >= 50, coins: 250 },
+
+    // ─── SPEED ROUND CHALLENGE (8) ───
+    { id: "sr_play_1",      cat: "speedRound", label: "Speed Demon",        desc: "Play 1 Speed Round",            check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 1,  coins: 5 },
+    { id: "sr_play_5",      cat: "speedRound", label: "Speed Freak",        desc: "Play 5 Speed Rounds",           check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 5,  coins: 15 },
+    { id: "sr_play_10",     cat: "speedRound", label: "Speed Junkie",       desc: "Play 10 Speed Rounds",          check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 10, coins: 25 },
+    { id: "sr_play_25",     cat: "speedRound", label: "Speed Master",       desc: "Play 25 Speed Rounds",          check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 25, coins: 50 },
+    { id: "sr_play_50",     cat: "speedRound", label: "Speed Legend",       desc: "Play 50 Speed Rounds",          check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 50, coins: 100 },
+    { id: "sr_score_500",   cat: "speedRound", label: "Speed Score 500",   desc: "Score 500+ in Speed Round",     check: p => (p.challengeStats?.["speed-round"]?.highScore || 0) >= 500,  coins: 15 },
+    { id: "sr_score_1000",  cat: "speedRound", label: "Speed Score 1K",    desc: "Score 1,000+ in Speed Round",   check: p => (p.challengeStats?.["speed-round"]?.highScore || 0) >= 1000, coins: 40 },
+    { id: "sr_score_2500",  cat: "speedRound", label: "Speed Score 2.5K",  desc: "Score 2,500+ in Speed Round",   check: p => (p.challengeStats?.["speed-round"]?.highScore || 0) >= 2500, coins: 100 },
+
+    // ─── WORD CATEGORY CHALLENGE (8) ───
+    { id: "wc_play_1",      cat: "wordCat",  label: "Category Curious",     desc: "Play 1 Word Category challenge", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 1,  coins: 5 },
+    { id: "wc_play_5",      cat: "wordCat",  label: "Category Fan",         desc: "Play 5 Word Category challenges", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 5, coins: 15 },
+    { id: "wc_play_10",     cat: "wordCat",  label: "Category Buff",        desc: "Play 10 Word Category challenges", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 10, coins: 25 },
+    { id: "wc_play_25",     cat: "wordCat",  label: "Category Expert",      desc: "Play 25 Word Category challenges", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 25, coins: 50 },
+    { id: "wc_play_50",     cat: "wordCat",  label: "Category Legend",      desc: "Play 50 Word Category challenges", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 50, coins: 100 },
+    { id: "wc_score_500",   cat: "wordCat",  label: "Cat. Score 500",      desc: "Score 500+ in Word Category",   check: p => (p.challengeStats?.["word-category"]?.highScore || 0) >= 500,  coins: 15 },
+    { id: "wc_score_1000",  cat: "wordCat",  label: "Cat. Score 1K",       desc: "Score 1,000+ in Word Category", check: p => (p.challengeStats?.["word-category"]?.highScore || 0) >= 1000, coins: 40 },
+    { id: "wc_score_2500",  cat: "wordCat",  label: "Cat. Score 2.5K",     desc: "Score 2,500+ in Word Category", check: p => (p.challengeStats?.["word-category"]?.highScore || 0) >= 2500, coins: 100 },
+
+    // ─── WORD SEARCH CHALLENGE (12) ───
+    { id: "ws_play_1",      cat: "wordSearch", label: "Word Seeker",        desc: "Play 1 Word Search",            check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 1,  coins: 5 },
+    { id: "ws_play_5",      cat: "wordSearch", label: "Word Scout",         desc: "Play 5 Word Searches",          check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 5,  coins: 15 },
+    { id: "ws_play_10",     cat: "wordSearch", label: "Word Detective",     desc: "Play 10 Word Searches",         check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 10, coins: 25 },
+    { id: "ws_play_25",     cat: "wordSearch", label: "Word Investigator",  desc: "Play 25 Word Searches",         check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 25, coins: 50 },
+    { id: "ws_play_50",     cat: "wordSearch", label: "Word Search Legend", desc: "Play 50 Word Searches",         check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 50, coins: 100 },
+    { id: "ws_level_3",     cat: "wordSearch", label: "Search Tier 3",     desc: "Reach Word Search level 3",     check: p => (p.challengeStats?.["word-search"]?.wordSearchLevel || 1) >= 3,  coins: 10 },
+    { id: "ws_level_5",     cat: "wordSearch", label: "Search Tier 5",     desc: "Reach Word Search level 5",     check: p => (p.challengeStats?.["word-search"]?.wordSearchLevel || 1) >= 5,  coins: 25 },
+    { id: "ws_level_10",    cat: "wordSearch", label: "Search Tier 10",    desc: "Reach Word Search level 10",    check: p => (p.challengeStats?.["word-search"]?.wordSearchLevel || 1) >= 10, coins: 50 },
+    { id: "ws_level_20",    cat: "wordSearch", label: "Search Tier 20",    desc: "Reach Word Search level 20",    check: p => (p.challengeStats?.["word-search"]?.wordSearchLevel || 1) >= 20, coins: 100 },
+    { id: "ws_level_50",    cat: "wordSearch", label: "Search Tier 50",    desc: "Reach Word Search level 50",    check: p => (p.challengeStats?.["word-search"]?.wordSearchLevel || 1) >= 50, coins: 250 },
+    { id: "ws_score_500",   cat: "wordSearch", label: "Search Score 500",  desc: "Score 500+ in Word Search",     check: p => (p.challengeStats?.["word-search"]?.highScore || 0) >= 500,  coins: 15 },
+    { id: "ws_score_2000",  cat: "wordSearch", label: "Search Score 2K",   desc: "Score 2,000+ in Word Search",   check: p => (p.challengeStats?.["word-search"]?.highScore || 0) >= 2000, coins: 75 },
+
+    // ─── WORD RUNNER CHALLENGE (10) ───
+    { id: "wr_play_1",      cat: "wordRunner", label: "Runner Rookie",      desc: "Play 1 Word Runner",            check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 1,  coins: 5 },
+    { id: "wr_play_5",      cat: "wordRunner", label: "Runner Regular",     desc: "Play 5 Word Runners",           check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 5,  coins: 15 },
+    { id: "wr_play_10",     cat: "wordRunner", label: "Runner Enthusiast",  desc: "Play 10 Word Runners",          check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 10, coins: 25 },
+    { id: "wr_play_25",     cat: "wordRunner", label: "Runner Pro",         desc: "Play 25 Word Runners",          check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 25, coins: 50 },
+    { id: "wr_play_50",     cat: "wordRunner", label: "Runner Legend",      desc: "Play 50 Word Runners",          check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 50, coins: 100 },
+    { id: "wr_score_200",   cat: "wordRunner", label: "Runner Score 200",  desc: "Score 200+ in Word Runner",     check: p => (p.challengeStats?.["word-runner"]?.highScore || 0) >= 200,  coins: 10 },
+    { id: "wr_score_500",   cat: "wordRunner", label: "Runner Score 500",  desc: "Score 500+ in Word Runner",     check: p => (p.challengeStats?.["word-runner"]?.highScore || 0) >= 500,  coins: 25 },
+    { id: "wr_score_1000",  cat: "wordRunner", label: "Runner Score 1K",   desc: "Score 1,000+ in Word Runner",   check: p => (p.challengeStats?.["word-runner"]?.highScore || 0) >= 1000, coins: 60 },
+    { id: "wr_score_2500",  cat: "wordRunner", label: "Runner Score 2.5K", desc: "Score 2,500+ in Word Runner",   check: p => (p.challengeStats?.["word-runner"]?.highScore || 0) >= 2500, coins: 125 },
+    { id: "wr_score_5000",  cat: "wordRunner", label: "Runner Score 5K",   desc: "Score 5,000+ in Word Runner",   check: p => (p.challengeStats?.["word-runner"]?.highScore || 0) >= 5000, coins: 250 },
+
+    // ─── GRID MASTERY (12) ───
+    { id: "grid_3",         cat: "grid",     label: "Tiny Grid",             desc: "Play a game on 3×3",            check: p => (p.bestScores?.["3-casual-sandbox"] > 0 || p.bestScores?.["3-hard-sandbox"] > 0 || p.bestScores?.["3-casual-timed"] > 0 || p.bestScores?.["3-hard-timed"] > 0), coins: 10 },
+    { id: "grid_4",         cat: "grid",     label: "Compact Grid",          desc: "Play a game on 4×4",            check: p => (p.bestScores?.["4-casual-sandbox"] > 0 || p.bestScores?.["4-hard-sandbox"] > 0 || p.bestScores?.["4-casual-timed"] > 0 || p.bestScores?.["4-hard-timed"] > 0), coins: 8 },
+    { id: "grid_5",         cat: "grid",     label: "Standard Grid",         desc: "Play a game on 5×5",            check: p => (p.bestScores?.["5-casual-sandbox"] > 0 || p.bestScores?.["5-hard-sandbox"] > 0 || p.bestScores?.["5-casual-timed"] > 0 || p.bestScores?.["5-hard-timed"] > 0), coins: 5 },
+    { id: "grid_6",         cat: "grid",     label: "Big Grid",              desc: "Play a game on 6×6",            check: p => (p.bestScores?.["6-casual-sandbox"] > 0 || p.bestScores?.["6-hard-sandbox"] > 0 || p.bestScores?.["6-casual-timed"] > 0 || p.bestScores?.["6-hard-timed"] > 0), coins: 5 },
+    { id: "grid_7",         cat: "grid",     label: "Wide Grid",             desc: "Play a game on 7×7",            check: p => (p.bestScores?.["7-casual-sandbox"] > 0 || p.bestScores?.["7-hard-sandbox"] > 0 || p.bestScores?.["7-casual-timed"] > 0 || p.bestScores?.["7-hard-timed"] > 0), coins: 8 },
+    { id: "grid_8",         cat: "grid",     label: "Grand Grid",            desc: "Play a game on 8×8",            check: p => (p.bestScores?.["8-casual-sandbox"] > 0 || p.bestScores?.["8-hard-sandbox"] > 0 || p.bestScores?.["8-casual-timed"] > 0 || p.bestScores?.["8-hard-timed"] > 0), coins: 10 },
+    { id: "grid_all",       cat: "grid",     label: "All Grids",             desc: "Play on all 6 grid sizes",      check: p => { const bs = p.bestScores || {}; return [3,4,5,6,7,8].every(s => Object.keys(bs).some(k => k.startsWith(s + "-") && bs[k] > 0)); }, coins: 50 },
+    { id: "hard_first",     cat: "grid",     label: "Hard Mode",             desc: "Play a game on Hard difficulty", check: p => { const bs = p.bestScores || {}; return Object.keys(bs).some(k => k.includes("-hard-") && bs[k] > 0); }, coins: 10 },
+    { id: "hard_1k",        cat: "grid",     label: "Hard Hitter",           desc: "Score 1,000+ on Hard",          check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-hard-") && v >= 1000); }, coins: 30 },
+    { id: "hard_5k",        cat: "grid",     label: "Hard Crusher",          desc: "Score 5,000+ on Hard",          check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-hard-") && v >= 5000); }, coins: 75 },
+    { id: "timed_first",    cat: "grid",     label: "Against the Clock",     desc: "Play a Timed game",             check: p => { const bs = p.bestScores || {}; return Object.keys(bs).some(k => k.endsWith("-timed") && bs[k] > 0); }, coins: 10 },
+    { id: "timed_1k",       cat: "grid",     label: "Time Crunch",           desc: "Score 1,000+ in Timed mode",    check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 1000); }, coins: 30 },
+
+    // ─── META — MILESTONES ABOUT MILESTONES (10) ───
+    { id: "meta_1",         cat: "meta",     label: "First Achievement",     desc: "Earn your first milestone",     check: p => (p.claimedMilestones || []).length >= 1,  coins: 5 },
+    { id: "meta_5",         cat: "meta",     label: "Achievement Hunter",    desc: "Earn 5 milestones",             check: p => (p.claimedMilestones || []).length >= 5,  coins: 10 },
+    { id: "meta_10",        cat: "meta",     label: "Trophy Case",           desc: "Earn 10 milestones",            check: p => (p.claimedMilestones || []).length >= 10, coins: 15 },
+    { id: "meta_25",        cat: "meta",     label: "Quarter Century",       desc: "Earn 25 milestones",            check: p => (p.claimedMilestones || []).length >= 25, coins: 30 },
+    { id: "meta_50",        cat: "meta",     label: "Halfway There",         desc: "Earn 50 milestones",            check: p => (p.claimedMilestones || []).length >= 50, coins: 60 },
+    { id: "meta_75",        cat: "meta",     label: "Dedicated Achiever",    desc: "Earn 75 milestones",            check: p => (p.claimedMilestones || []).length >= 75, coins: 100 },
+    { id: "meta_100",       cat: "meta",     label: "Triple Digits",         desc: "Earn 100 milestones",           check: p => (p.claimedMilestones || []).length >= 100, coins: 150 },
+    { id: "meta_125",       cat: "meta",     label: "Overachiever",          desc: "Earn 125 milestones",           check: p => (p.claimedMilestones || []).length >= 125, coins: 200 },
+    { id: "meta_150",       cat: "meta",     label: "Milestone Collector",   desc: "Earn 150 milestones",           check: p => (p.claimedMilestones || []).length >= 150, coins: 300 },
+    { id: "meta_all",       cat: "meta",     label: "100% Complete",         desc: "Earn every single milestone",   check: p => (p.claimedMilestones || []).length >= MILESTONES.length - 1, coins: 1000 },
+
+    // ─── CHALLENGE HIGH SCORES COMBINED (8) ───
+    { id: "ch_hs_500",      cat: "challengeScore", label: "Challenge Scorer",    desc: "500+ in any challenge",     check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.highScore || 0) >= 500); }, coins: 10 },
+    { id: "ch_hs_1000",     cat: "challengeScore", label: "Challenge Kilo",      desc: "1,000+ in any challenge",   check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.highScore || 0) >= 1000); }, coins: 25 },
+    { id: "ch_hs_2500",     cat: "challengeScore", label: "Challenge Elite",     desc: "2,500+ in any challenge",   check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.highScore || 0) >= 2500); }, coins: 50 },
+    { id: "ch_hs_5000",     cat: "challengeScore", label: "Challenge Supreme",   desc: "5,000+ in any challenge",   check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.highScore || 0) >= 5000); }, coins: 100 },
+    { id: "ch_words_50",    cat: "challengeScore", label: "Challenge Wordsmith",  desc: "50 words in any challenge type", check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.totalWords || 0) >= 50); }, coins: 15 },
+    { id: "ch_words_200",   cat: "challengeScore", label: "Challenge Lexicon",   desc: "200 words in any challenge type", check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.totalWords || 0) >= 200); }, coins: 40 },
+    { id: "ch_words_500",   cat: "challengeScore", label: "Challenge Scholar",   desc: "500 words in any challenge type", check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.totalWords || 0) >= 500); }, coins: 75 },
+    { id: "ch_words_1000",  cat: "challengeScore", label: "Challenge Sage",      desc: "1,000 words in any challenge type", check: p => { const cs = p.challengeStats || {}; return Object.values(cs).some(s => (s.totalWords || 0) >= 1000); }, coins: 150 },
+
+    // ─── EARLY JOURNEY (10) ───
+    { id: "ej_first_word",  cat: "journey",  label: "First Word",            desc: "Find your very first word",     check: p => p.totalWords >= 1,        coins: 2 },
+    { id: "ej_5_words",     cat: "journey",  label: "Getting the Hang",      desc: "Find 5 total words",            check: p => p.totalWords >= 5,        coins: 3 },
+    { id: "ej_10_words",    cat: "journey",  label: "Double Digits",         desc: "Find 10 total words",           check: p => p.totalWords >= 10,       coins: 5 },
+    { id: "ej_first_score", cat: "journey",  label: "On the Board",          desc: "Score at least 50 points",      check: p => p.highScore >= 50,        coins: 3 },
+    { id: "ej_level_up",    cat: "journey",  label: "Level Up!",             desc: "Reach Level 2",                 check: p => p.level >= 2,             coins: 3 },
+    { id: "ej_5_games",     cat: "journey",  label: "Getting Hooked",        desc: "Play 5 games",                  check: p => p.gamesPlayed >= 5,       coins: 5 },
+    { id: "ej_first_coin",  cat: "journey",  label: "First Earnings",        desc: "Earn your first coins",         check: p => (p.totalCoinsEarned || 0) >= 1, coins: 2 },
+    { id: "ej_xp_50",       cat: "journey",  label: "XP Beginner",           desc: "Earn 50 XP",                    check: p => (p.totalXp || 0) >= 50,   coins: 3 },
+    { id: "ej_streak_start",cat: "journey",  label: "Come Back",             desc: "Start a 2-day play streak",     check: p => (p.playStreak || 0) >= 2, coins: 5 },
+    { id: "ej_unique_10",   cat: "journey",  label: "Vocab Started",         desc: "Find 10 unique words",          check: p => (p.uniqueWordsFound || []).length >= 10, coins: 3 },
+
+    // ─── COIN BALANCE (8) ───
+    { id: "bal_100",        cat: "balance",  label: "Saved Up",              desc: "Have 100 coins at once",        check: p => (p.coins || 0) >= 100,    coins: 5 },
+    { id: "bal_250",        cat: "balance",  label: "Nest Egg",              desc: "Have 250 coins at once",        check: p => (p.coins || 0) >= 250,    coins: 10 },
+    { id: "bal_500",        cat: "balance",  label: "Half Grand Saved",      desc: "Have 500 coins at once",        check: p => (p.coins || 0) >= 500,    coins: 15 },
+    { id: "bal_1000",       cat: "balance",  label: "Coin Stash",            desc: "Have 1,000 coins at once",      check: p => (p.coins || 0) >= 1000,   coins: 25 },
+    { id: "bal_2500",       cat: "balance",  label: "Money Bags",            desc: "Have 2,500 coins at once",      check: p => (p.coins || 0) >= 2500,   coins: 40 },
+    { id: "bal_5000",       cat: "balance",  label: "Wealthy",               desc: "Have 5,000 coins at once",      check: p => (p.coins || 0) >= 5000,   coins: 60 },
+    { id: "bal_10000",      cat: "balance",  label: "Rich",                  desc: "Have 10,000 coins at once",     check: p => (p.coins || 0) >= 10000,  coins: 100 },
+    { id: "bal_25000",      cat: "balance",  label: "Coin Dragon",           desc: "Have 25,000 coins at once",     check: p => (p.coins || 0) >= 25000,  coins: 200 },
+
+    // ─── BEST SCORES PER MODE (14) ───
+    { id: "bs_casual_500",  cat: "bestScores", label: "Casual 500",         desc: "Score 500+ on Casual Sandbox",  check: p => (p.bestScores?.["5-casual-sandbox"] || 0) >= 500, coins: 5 },
+    { id: "bs_casual_1k",   cat: "bestScores", label: "Casual 1K",          desc: "Score 1,000+ on Casual Sandbox", check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-casual-sandbox") && v >= 1000); }, coins: 15 },
+    { id: "bs_casual_3k",   cat: "bestScores", label: "Casual 3K",          desc: "Score 3,000+ on Casual Sandbox", check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-casual-sandbox") && v >= 3000); }, coins: 40 },
+    { id: "bs_casual_5k",   cat: "bestScores", label: "Casual 5K",          desc: "Score 5,000+ on Casual Sandbox", check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-casual-sandbox") && v >= 5000); }, coins: 75 },
+    { id: "bs_casual_10k",  cat: "bestScores", label: "Casual 10K",         desc: "Score 10,000+ on Casual Sandbox", check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-casual-sandbox") && v >= 10000); }, coins: 150 },
+    { id: "bs_hard_500",    cat: "bestScores", label: "Hard 500",           desc: "Score 500+ on Hard Sandbox",    check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-hard-sandbox") && v >= 500); }, coins: 10 },
+    { id: "bs_hard_1k",     cat: "bestScores", label: "Hard 1K",            desc: "Score 1,000+ on Hard Sandbox",  check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-hard-sandbox") && v >= 1000); }, coins: 25 },
+    { id: "bs_hard_3k",     cat: "bestScores", label: "Hard 3K",            desc: "Score 3,000+ on Hard Sandbox",  check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-hard-sandbox") && v >= 3000); }, coins: 60 },
+    { id: "bs_hard_5k",     cat: "bestScores", label: "Hard 5K",            desc: "Score 5,000+ on Hard Sandbox",  check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.includes("-hard-sandbox") && v >= 5000); }, coins: 125 },
+    { id: "bs_timed_500",   cat: "bestScores", label: "Timed 500",          desc: "Score 500+ on Timed mode",      check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 500); }, coins: 10 },
+    { id: "bs_timed_1k",    cat: "bestScores", label: "Timed 1K",           desc: "Score 1,000+ on Timed mode",    check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 1000); }, coins: 25 },
+    { id: "bs_timed_3k",    cat: "bestScores", label: "Timed 3K",           desc: "Score 3,000+ on Timed mode",    check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 3000); }, coins: 60 },
+    { id: "bs_timed_5k",    cat: "bestScores", label: "Timed 5K",           desc: "Score 5,000+ on Timed mode",    check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 5000); }, coins: 125 },
+    { id: "bs_timed_10k",   cat: "bestScores", label: "Timed 10K",          desc: "Score 10,000+ on Timed mode",   check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 10000); }, coins: 250 },
 ];
 
 // ── Shop catalog ──
@@ -1143,7 +1408,7 @@ function coinsForWord(wordLength) {
 }
 
 /** Word-runner coin rates — higher payouts since words are harder to form in real-time. */
-const WR_COIN_PER_WORD_LENGTH = { 3: 6, 4: 12, 5: 21, 6: 30, 7: 42 };
+const WR_COIN_PER_WORD_LENGTH = { 3: 10, 4: 20, 5: 35, 6: 50, 7: 70 };
 function coinsForWordRunner(wordLength) {
     if (wordLength >= 7) return 42;
     return WR_COIN_PER_WORD_LENGTH[wordLength] || 6;
@@ -3968,13 +4233,16 @@ class ProfileManager {
         if (!p) return [];
         this._ensureCoinFields(p);
         this._ensureXPFields(p);
+        if (!p._milestoneTimestamps) p._milestoneTimestamps = {};
         const newClaims = [];
+        const now = new Date().toISOString();
         for (const m of MILESTONES) {
             if (p.claimedMilestones.includes(m.id)) continue;
             if (m.check(p)) {
                 p.claimedMilestones.push(m.id);
                 p.coins += m.coins;
                 p.totalCoinsEarned += m.coins;
+                if (!p._milestoneTimestamps[m.id]) p._milestoneTimestamps[m.id] = now;
                 newClaims.push(m);
             }
         }
@@ -4062,6 +4330,19 @@ class Game {
             quitBtn:        document.getElementById("save-quit-btn"),
             endGameBtn:     document.getElementById("end-game-btn"),
             globalMuteBtn:  document.getElementById("global-mute-btn"),
+            globalMusicDropdown: document.getElementById("global-music-dropdown"),
+            globalMusicPanel: document.getElementById("global-music-panel"),
+            gmpTrackName:   document.getElementById("gmp-track-name"),
+            gmpPrev:        document.getElementById("gmp-prev"),
+            gmpToggle:      document.getElementById("gmp-toggle"),
+            gmpNext:        document.getElementById("gmp-next"),
+            gmpMute:        document.getElementById("gmp-mute"),
+            gmpVolume:      document.getElementById("gmp-volume"),
+            gmpProgressBar: document.getElementById("gmp-progress-bar"),
+            gmpProgressFill: document.getElementById("gmp-progress-fill"),
+            gmpProgressThumb: document.getElementById("gmp-progress-thumb"),
+            gmpCurrentTime: document.getElementById("gmp-current-time"),
+            gmpDuration:    document.getElementById("gmp-duration"),
             nextLetter:     document.getElementById("next-letter"),
             playWordsFoundBtn: document.getElementById("play-words-found-btn"),
             btnLeft:        document.getElementById("btn-left"),
@@ -4102,11 +4383,7 @@ class Game {
             playlistTrackPicker: document.getElementById("playlist-track-picker"),
             playlistSaveBtn: document.getElementById("playlist-save-btn"),
             playlistCancelBtn: document.getElementById("playlist-cancel-btn"),
-            npMiniTitle:    document.getElementById("np-mini-title"),
-            npMiniPrev:     document.getElementById("np-mini-prev"),
-            npMiniToggle:   document.getElementById("np-mini-toggle"),
-            npMiniNext:     document.getElementById("np-mini-next"),
-            npMiniProgressFill: document.getElementById("np-mini-progress-fill"),
+
             // Words Found
             wordsFoundScreen: document.getElementById("words-found-screen"),
             wordsFoundBtn:    document.getElementById("words-found-btn"),
@@ -4122,6 +4399,9 @@ class Game {
             menuSlideStrip:   document.getElementById("menu-slide-strip"),
             menuPrevBtn:      document.getElementById("menu-prev-btn"),
             menuNextBtn:      document.getElementById("menu-next-btn"),
+            milestonesGrid:   document.getElementById("milestones-grid"),
+            milestonesProgressFill: document.getElementById("milestones-progress-fill"),
+            milestonesProgressText: document.getElementById("milestones-progress-text"),
             bonusWordsCount:  document.getElementById("bonus-words-count"),
             bonusWordsList:   document.getElementById("bonus-words-list"),
             gameModeSelector: document.getElementById("game-mode-selector"),
@@ -4143,6 +4423,20 @@ class Game {
             tutorialCounter: document.getElementById("tutorial-counter"),
             tutorialPrevBtn: document.getElementById("tutorial-prev-btn"),
             tutorialNextBtn: document.getElementById("tutorial-next-btn"),
+            guidedTourOverlay: document.getElementById("guided-tour-overlay"),
+            guidedTourDim: document.getElementById("guided-tour-dim"),
+            guidedTourFocus: document.getElementById("guided-tour-focus"),
+            guidedTourArrow: document.getElementById("guided-tour-arrow"),
+            guidedTourPointer: document.getElementById("guided-tour-pointer"),
+            guidedTourHotspot: document.getElementById("guided-tour-hotspot"),
+            guidedTourCard: document.getElementById("guided-tour-card"),
+            guidedTourCounter: document.getElementById("guided-tour-counter"),
+            guidedTourTitle: document.getElementById("guided-tour-title"),
+            guidedTourBody: document.getElementById("guided-tour-body"),
+            guidedTourHint: document.getElementById("guided-tour-hint"),
+            guidedTourContinueBtn: document.getElementById("guided-tour-continue-btn"),
+            guidedTourBackBtn: document.getElementById("guided-tour-back-btn"),
+            guidedTourExitBtn: document.getElementById("guided-tour-exit-btn"),
             // Challenges
             challengesBtn: document.getElementById("challenges-btn"),
             challengesScreen: document.getElementById("challenges-screen"),
@@ -4289,11 +4583,7 @@ class Game {
             wsLevelText: document.getElementById("ws-level-text"),
             wsXpBarFill: document.getElementById("ws-xp-bar-fill"),
             wsXpText: document.getElementById("ws-xp-text"),
-            wsMiniTitle: document.getElementById("ws-mini-title"),
-            wsMiniPrev: document.getElementById("ws-mini-prev"),
-            wsMiniToggle: document.getElementById("ws-mini-toggle"),
-            wsMiniNext: document.getElementById("ws-mini-next"),
-            wsMiniProgressFill: document.getElementById("ws-mini-progress-fill"),
+
             // Word Runner
             wrScreen: document.getElementById("wr-screen"),
             wrCanvas: document.getElementById("wr-canvas"),
@@ -4314,11 +4604,26 @@ class Game {
             wrLevelText: document.getElementById("wr-level-text"),
             wrXpBarFill: document.getElementById("wr-xp-bar-fill"),
             wrXpText: document.getElementById("wr-xp-text"),
-            wrMiniTitle: document.getElementById("wr-mini-title"),
-            wrMiniPrev: document.getElementById("wr-mini-prev"),
-            wrMiniToggle: document.getElementById("wr-mini-toggle"),
-            wrMiniNext: document.getElementById("wr-mini-next"),
-            wrMiniProgressFill: document.getElementById("wr-mini-progress-fill"),
+
+            // Dictionary
+            dictScreen: document.getElementById("dict-screen"),
+            dictBackBtn: document.getElementById("dict-back-btn"),
+            dictSearch: document.getElementById("dict-search"),
+            dictSearchClear: document.getElementById("dict-search-clear"),
+            dictResultCount: document.getElementById("dict-result-count"),
+            dictFilterRow: document.getElementById("dict-filter-row"),
+            dictAlphaBar: document.getElementById("dict-alpha-bar"),
+            dictListWrap: document.getElementById("dict-list-wrap"),
+            dictList: document.getElementById("dict-list"),
+            dictBtnMenu: document.getElementById("dict-btn-menu"),
+            dictBtnGameover: document.getElementById("dict-btn-gameover"),
+            dictBtnChallenges: document.getElementById("dict-btn-challenges"),
+            dictBtnChallengeSetup: document.getElementById("dict-btn-challengesetup"),
+            dictBtnShop: document.getElementById("dict-btn-shop"),
+            dictBtnRankings: document.getElementById("dict-btn-rankings"),
+            pauseDictBtn: document.getElementById("pause-dict-btn"),
+            wsDictBtn: document.getElementById("ws-dict-btn"),
+            wrDictBtn: document.getElementById("wr-dict-btn"),
         };
 
         this.state = State.MENU;
@@ -4414,8 +4719,15 @@ class Game {
         document.body.classList.toggle("touch-input", this.usesTouchSwipeInput);
 
         this._bindUI();
+        // Buttons that should fade when the falling block overlaps them
+        this._overlayBtns = [
+            this.els.pauseBtn,
+            this.els.hintsBtn,
+            this.els.radialMenu,
+        ].filter(Boolean);
         this._bindInput();
         this._bindMusic();
+        this._bindGuidedTours();
         this._bindProfiles();
         this._bindLetterChoice();
         this._bindCanvasTap();
@@ -4426,9 +4738,23 @@ class Game {
         this._bindWordSearch();
         this._bindWordRunner();
         this._initMutePref();
-        this._menuPage = 1;
+        this._menuPage = 2;
+        this._activeScreen = "menu";
+        this._guidedTour = {
+            active: false,
+            tour: null,
+            stepIndex: 0,
+            activeTargetEl: null,
+            cleanupTargetHandler: null,
+            cleanupHotspotHandler: null,
+            restoreTutorialOverlay: false,
+            restoreTutorialMenuView: 'root',
+            restoreScreen: 'menu',
+            restoreMenuPage: 2,
+            resizeHandler: null,
+        };
         this._bindMenuSwipe();
-        this._goToMenuPage(1);
+        this._goToMenuPage(2);
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
         this._updateHintsBtn();
 
@@ -4557,24 +4883,31 @@ class Game {
         this.els.startBtn.addEventListener("click", () => this._startGame());
         this.els.resumeGameBtn.addEventListener("click", () => this._resumeGame());
         this.els.restartBtn.addEventListener("click", () => {
-            if (this._gameOverChallenge) {
-                this.activeChallenge = this._gameOverChallenge;
-                if (this._gameOverChallenge === CHALLENGE_TYPES.WORD_CATEGORY) {
-                    this._selectedCategoryKey = this._gameOverCategoryKey;
+            // Use instance variable first, fall back to data attribute on button
+            const challenge = this._gameOverChallenge || this.els.restartBtn.dataset.challenge || null;
+            const categoryKey = this._gameOverCategoryKey ?? (this.els.restartBtn.dataset.categoryKey || null);
+            if (challenge) {
+                this.activeChallenge = challenge;
+                if (challenge === CHALLENGE_TYPES.WORD_CATEGORY) {
+                    this._selectedCategoryKey = categoryKey;
                 }
                 this._gameOverChallenge = null;
                 this._gameOverCategoryKey = null;
+                delete this.els.restartBtn.dataset.challenge;
+                delete this.els.restartBtn.dataset.categoryKey;
                 this._startChallengeGame();
             } else {
                 this._startGame();
             }
         });
         this.els.menuBtn.addEventListener("click", () => {
-            if (this._gameOverChallenge) {
-                const ct = this._gameOverChallenge;
+            const challenge = this._gameOverChallenge || this.els.restartBtn.dataset.challenge || null;
+            if (challenge) {
                 this._gameOverChallenge = null;
                 this._gameOverCategoryKey = null;
-                this._openChallengeSetup(ct);
+                delete this.els.restartBtn.dataset.challenge;
+                delete this.els.restartBtn.dataset.categoryKey;
+                this._openChallengeSetup(challenge);
             } else {
                 this._showScreen("menu");
             }
@@ -4681,6 +5014,100 @@ class Game {
         this.els.challengeTutorialBtn.addEventListener("click", () => this._openChallengeTutorial());
         this.els.challengeTutorialCloseBtn.addEventListener("click", () => this._closeChallengeTutorial());
 
+        // Dictionary / Thesaurus
+        this._dictBackTarget = "menu";
+        this._dictActiveFilter = "all";
+        this._dictSearchTerm = "";
+        this._dictSortedWords = [];
+        this._dictFilteredWords = [];
+        this._dictLetterCounts = new Map();
+        this._dictLetterFirstIndex = new Map();
+        this._dictRenderStartIndex = 0;
+        this._dictRenderedCount = 0;
+        this._dictChunkSize = 80;
+        this._dictJumpRenderInProgress = false;
+
+        // Dict FAB buttons (open dictionary from various screens)
+        const dictFabs = [
+            [this.els.dictBtnMenu, "menu"],
+            [this.els.dictBtnGameover, "gameover"],
+            [this.els.dictBtnChallenges, "challenges"],
+            [this.els.dictBtnChallengeSetup, "challengesetup"],
+            [this.els.dictBtnShop, "shop"],
+            [this.els.dictBtnRankings, "menu"],
+        ];
+        for (const [btn, screen] of dictFabs) {
+            if (btn) btn.addEventListener("click", () => this._openDict(screen));
+        }
+
+        // Dict in pause menus
+        if (this.els.pauseDictBtn) {
+            this.els.pauseDictBtn.addEventListener("click", () => {
+                this.els.pauseOverlay.classList.remove("active");
+                this._openDict("pause");
+            });
+        }
+        if (this.els.wsDictBtn) {
+            this.els.wsDictBtn.addEventListener("click", () => {
+                if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.remove("active");
+                this._openDict("ws-pause");
+            });
+        }
+        if (this.els.wrDictBtn) {
+            this.els.wrDictBtn.addEventListener("click", () => {
+                this.els.wrPauseOverlay.classList.remove("active");
+                this._openDict("wr-pause");
+            });
+        }
+
+        // Dict back button
+        if (this.els.dictBackBtn) {
+            this.els.dictBackBtn.addEventListener("click", () => this._closeDict());
+        }
+
+        // Dict search
+        if (this.els.dictSearch) {
+            this.els.dictSearch.addEventListener("input", () => this._dictOnSearch());
+            this.els.dictSearchClear.addEventListener("click", () => {
+                this.els.dictSearch.value = "";
+                this._dictOnSearch();
+                this.els.dictSearch.focus();
+            });
+        }
+
+        // Dict filter chips
+        if (this.els.dictFilterRow) {
+            this.els.dictFilterRow.addEventListener("click", (e) => {
+                const chip = e.target.closest(".dict-chip");
+                if (!chip) return;
+                const filter = chip.dataset.filter;
+                if (filter === this._dictActiveFilter) {
+                    // Toggle off → reset to "all"
+                    if (filter !== "all") {
+                        this._dictActiveFilter = "all";
+                    }
+                } else {
+                    this._dictActiveFilter = filter;
+                }
+                this.els.dictFilterRow.querySelectorAll(".dict-chip").forEach(c =>
+                    c.classList.toggle("active", c.dataset.filter === this._dictActiveFilter));
+                this._dictApplyFilters();
+            });
+        }
+
+        // Dict alpha bar
+        this._dictBuildAlphaBar();
+
+        // Dict lazy-load on scroll
+        if (this.els.dictListWrap) {
+            this.els.dictListWrap.addEventListener("scroll", () => {
+                const el = this.els.dictListWrap;
+                if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+                    this._dictRenderNextChunk();
+                }
+            });
+        }
+
         // Challenge grid size buttons
         document.querySelectorAll(".challenge-size-btn").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -4741,12 +5168,78 @@ class Game {
             }
         });
 
-        // Global mute button
-        this.els.globalMuteBtn.addEventListener("click", () => {
+        // Global music dropdown toggle
+        this.els.globalMuteBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const dd = this.els.globalMusicDropdown;
+            const opening = !dd.classList.contains("open");
+            dd.classList.toggle("open");
+            if (opening) {
+                this._syncGlobalMusicPanel();
+                this._pauseForMusicDropdown();
+            } else {
+                this._resumeFromMusicDropdown();
+            }
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener("click", (e) => {
+            const dd = this.els.globalMusicDropdown;
+            if (dd.classList.contains("open") && !dd.contains(e.target)) {
+                dd.classList.remove("open");
+                this._resumeFromMusicDropdown();
+            }
+        });
+
+        // Dropdown: prev / toggle / next
+        this.els.gmpPrev.addEventListener("click", (e) => { e.stopPropagation(); this.music.prev(); });
+        this.els.gmpToggle.addEventListener("click", (e) => { e.stopPropagation(); this.music.toggle(); });
+        this.els.gmpNext.addEventListener("click", (e) => { e.stopPropagation(); this.music.next(); });
+
+        // Dropdown: mute button
+        this.els.gmpMute.addEventListener("click", (e) => {
+            e.stopPropagation();
             const nowMuted = !this.musicMuted;
             this._setMuted(nowMuted);
             localStorage.setItem("wf_music_muted", nowMuted ? "1" : "0");
         });
+
+        // Dropdown: volume slider
+        this.els.gmpVolume.value = Math.round(this.music.getVolume() * 100);
+        this.els.gmpVolume.addEventListener("input", (e) => {
+            e.stopPropagation();
+            const vol = parseInt(e.target.value, 10) / 100;
+            this.music.setVolume(vol);
+            this._updateVolumeIcon();
+            // Update dropdown mute icon to reflect volume level
+            const muteIcon = this.musicMuted ? "volumeMute" : vol < 0.5 ? "volumeLow" : "volumeHigh";
+            this._setMusicControlButton(this.els.gmpMute, muteIcon, this.musicMuted ? "Unmute" : "Mute");
+            // If they raise volume while muted, auto-unmute
+            if (vol > 0 && this.musicMuted) {
+                this._setMuted(false);
+                localStorage.setItem("wf_music_muted", "0");
+            }
+        });
+
+        // Dropdown: seekable progress bar
+        {
+            const bar = this.els.gmpProgressBar;
+            const seek = (e) => {
+                e.stopPropagation();
+                if (!this.music.audio || !this.music.audio.duration) return;
+                const rect = bar.getBoundingClientRect();
+                const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+                const pct = Math.max(0, Math.min(1, x / rect.width));
+                this.music.audio.currentTime = pct * this.music.audio.duration;
+            };
+            let seeking = false;
+            bar.addEventListener("mousedown", (e) => { e.stopPropagation(); seeking = true; seek(e); });
+            bar.addEventListener("touchstart", (e) => { e.stopPropagation(); seeking = true; seek(e); }, { passive: false });
+            document.addEventListener("mousemove", (e) => { if (seeking) seek(e); });
+            document.addEventListener("touchmove", (e) => { if (seeking) seek(e); }, { passive: false });
+            document.addEventListener("mouseup", () => { seeking = false; });
+            document.addEventListener("touchend", () => { seeking = false; });
+        }
 
         // Freeze indicator tap → early unfreeze with time bonus
         this.els.freezeIndicator.style.cursor = "pointer";
@@ -4801,9 +5294,87 @@ class Game {
         this.musicMuted = muted;
         this.audio.muted = muted;
         this.music.setMuted(muted);
-        this.els.globalMuteBtn.textContent = muted ? "♭" : "♪";
+        this._setMusicControlButton(this.els.globalMuteBtn, muted ? "volumeMute" : "volumeHigh", "Music");
         this.els.globalMuteBtn.classList.toggle("muted", muted);
         this._updateVolumeIcon();
+        this._syncGlobalMusicPanel();
+    }
+
+    _syncGlobalMusicPanel() {
+        // Track name
+        const track = this.music.getCurrentTrack?.();
+        const title = track ? `${track.title} – ${track.artist}` : "---";
+        if (this.els.gmpTrackName) this.els.gmpTrackName.textContent = title;
+        // Play/pause icon (SVG)
+        const isPlaying = this.music.playing ?? false;
+        this._setMusicControlButton(this.els.gmpToggle, isPlaying ? "pause" : "play", isPlaying ? "Pause" : "Play");
+        // Prev / Next icons (SVG)
+        this._setMusicControlButton(this.els.gmpPrev, "prev", "Previous");
+        this._setMusicControlButton(this.els.gmpNext, "next", "Next");
+        // Mute icon (SVG)
+        const vol = this.music.getVolume();
+        const muteIcon = this.musicMuted ? "volumeMute" : vol < 0.5 ? "volumeLow" : "volumeHigh";
+        this._setMusicControlButton(this.els.gmpMute, muteIcon, this.musicMuted ? "Unmute" : "Mute");
+        // Volume slider
+        if (this.els.gmpVolume) this.els.gmpVolume.value = Math.round(vol * 100);
+        // Progress bar
+        this._syncGlobalMusicProgress();
+    }
+
+    _syncGlobalMusicProgress() {
+        const audio = this.music.audio;
+        const cur = audio?.currentTime ?? 0;
+        const dur = audio?.duration ?? 0;
+        const pct = dur > 0 ? (cur / dur) * 100 : 0;
+        if (this.els.gmpProgressFill) this.els.gmpProgressFill.style.width = pct + "%";
+        if (this.els.gmpProgressThumb) this.els.gmpProgressThumb.style.left = pct + "%";
+        if (this.els.gmpCurrentTime) this.els.gmpCurrentTime.textContent = this._formatTrackTime(cur);
+        if (this.els.gmpDuration) this.els.gmpDuration.textContent = this._formatTrackTime(dur);
+    }
+
+    /** Pause whichever game is actively running when the music dropdown opens. */
+    _pauseForMusicDropdown() {
+        this._musicDropdownPausedGame = null;
+        // Plummet
+        if (this.state === State.PLAYING) {
+            this.state = State.PAUSED;
+            this._musicDropdownPausedGame = "plummet";
+            return;
+        }
+        // Word Search
+        if (this._ws && !this._ws.paused && !this._ws.gameOver && !this._ws.revealing) {
+            this._ws.paused = true;
+            this._musicDropdownPausedGame = "ws";
+            return;
+        }
+        // Word Runner — silently freeze without showing pause overlay or countdown
+        if (this._wrGame) {
+            const scene = this._wrGame.getScene?.();
+            if (scene && !scene.isPaused && !scene.dead && scene.countdownTimer <= 0) {
+                scene.isPaused = true;
+                if (scene.runner?._runTl) scene.runner._runTl.pause();
+                this._musicDropdownPausedGame = "wr";
+                return;
+            }
+        }
+    }
+
+    /** Resume the game that was paused by the music dropdown. */
+    _resumeFromMusicDropdown() {
+        const which = this._musicDropdownPausedGame;
+        this._musicDropdownPausedGame = null;
+        if (!which) return;
+        if (which === "plummet" && this.state === State.PAUSED) {
+            this.state = State.PLAYING;
+        } else if (which === "ws" && this._ws && this._ws.paused) {
+            this._ws.paused = false;
+        } else if (which === "wr" && this._wrGame) {
+            const scene = this._wrGame.getScene?.();
+            if (scene && scene.isPaused) {
+                scene.isPaused = false;
+                if (scene.runner?._runTl) scene.runner._runTl.resume();
+            }
+        }
     }
 
     // ── Hints ──
@@ -4818,6 +5389,23 @@ class Game {
         const result = this.grid.findAllWords(minLen);
         if (result.words.length === 0) return;
         this._addValidatedWords(result, result.words);
+    }
+
+    // After a non-wildcard block lands, re-check all wildcard cells on the grid.
+    // A newly placed letter may complete a word through an existing wildcard.
+    _rescanWildcardCells(skipRow, skipCol) {
+        if (!this.grid || this.clearing) return;
+        const minLen = this._getMinWordLength();
+        for (let r = 0; r < this.grid.rows; r++) {
+            for (let c = 0; c < this.grid.cols; c++) {
+                if (r === skipRow && c === skipCol) continue; // already scanned
+                if (this.grid.get(r, c) !== WILDCARD_SYMBOL) continue;
+                const result = this.grid.findWordsThrough(r, c, minLen);
+                if (result.words.length > 0) {
+                    this._addValidatedWords(result, result.words);
+                }
+            }
+        }
     }
 
     _computeHintCells() {
@@ -4924,16 +5512,7 @@ class Game {
     _bindMusic() {
         this._setMusicControlButton(this.els.npPrev, "prev", "Previous Track");
         this._setMusicControlButton(this.els.npNext, "next", "Next Track");
-        this._setMusicControlButton(this.els.npMiniPrev, "prev", "Previous Track");
-        this._setMusicControlButton(this.els.npMiniNext, "next", "Next Track");
-        // Word Search mini player icons
-        this._setMusicControlButton(this.els.wsMiniPrev, "prev", "Previous Track");
-        this._setMusicControlButton(this.els.wsMiniNext, "next", "Next Track");
-        this._setMusicControlButton(this.els.wsMiniToggle, "play", "Play");
-        // Word Runner mini player icons
-        this._setMusicControlButton(this.els.wrMiniPrev, "prev", "Previous Track");
-        this._setMusicControlButton(this.els.wrMiniNext, "next", "Next Track");
-        this._setMusicControlButton(this.els.wrMiniToggle, "play", "Play");
+
 
         // Shuffle & Repeat buttons (set initial icons)
         this._setMusicControlButton(this.els.npShuffle, "shuffle", "Shuffle");
@@ -5052,11 +5631,6 @@ class Game {
             this._renderTrackList();
         });
 
-        // Mini now-playing toggle (in-game)
-        this.els.npMiniPrev.addEventListener("click", () => this.music.prev());
-        this.els.npMiniToggle.addEventListener("click", () => this.music.toggle());
-        this.els.npMiniNext.addEventListener("click", () => this.music.next());
-
         // New playlist tab
         this.els.newPlaylistTab.addEventListener("click", () => this._openPlaylistModal(null));
 
@@ -5101,6 +5675,12 @@ class Game {
                 this._renderMusicScreen();
             }
         });
+    }
+
+    _bindGuidedTours() {
+        this.els.guidedTourContinueBtn.addEventListener('click', () => this._advanceGuidedTour('continue'));
+        this.els.guidedTourBackBtn.addEventListener('click', () => this._backGuidedTour());
+        this.els.guidedTourExitBtn.addEventListener('click', () => this._stopGuidedTour(true));
     }
 
     _setMusicControlButton(button, iconName, label) {
@@ -5374,6 +5954,7 @@ class Game {
     }
 
     _showScreen(name) {
+        this._activeScreen = name;
         if (this.els.authScreen) this.els.authScreen.classList.toggle("active", name === "auth");
         this.els.profilesScreen.classList.toggle("active", name === "profiles");
         this.els.menuScreen.classList.toggle("active", name === "menu");
@@ -5387,6 +5968,7 @@ class Game {
         if (this.els.leaderboardScreen) this.els.leaderboardScreen.classList.toggle("active", name === "leaderboard");
         if (this.els.wsScreen) this.els.wsScreen.classList.toggle("active", name === "ws");
         if (this.els.wrScreen) this.els.wrScreen.classList.toggle("active", name === "wr");
+        if (this.els.dictScreen) this.els.dictScreen.classList.toggle("active", name === "dict");
         if (name === "menu") {
             this._updateHighScoreDisplay();
             this._updateMenuStats();
@@ -5394,6 +5976,7 @@ class Game {
             this._updateDifficultySelector();
             this._updateLevelDisplay();
             this._refreshMyRankOnMenu();
+            this._renderMilestonesPage();
             const hasSaved = this._hasSavedGame(null);
             this.els.resumeGameBtn.classList.toggle("hidden", !hasSaved);
         }
@@ -5491,6 +6074,359 @@ class Game {
             }
         }
         this.wordsFoundResumeState = null;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  DICTIONARY / THESAURUS
+    // ════════════════════════════════════════════════════════════════
+
+    _openDict(fromScreen) {
+        this._dictBackTarget = fromScreen;
+        // Pause game if coming from active play
+        if (fromScreen === "play" && this.state === State.PLAYING) {
+            this.state = State.PAUSED;
+        }
+        // Build word list on first open
+        if (!this._dictSortedWords.length) this._dictBuildWordList();
+        this._dictApplyFilters();
+        this._showScreen("dict");
+    }
+
+    _closeDict() {
+        const target = this._dictBackTarget || "menu";
+        if (target === "pause") {
+            this._showScreen("play");
+            this.els.pauseOverlay.classList.add("active");
+        } else if (target === "ws-pause") {
+            this._showScreen("ws");
+            if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.add("active");
+        } else if (target === "wr-pause") {
+            this._wrResumePause();
+        } else {
+            this._showScreen(target);
+        }
+    }
+
+    _dictBuildWordList() {
+        // Build sorted array from the full game dictionary, enriching with definitions where available
+        const arr = [];
+        const enriched = ENRICHED_DICT || {};
+        const source = DICTIONARY && DICTIONARY.size > 0 ? DICTIONARY : new Set(Object.keys(enriched).map(k => k.toUpperCase()));
+        for (const upper of source) {
+            const lower = upper.toLowerCase();
+            const entry = enriched[lower];
+            arr.push({
+                word: lower,
+                upper: upper,
+                definitions: entry ? (entry.definitions || []) : [],
+                synonyms: entry ? (entry.synonyms || []) : [],
+                partsOfSpeech: entry ? (entry.partsOfSpeech || []) : [],
+                len: upper.length,
+            });
+        }
+        arr.sort((a, b) => a.upper.localeCompare(b.upper));
+        this._dictSortedWords = arr;
+    }
+
+    _dictBuildAlphaBar() {
+        if (!this.els.dictAlphaBar) return;
+        const bar = this.els.dictAlphaBar;
+        bar.innerHTML = "";
+        for (let i = 65; i <= 90; i++) {
+            const letter = String.fromCharCode(i);
+            const btn = document.createElement("button");
+            btn.className = "dict-alpha-btn";
+            btn.textContent = letter;
+            btn.dataset.letter = letter;
+            btn.addEventListener("click", () => this._dictJumpToLetter(letter));
+            bar.appendChild(btn);
+        }
+    }
+
+    _dictJumpToLetter(letter) {
+        const words = this._dictFilteredWords;
+        if (!words || words.length === 0) return;
+
+        const targetIdx = this._dictLetterFirstIndex.get(letter);
+        if (targetIdx === undefined) return;
+
+        // Seek-render from the selected letter section to avoid huge DOM work.
+        this._dictRenderStartIndex = targetIdx;
+        this._dictRenderedCount = targetIdx;
+        this._dictJumpRenderInProgress = false;
+        this._dictRenderList();
+
+        if (this.els.dictListWrap) this.els.dictListWrap.scrollTop = 0;
+        const header = this.els.dictList.querySelector(`[data-letter-header="${letter}"]`);
+        if (header) header.scrollIntoView({ behavior: "smooth", block: "start" });
+
+        // Highlight active letter
+        this.els.dictAlphaBar.querySelectorAll(".dict-alpha-btn").forEach(b =>
+            b.classList.toggle("active", b.dataset.letter === letter));
+        setTimeout(() => {
+            this.els.dictAlphaBar.querySelectorAll(".dict-alpha-btn").forEach(b =>
+                b.classList.remove("active"));
+        }, 1200);
+    }
+
+    _dictOnSearch() {
+        const val = this.els.dictSearch.value.trim();
+        this._dictSearchTerm = val.toUpperCase();
+        this.els.dictSearchClear.classList.toggle("hidden", val.length === 0);
+        this._dictApplyFilters();
+    }
+
+    _dictApplyFilters() {
+        const search = this._dictSearchTerm;
+        const filter = (typeof this._dictActiveFilter === "string" && this._dictActiveFilter)
+            ? this._dictActiveFilter
+            : "all";
+        const source = this._dictSortedWords || [];
+
+        let minLen = 0;
+        let maxLen = Infinity;
+        if (filter === "len-2-3") { minLen = 2; maxLen = 3; }
+        else if (filter === "len-4-5") { minLen = 4; maxLen = 5; }
+        else if (filter === "len-6-7") { minLen = 6; maxLen = 7; }
+        else if (filter === "len-8+") { minLen = 8; }
+
+        let posTag = null;
+        let topicSet = null;
+        if (filter.startsWith("cat-")) {
+            const catKey = filter.slice(4);
+            const POS_FILTER_MAP = {
+                nouns: "noun",
+                verbs: "verb",
+                adjectives: "adjective",
+                adverbs: "adverb",
+            };
+            posTag = POS_FILTER_MAP[catKey] || null;
+            if (!posTag) {
+                const catData = WORD_CATEGORIES[catKey];
+                topicSet = catData ? catData.words : null;
+            }
+        }
+
+        const filtered = [];
+        const letterCounts = new Map();
+        const letterFirstIndex = new Map();
+
+        for (const w of source) {
+            if (search && !w.upper.startsWith(search)) continue;
+            if (w.len < minLen || w.len > maxLen) continue;
+
+            if (posTag) {
+                const parts = Array.isArray(w.partsOfSpeech) ? w.partsOfSpeech : [];
+                const hasPos = parts.some(p => p === posTag || (posTag === "adjective" && p === "adjective satellite"));
+                if (!hasPos) continue;
+            } else if (topicSet && !topicSet.has(w.upper)) {
+                continue;
+            }
+
+            filtered.push(w);
+            const first = w.upper[0];
+            if (!letterFirstIndex.has(first)) letterFirstIndex.set(first, filtered.length - 1);
+            letterCounts.set(first, (letterCounts.get(first) || 0) + 1);
+        }
+
+        this._dictFilteredWords = filtered;
+        this._dictLetterCounts = letterCounts;
+        this._dictLetterFirstIndex = letterFirstIndex;
+        this._dictRenderStartIndex = 0;
+        this._dictRenderedCount = 0;
+        this._dictJumpRenderInProgress = false;
+        this._dictRenderList();
+
+        // Update count
+        if (this.els.dictResultCount) {
+            this.els.dictResultCount.textContent = `${filtered.length} word${filtered.length !== 1 ? "s" : ""}`;
+        }
+
+        // Update alpha bar availability
+        const availLetters = new Set(this._dictLetterCounts.keys());
+        this.els.dictAlphaBar.querySelectorAll(".dict-alpha-btn").forEach(b => {
+            b.classList.toggle("disabled", !availLetters.has(b.dataset.letter));
+        });
+    }
+
+    _dictRenderList() {
+        const list = this.els.dictList;
+        list.innerHTML = "";
+        if (!this._dictFilteredWords.length) {
+            list.innerHTML = `
+                <div class="dict-empty-state">
+                    <div class="dict-empty-icon">📖</div>
+                    <div class="dict-empty-text">No words match your search</div>
+                    <div class="dict-empty-hint">Try a different search or filter</div>
+                </div>`;
+            return;
+        }
+        const wordsLen = this._dictFilteredWords.length;
+        const start = Math.max(0, Math.min(this._dictRenderStartIndex || 0, Math.max(0, wordsLen - 1)));
+        this._dictRenderedCount = start;
+        this._dictRenderNextChunk();
+    }
+
+    _dictRenderNextChunk() {
+        const words = this._dictFilteredWords;
+        if (!words || this._dictRenderedCount >= words.length) return;
+        const list = this.els.dictList;
+        const end = Math.min(this._dictRenderedCount + this._dictChunkSize, words.length);
+        let lastLetter = "";
+
+        // Check what last rendered letter was
+        if (this._dictRenderedCount > 0 && this._dictRenderedCount <= words.length) {
+            lastLetter = words[this._dictRenderedCount - 1].upper[0];
+        }
+
+        for (let i = this._dictRenderedCount; i < end; i++) {
+            const w = words[i];
+            const firstLetter = w.upper[0];
+
+            // Insert letter section header
+            if (firstLetter !== lastLetter) {
+                lastLetter = firstLetter;
+                const hdr = document.createElement("div");
+                hdr.className = "dict-letter-header";
+                hdr.dataset.letterHeader = firstLetter;
+                hdr.innerHTML = `
+                    <span class="dict-letter-char">${firstLetter}</span>
+                    <span class="dict-letter-line"></span>
+                    <span class="dict-letter-count">${this._dictLetterCounts.get(firstLetter) || 0}</span>`;
+                list.appendChild(hdr);
+            }
+
+            list.appendChild(this._dictBuildCard(w));
+        }
+        this._dictRenderedCount = end;
+    }
+
+    _dictBuildCard(w) {
+        const card = document.createElement("div");
+        card.className = "dict-word-card";
+
+        // POS badges
+        const posHtml = w.partsOfSpeech.map(p => {
+            const norm = p.toLowerCase().replace(/\s*satellite/i, "").trim();
+            const cls = norm.startsWith("adj") ? "pos-adj" :
+                        norm.startsWith("adv") ? "pos-adv" :
+                        norm === "noun" ? "pos-noun" :
+                        norm === "verb" ? "pos-verb" : "";
+            return `<span class="dict-pos-badge ${cls}">${norm}</span>`;
+        }).join("");
+
+        card.innerHTML = `
+            <div class="dict-word-head">
+                <span class="dict-word-title">${w.upper}</span>
+                <div class="dict-word-meta">
+                    ${posHtml}
+                    <span class="dict-len-badge">${w.len}</span>
+                    <span class="dict-word-chevron">▾</span>
+                </div>
+            </div>
+            <div class="dict-word-detail">
+                
+            </div>`;
+
+        card.dataset.detailLoaded = "0";
+
+        card.addEventListener("click", (e) => {
+            // Clicking synonym chip → jump to that word
+            if (e.target.classList.contains("dict-syn-chip")) {
+                const syn = e.target.dataset.syn;
+                if (syn && ENRICHED_DICT && ENRICHED_DICT[syn.toLowerCase()]) {
+                    this.els.dictSearch.value = syn.toUpperCase();
+                    this._dictOnSearch();
+                }
+                return;
+            }
+            const willOpen = !card.classList.contains("open");
+            if (willOpen && card.dataset.detailLoaded !== "1") {
+                const detail = card.querySelector(".dict-word-detail");
+                if (detail) {
+                    detail.innerHTML = this._dictBuildDetail(w);
+                    card.dataset.detailLoaded = "1";
+                }
+            }
+            card.classList.toggle("open");
+        });
+
+        return card;
+    }
+
+    _dictBuildDetail(w) {
+        let html = "";
+
+        // Definitions
+        if (w.definitions.length) {
+            html += `<div class="dict-def-section">
+                <div class="dict-section-label">Definitions</div>`;
+            w.definitions.forEach((d, i) => {
+                html += `<div class="dict-def-item">
+                    <span class="dict-def-num">${i + 1}</span>
+                    <div class="dict-def-body">
+                        <span class="dict-def-pos-tag">${d.pos}</span>
+                        <span class="dict-def-text">${this._escapeHtml(d.definition)}</span>
+                    </div>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        // Synonyms
+        if (w.synonyms.length) {
+            html += `<div class="dict-syn-section">
+                <div class="dict-section-label">Synonyms</div>
+                <div class="dict-syn-wrap">`;
+            for (const syn of w.synonyms) {
+                const inDict = ENRICHED_DICT && ENRICHED_DICT[syn.toLowerCase()];
+                html += `<span class="dict-syn-chip${inDict ? " in-dict" : ""}" data-syn="${this._escapeHtml(syn)}">${syn}</span>`;
+            }
+            html += `</div></div>`;
+        }
+
+        if (!w.definitions.length && !w.synonyms.length) {
+            html += `<div class="dict-empty-hint" style="padding:8px 0;">No definitions available</div>`;
+        }
+
+        return html;
+    }
+
+    _escapeHtml(str) {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  WORDS FOUND — Enriched Detail Dropdowns
+    // ════════════════════════════════════════════════════════════════
+
+    _buildWordFoundDetail(wordUpper) {
+        const key = wordUpper.toLowerCase();
+        const entry = ENRICHED_DICT && ENRICHED_DICT[key];
+        if (!entry) return "";
+
+        let html = '<div class="wf-word-detail">';
+
+        // Definitions (max 3)
+        const defs = entry.definitions || [];
+        if (defs.length) {
+            html += '<div class="wf-detail-label">Definition</div>';
+            defs.slice(0, 3).forEach(d => {
+                html += `<div class="wf-detail-def"><em>${d.pos}</em> — ${this._escapeHtml(d.definition)}</div>`;
+            });
+        }
+
+        // Synonyms (max 6)
+        const syns = entry.synonyms || [];
+        if (syns.length) {
+            html += '<div class="wf-detail-label" style="margin-top:6px;">Synonyms</div>';
+            html += `<div class="wf-detail-def">${syns.slice(0, 6).join(", ")}</div>`;
+        }
+
+        html += '</div>';
+        return html;
     }
 
     _hasBonusWordsView() {
@@ -5678,6 +6614,174 @@ class Game {
         this.els.menuHighScore.textContent = this.highScore;
     }
 
+    // ── Milestones Page ──
+
+    _renderMilestonesPage() {
+        const grid = this.els.milestonesGrid;
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        const p = this.profileMgr.getActive();
+        const claimed = p ? (p.claimedMilestones || []) : [];
+        const earnedDates = (p && p._milestoneTimestamps) || {};
+
+        // Category display config — order matters
+        const CAT_CONFIG = [
+            { key: 'journey',        label: '🚀 Getting Started' },
+            { key: 'words',          label: '📝 Unique Words' },
+            { key: 'totalWords',     label: '📖 Total Words' },
+            { key: 'games',          label: '🎮 Games Played' },
+            { key: 'level',          label: '⬆ Leveling' },
+            { key: 'score',          label: '🏅 High Scores' },
+            { key: 'streak',         label: '🔥 Streaks' },
+            { key: 'xp',            label: '✨ Experience' },
+            { key: 'coins',         label: '🪙 Coins Earned' },
+            { key: 'balance',       label: '💰 Coin Balance' },
+            { key: 'shop',          label: '🛒 Shop & Inventory' },
+            { key: 'grid',          label: '📐 Grid Mastery' },
+            { key: 'bestScores',    label: '🎯 Mode Scores' },
+            { key: 'challenges',    label: '⚔ Challenges' },
+            { key: 'challengeScore',label: '🏆 Challenge Records' },
+            { key: 'targetWord',    label: '🎯 Target Word' },
+            { key: 'speedRound',    label: '⚡ Speed Round' },
+            { key: 'wordCat',       label: '📂 Word Category' },
+            { key: 'wordSearch',    label: '🔍 Word Search' },
+            { key: 'wordRunner',    label: '🏃 Word Runner' },
+            { key: 'meta',          label: '🌟 Meta Achievements' },
+        ];
+
+        // Group milestones by cat
+        const grouped = {};
+        for (const m of MILESTONES) {
+            if (!grouped[m.cat]) grouped[m.cat] = [];
+            grouped[m.cat].push(m);
+        }
+
+        let earnedCount = 0;
+
+        for (const cat of CAT_CONFIG) {
+            const items = grouped[cat.key];
+            if (!items || items.length === 0) continue;
+
+            const section = document.createElement('div');
+            section.className = 'ms-category';
+
+            // Category header with earned count
+            const catEarned = items.filter(m => claimed.includes(m.id)).length;
+            const label = document.createElement('div');
+            label.className = 'ms-category-label';
+            label.innerHTML = `${cat.label} <span class="ms-cat-count">${catEarned}/${items.length}</span>`;
+            section.appendChild(label);
+
+            for (const m of items) {
+                const isEarned = claimed.includes(m.id);
+                if (isEarned) earnedCount++;
+
+                const card = document.createElement('div');
+                card.className = `ms-card ${isEarned ? 'earned' : 'locked'}`;
+
+                const icon = document.createElement('div');
+                icon.className = 'ms-icon';
+                icon.textContent = isEarned ? '🏆' : '🔒';
+
+                const info = document.createElement('div');
+                info.className = 'ms-info';
+
+                const lbl = document.createElement('div');
+                lbl.className = 'ms-label';
+                lbl.textContent = m.label;
+
+                const desc = document.createElement('div');
+                desc.className = 'ms-desc';
+                desc.textContent = m.desc;
+
+                info.appendChild(lbl);
+                info.appendChild(desc);
+
+                // Earned date
+                if (isEarned && earnedDates[m.id]) {
+                    const dateEl = document.createElement('div');
+                    dateEl.className = 'ms-date';
+                    const d = new Date(earnedDates[m.id]);
+                    dateEl.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                    info.appendChild(dateEl);
+                }
+
+                const reward = document.createElement('div');
+                reward.className = 'ms-reward';
+                reward.innerHTML = `<span class="ms-reward-coin">●</span> ${m.coins}<span class="ms-earned-check">${isEarned ? '✓' : ''}</span>`;
+
+                card.appendChild(icon);
+                card.appendChild(info);
+                card.appendChild(reward);
+                section.appendChild(card);
+            }
+
+            grid.appendChild(section);
+        }
+
+        // Progress bar
+        const total = MILESTONES.length;
+        if (this.els.milestonesProgressFill) {
+            this.els.milestonesProgressFill.style.width = `${(earnedCount / total) * 100}%`;
+        }
+        if (this.els.milestonesProgressText) {
+            this.els.milestonesProgressText.textContent = `${earnedCount} / ${total}`;
+        }
+    }
+
+    /**
+     * Record newly earned milestones to the profile_milestones table.
+     * Fire-and-forget — errors are logged but don't block the UI.
+     */
+    async _syncMilestonesToCloud(newMilestones) {
+        try {
+            const { isLocalMode, recordMilestone } = await import('./src/lib/supabase.js');
+            if (isLocalMode) return;
+            const p = this.profileMgr.getActive();
+            if (!p || !p.cloudId || !newMilestones?.length) return;
+            // Record each milestone and store timestamps locally
+            if (!p._milestoneTimestamps) p._milestoneTimestamps = {};
+            const now = new Date().toISOString();
+            const promises = newMilestones.map(m => {
+                if (!p._milestoneTimestamps[m.id]) p._milestoneTimestamps[m.id] = now;
+                return recordMilestone(p.cloudId, m.id, m.coins).catch(err =>
+                    console.warn(`[milestones] failed to record ${m.id}:`, err.message)
+                );
+            });
+            await Promise.all(promises);
+            this.profileMgr._save();
+        } catch (err) {
+            console.error('[milestones] sync to cloud failed:', err);
+        }
+    }
+
+    /**
+     * Load milestone timestamps from the cloud for the active profile.
+     * Populates p._milestoneTimestamps for the milestones page.
+     */
+    async _loadMilestonesFromCloud() {
+        try {
+            const { isLocalMode, getProfileMilestones } = await import('./src/lib/supabase.js');
+            if (isLocalMode) return;
+            const p = this.profileMgr.getActive();
+            if (!p || !p.cloudId) return;
+            const rows = await getProfileMilestones(p.cloudId);
+            if (!rows.length) return;
+            if (!p._milestoneTimestamps) p._milestoneTimestamps = {};
+            for (const row of rows) {
+                p._milestoneTimestamps[row.milestone_id] = row.earned_at;
+                // Ensure local claimed array is in sync
+                if (!p.claimedMilestones.includes(row.milestone_id)) {
+                    p.claimedMilestones.push(row.milestone_id);
+                }
+            }
+            this.profileMgr._save();
+        } catch (err) {
+            console.error('[milestones] load from cloud failed:', err);
+        }
+    }
+
     _updateScoreDisplay() {
         const el = this.els.currentScore;
         const prevScore = parseInt(el.textContent, 10) || 0;
@@ -5728,27 +6832,41 @@ class Game {
         }
     }
 
-    _checkBonusBtnOverlap() {
-        const btn = this.els.bonusBtn;
-        if (!btn || btn.classList.contains("hidden")) {
-            if (btn) btn.classList.remove("bonus-btn-faded");
-            return;
-        }
+    _checkPlayBtnOverlaps() {
         if (!this.block) {
-            btn.classList.remove("bonus-btn-faded");
+            // No block — clear all faded states
+            this.els.bonusBtn?.classList.remove("bonus-btn-faded");
+            for (const el of this._overlayBtns) el.classList.remove("play-btn-faded");
             return;
         }
         const r = this.renderer;
         const cr = this.canvas.getBoundingClientRect();
-        const br = btn.getBoundingClientRect();
         // Block screen position (canvas CSS coords → viewport coords)
-        const bx = cr.left + r.offsetX + this.block.col * r.cellSize;
-        const by = cr.top  + r.offsetY + this.block.visualRow * r.cellSize;
+        const bx  = cr.left + r.offsetX + this.block.col * r.cellSize;
+        const by  = cr.top  + r.offsetY + this.block.visualRow * r.cellSize;
         const bx2 = bx + r.cellSize;
         const by2 = by + r.cellSize;
-        // Rectangle overlap test
-        const overlap = !(bx2 <= br.left || bx >= br.right || by2 <= br.top || by >= br.bottom);
-        btn.classList.toggle("bonus-btn-faded", overlap);
+
+        // Bonus button keeps its own dedicated class
+        const bonus = this.els.bonusBtn;
+        if (bonus && !bonus.classList.contains("hidden")) {
+            const br = bonus.getBoundingClientRect();
+            const hit = !(bx2 <= br.left || bx >= br.right || by2 <= br.top || by >= br.bottom);
+            bonus.classList.toggle("bonus-btn-faded", hit);
+        } else if (bonus) {
+            bonus.classList.remove("bonus-btn-faded");
+        }
+
+        // All other overlay buttons use the generic class
+        for (const el of this._overlayBtns) {
+            if (!el || el.classList.contains("hidden") || el.offsetParent === null) {
+                el?.classList.remove("play-btn-faded");
+                continue;
+            }
+            const br = el.getBoundingClientRect();
+            const hit = !(bx2 <= br.left || bx >= br.right || by2 <= br.top || by >= br.bottom);
+            el.classList.toggle("play-btn-faded", hit);
+        }
     }
 
     _updateBonusButton() {
@@ -6624,6 +7742,10 @@ class Game {
     // ── Game start / reset ──
     _startGame() {
         this.activeChallenge = null;
+        // Clean up any stale challenge tags
+        delete this.els.restartBtn.dataset.challenge;
+        delete this.els.restartBtn.dataset.categoryKey;
+        // Only show time-select for regular timed grid games (not challenges or sandbox)
         if (this._getSelectedGameMode() === GAME_MODES.TIMED) {
             this._openTimeSelectModal();
             return;
@@ -6924,6 +8046,10 @@ class Game {
         }
 
         this._checkWords(landedRow, landedCol);
+
+        // Re-scan through any wildcard cells on the grid — a new letter
+        // anywhere may complete a word through an existing wildcard.
+        this._rescanWildcardCells(landedRow, landedCol);
     }
 
     _triggerBombClear(row, col) {
@@ -7407,6 +8533,7 @@ class Game {
         // Check milestones
         const newMilestones = this.profileMgr.checkMilestones();
         this._lastMilestones = newMilestones;
+        if (newMilestones.length > 0) this._syncMilestonesToCloud(newMilestones);
 
         // Build final score text (add challenge info if applicable)
         let finalText = `Score: ${this.score}`;
@@ -7469,6 +8596,14 @@ class Game {
         // Update gameover buttons based on whether this was a challenge game
         this.els.menuBtn.textContent = this._gameOverChallenge ? "Back to Challenges" : "Main Menu";
         this.els.restartBtn.textContent = this._gameOverChallenge ? "Play Again" : "Play Again";
+        // Tag restart button with challenge type for robust detection on Play Again
+        if (this._gameOverChallenge) {
+            this.els.restartBtn.dataset.challenge = this._gameOverChallenge;
+            this.els.restartBtn.dataset.categoryKey = this._gameOverCategoryKey || "";
+        } else {
+            delete this.els.restartBtn.dataset.challenge;
+            delete this.els.restartBtn.dataset.categoryKey;
+        }
 
         // ── Show gameover screen with XP animation ──
         this._showGameOverXP(xpEarned, xpResult, wasFirstGame);
@@ -7924,7 +9059,7 @@ class Game {
      */
     async _syncProfileToCloud() {
         try {
-            const { isLocalMode, updateProfile } = await import('./src/lib/supabase.js');
+            const { isLocalMode, updateProfile, upsertChallengeStats } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
             const p = this.profileMgr.getActive();
             if (!p || !p.cloudId) return;
@@ -7960,6 +9095,21 @@ class Game {
                 // Unique words
                 unique_words_found: p.uniqueWordsFound || [],
             });
+
+            // Push challenge stats (target word level, word search level, etc.)
+            if (p.challengeStats) {
+                const challengePromises = [];
+                for (const [type, stats] of Object.entries(p.challengeStats)) {
+                    if (stats && (stats.gamesPlayed > 0 || stats.targetWordLevel > 1 || stats.wordSearchLevel > 1)) {
+                        challengePromises.push(
+                            upsertChallengeStats(p.cloudId, type, stats).catch(e =>
+                                console.warn(`[supabase] sync challenge stats (${type}) failed:`, e.message)
+                            )
+                        );
+                    }
+                }
+                if (challengePromises.length > 0) await Promise.all(challengePromises);
+            }
         } catch (err) {
             console.error('[supabase] sync profile to cloud failed:', err);
         }
@@ -8671,11 +9821,16 @@ class Game {
         } else {
             for (const { word, count, totalPts, bonus } of words) {
                 const item = document.createElement("div");
-                item.className = "word-found-item" + (bonus ? " bonus-word" : "");
+                item.className = "word-found-item" + (bonus ? " bonus-word" : "") + (ENRICHED_DICT && ENRICHED_DICT[word.toLowerCase()] ? " wf-expandable" : "");
+                const detailHtml = this._buildWordFoundDetail(word);
                 item.innerHTML = `
                     <span class="word-found-text">${word}</span>
                     <span class="word-found-pts">${count > 1 ? `x${count} · ` : ""}+${totalPts} pts</span>
+                    ${detailHtml}
                 `;
+                if (detailHtml) {
+                    item.addEventListener("click", () => item.classList.toggle("wf-expanded"));
+                }
                 list.appendChild(item);
             }
         }
@@ -8705,11 +9860,16 @@ class Game {
             } else {
                 for (const { word, count, totalPts } of bonusWords) {
                     const item = document.createElement("div");
-                    item.className = "word-found-item bonus-word";
+                    item.className = "word-found-item bonus-word" + (ENRICHED_DICT && ENRICHED_DICT[word.toLowerCase()] ? " wf-expandable" : "");
+                    const detailHtml = this._buildWordFoundDetail(word);
                     item.innerHTML = `
                         <span class="word-found-text">${word}</span>
                         <span class="word-found-pts">${count > 1 ? `x${count} · ` : ""}+${totalPts} pts</span>
+                        ${detailHtml}
                     `;
+                    if (detailHtml) {
+                        item.addEventListener("click", () => item.classList.toggle("wf-expanded"));
+                    }
                     bonusList.appendChild(item);
                 }
             }
@@ -8803,28 +9963,13 @@ class Game {
         this.els.npProgressThumb.style.left = pct + "%";
         this.els.npCurrentTime.textContent = this._formatTrackTime(currentTime);
         this.els.npDuration.textContent = this._formatTrackTime(duration);
-        // Mini progress bar
-        if (this.els.npMiniProgressFill) {
-            this.els.npMiniProgressFill.style.width = pct + "%";
-        }
-        // Word Search mini progress
-        if (this.els.wsMiniProgressFill) {
-            this.els.wsMiniProgressFill.style.width = pct + "%";
-        }
-        // Word Runner mini progress
-        if (this.els.wrMiniProgressFill) {
-            this.els.wrMiniProgressFill.style.width = pct + "%";
-        }
+        // Sync global dropdown progress bar
+        this._syncGlobalMusicProgress();
     }
 
     _updateMiniNowPlaying() {
-        const track = this.music.getCurrentTrack();
-        this.els.npMiniTitle.textContent = track ? `♪ ${track.title} – ${track.artist}` : "♪ ---";
-        this._setMusicControlButton(this.els.npMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
-        // Keep Word Search mini player in sync
-        this._wsUpdateMiniPlayer();
-        // Keep Word Runner mini player in sync
-        this._wrUpdateMiniPlayer();
+        // Keep global music dropdown in sync
+        this._syncGlobalMusicPanel();
     }
 
     // ── Tutorial System (Sub-menu + Animated Canvas Slides) ──
@@ -8920,18 +10065,6 @@ class Game {
         // ── Slide Definitions ──
 
         this._tutorialCategories = [
-            // ═══ ADD TO PHONE ═══
-            {
-                id: 'addphone', icon: '□', label: 'Add Game to Phone',
-                desc: 'Install the game on your iPhone home screen',
-                slides: [
-                    { title: 'Step 1: Open in Safari', desc: 'Open this game\'s URL in Safari on your iPhone. This only works in Safari — Chrome and other browsers don\'t support adding web apps to the home screen.', img: 'TUTORIAL/1.png' },
-                    { title: 'Step 2: Tap the Share Button', desc: 'Tap the Share button at the bottom of Safari (the square with an arrow pointing up). This opens the share menu with all your options.', img: 'TUTORIAL/2.png' },
-                    { title: 'Step 3: Add to Home Screen', desc: 'Scroll down in the share menu and tap "Add to Home Screen". You can customize the name if you want, then tap "Add" in the top-right corner.', img: 'TUTORIAL/3.png' },
-                    { title: 'Step 4: Launch Like an App!', desc: 'The game now appears as an icon on your home screen! Tap it to launch — it opens in full-screen mode just like a real app, with no browser bars or distractions. Enjoy!', img: 'TUTORIAL/4.png' }
-                ]
-            },
-
             // ═══ HOW TO PLAY ═══
             {
                 id: 'basics', icon: '▷', label: 'How to Play',
@@ -8939,7 +10072,7 @@ class Game {
                 slides: [
                     {
                         title: 'Falling Letters',
-                        desc: 'Letter blocks fall one at a time from the top of the grid. Each block contains a random letter. When a block reaches the bottom — or lands on top of another letter — it locks in place. You can see the NEXT letter coming in the preview above the grid. The game ends when a new block has no room to spawn because the grid is full!',
+                        desc: 'Letters fall one at a time from the top. When a block hits the bottom or lands on another letter, it locks in place. Check the preview above the grid to see what\'s coming next. The game ends when there\'s no room for a new block!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -8958,7 +10091,7 @@ class Game {
                     },
                     {
                         title: 'Moving & Dropping',
-                        desc: 'While a block is falling, SWIPE LEFT or RIGHT to move it to a different column. SWIPE DOWN to instantly hard-drop it straight to the bottom. On desktop, use the LEFT/RIGHT arrow keys to move and SPACE or DOWN arrow to drop. Plan your placement carefully — once a block locks in, you can\'t move it!',
+                        desc: 'Swipe left or right to move a falling block. Swipe down to drop it instantly. On desktop, use arrow keys to move and space or down to drop. Once a block locks in, it can\'t be moved!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -8990,7 +10123,7 @@ class Game {
                     },
                     {
                         title: 'Forming Words',
-                        desc: 'The game automatically scans for valid English words of 3 or more letters in ALL eight directions — horizontal (left-to-right, right-to-left), vertical (top-to-bottom, bottom-to-top), and all four diagonals. When a valid word is found, those letters light up GREEN to let you know a word is ready to claim. The dictionary contains the top 20,000 most common English words!',
+                        desc: 'The game scans for valid words in all 8 directions — horizontal, vertical, and diagonal. When a word is found, the letters glow green. Words must be 3+ letters (2-letter words count on small grids). Over 20,000 words in the dictionary!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9020,7 +10153,7 @@ class Game {
                     },
                     {
                         title: 'Tap to Claim',
-                        desc: 'When letters glow green showing a valid word, TAP anywhere on the highlighted word to claim it! The word\'s letters are cleared from the grid, you earn points based on word length (longer words = way more points!), and all the letters above drop down to fill the empty spaces. You can tap to claim at ANY time — even while another block is falling!',
+                        desc: 'When letters glow green, tap any highlighted letter to claim the word! Letters are cleared, you earn points based on length, and everything above drops down to fill the gaps. You can claim while a block is falling!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9063,7 +10196,7 @@ class Game {
                     },
                     {
                         title: 'Multi-Word Claims',
-                        desc: 'If a green letter sits at the intersection of two or more valid words, tapping that shared letter claims ALL of them at once! Look for spots where words cross — one tap on the shared letter scores every connected word simultaneously. This is a powerful strategy to rack up massive points in a single tap!',
+                        desc: 'If a green letter is shared by two or more words, tapping it claims them all at once! Look for spots where words cross — one tap scores every connected word. Great for big points!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9109,7 +10242,7 @@ class Game {
                     },
                     {
                         title: 'Chains & Scoring',
-                        desc: 'Scoring formula: word length² × 10 (so a 3-letter word = 90 pts, 5-letter word = 250 pts!). Tough letters like Q, Z, X, and J earn EXTRA bonus points when used in words. If a word reads as a valid word in BOTH directions (e.g. DOG ↔ GOD), you score both — the primary word at full points and the reverse at half points! After claiming, letters fall down — if they form a NEW word, that\'s a CHAIN worth +50 bonus per chain!',
+                        desc: 'Points = word length² × 10 (3 letters = 90 pts, 5 letters = 250 pts). Rare letters like Q, Z, X, J earn extra bonus points. After clearing a word, letters drop down — if they form a new word, that\'s a chain worth +50 bonus!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9151,7 +10284,7 @@ class Game {
                     },
                     {
                         title: 'Spawn Freeze',
-                        desc: 'After each block lands, there\'s a 2-second pause before the next block appears. This is your planning window — scan the grid for words, decide where you want the next letter, and get ready! If you\'re ready early, SWIPE DOWN once to break the freeze timer, then SWIPE DOWN again to drop the next block faster. In Speed Round challenges, there is NO freeze — the next block falls immediately!',
+                        desc: 'After a block lands, you get a 2-second pause before the next one falls. Use this to scan the board! Swipe down to skip the wait. In Speed Round, there\'s no freeze — blocks fall immediately!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9186,7 +10319,7 @@ class Game {
                     },
                     {
                         title: 'Pause & Resume',
-                        desc: 'Need a break? Tap the ⏸ pause button in the top-right corner during gameplay to freeze the action. The game pauses completely — no blocks fall and the timer stops. From the pause menu you can also view your found words list or toggle music. Tap Resume to pick up right where you left off. On desktop, press ESCAPE or P to toggle pause.',
+                        desc: 'Tap ⏸ to pause the game. The timer stops and no blocks fall. From the pause menu you can view found words or toggle music. Tap Resume to continue. On desktop, press Escape or P.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9224,6 +10357,150 @@ class Game {
                                 gT(ctx, w / 2, oy + cs * 3.3, 'Tap Resume to continue', '#999', Math.floor(cs * 0.22));
                             }
                         }
+                    },
+                    {
+                        title: 'Hints',
+                        desc: 'Toggle hints with the ◈ button on the right side of the screen. When on, cells glow orange if they\'re one letter away from completing a word. Drop the right letter there and the word forms instantly! Hints update after every move.',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            const placed = [[4,0,'C'],[4,1,'A'],[4,3,'S'],[4,4,'E'],
+                                            [3,0,'R'],[3,2,'N']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
+                            const cyc = t % 5;
+                            // Orange glowing hint cell
+                            const hintGlow = `rgba(255,165,0,${0.4 + 0.3 * Math.sin(t * 4)})`;
+                            gC(ctx, ox, oy, cs, 4, 2, '', '#3a3933', hintGlow);
+                            // Hint toggle button on right side
+                            const btnX = ox + gs * cs + cs * 0.6, btnY = oy + gs * cs * 0.5;
+                            const btnR = cs * 0.35;
+                            const pulse = 1 + Math.sin(t * 3) * 0.08;
+                            ctx.save();
+                            ctx.translate(btnX, btnY); ctx.scale(pulse, pulse);
+                            ctx.beginPath(); ctx.arc(0, 0, btnR, 0, Math.PI * 2);
+                            ctx.fillStyle = 'rgba(255,165,0,0.2)'; ctx.fill();
+                            ctx.strokeStyle = 'rgba(255,165,0,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+                            ctx.fillStyle = '#ffa500';
+                            ctx.font = `bold ${Math.floor(btnR * 0.9)}px sans-serif`;
+                            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.fillText('◈', 0, 0);
+                            ctx.restore();
+                            gT(ctx, w / 2, oy - cs * 0.7, 'Hint: one letter away!', '#b0a878', Math.floor(cs * 0.3));
+                            if (cyc > 2) {
+                                const row = lerp(-1, 4, ease(clamp((cyc - 2) / 1.5, 0, 1)));
+                                gF(ctx, ox, oy, cs, clamp(row, -0.5, 4), 2, 'T');
+                                if (cyc > 3.8) {
+                                    const word = [[4,0],[4,1],[4,2]];
+                                    for (const [wr,wc] of word) {
+                                        ctx.save(); ctx.shadowColor = '#8cb860'; ctx.shadowBlur = 8;
+                                        ctx.strokeStyle = '#8cb860'; ctx.lineWidth = 2;
+                                        ctx.strokeRect(ox + wc * cs + 3, oy + wr * cs + 3, cs - 6, cs - 6);
+                                        ctx.restore();
+                                    }
+                                    gC(ctx, ox, oy, cs, 4, 2, 'T', '#4a5c38', '#8cb860');
+                                    gT(ctx, w / 2, oy + gs * cs + cs * 0.5, '"CAT" complete!', '#8cb860', Math.floor(cs * 0.3));
+                                }
+                            }
+                        }
+                    },
+                    {
+                        title: 'Bonus Slots',
+                        desc: 'Buy up to 3 bonus slots in the Shop to save power-ups for later. Fill a slot with any bonus type for 500 coins. During gameplay, tap the ⬡ button on the left to open your slots, then tap a filled slot to use that bonus!',
+                        draw(ctx, w, h, t) {
+                            const gs = 5, { cs, ox, oy } = gL(w, h, gs);
+                            gBg(ctx, ox, oy, cs, gs);
+                            // Some letters on the grid
+                            const placed = [[4,0,'W'],[4,1,'O'],[4,2,'R'],[4,3,'D'],[4,4,'S'],
+                                            [3,1,'A'],[3,3,'L']];
+                            for (const [r,c,l] of placed) gC(ctx, ox, oy, cs, r, c, l, '#3a3933');
+
+                            const cyc = t % 8;
+
+                            // ⬡ toggle button on left side
+                            const toggleX = ox - cs * 1.2, toggleY = oy + gs * cs * 0.35;
+                            const toggleR = cs * 0.45;
+                            const isOpen = cyc > 1.5;
+                            const togglePulse = (!isOpen && cyc > 0.5) ? 1 + Math.sin(t * 5) * 0.1 : 1;
+
+                            ctx.save();
+                            ctx.translate(toggleX, toggleY); ctx.scale(togglePulse, togglePulse);
+                            ctx.beginPath(); ctx.arc(0, 0, toggleR, 0, Math.PI * 2);
+                            ctx.fillStyle = isOpen ? 'rgba(226,216,166,0.2)' : 'rgba(255,255,255,0.08)';
+                            ctx.fill();
+                            ctx.strokeStyle = isOpen ? '#e2d8a6' : 'rgba(226,216,166,0.5)';
+                            ctx.lineWidth = 1.5; ctx.stroke();
+                            ctx.fillStyle = isOpen ? '#e2d8a6' : 'rgba(226,216,166,0.55)';
+                            ctx.font = `bold ${Math.floor(toggleR * 0.9)}px sans-serif`;
+                            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.fillText('⬡', 0, 1);
+                            ctx.restore();
+
+                            if (!isOpen) {
+                                gTap(ctx, toggleX, toggleY, t);
+                                gT(ctx, w / 2, oy - cs * 0.7, 'Tap ⬡ to open slots', '#e2d8a6', Math.floor(cs * 0.3));
+                            }
+
+                            // Radial slot buttons (fan out when open)
+                            if (isOpen) {
+                                const slotData = [
+                                    { icon: '💣', filled: true },
+                                    { icon: '★', filled: true },
+                                    { icon: '', filled: false }
+                                ];
+                                const slotR = cs * 0.35;
+                                const fanProgress = ease(clamp((cyc - 1.5) / 0.8, 0, 1));
+
+                                for (let i = 0; i < 3; i++) {
+                                    const sd = slotData[i];
+                                    const targetY = toggleY + (i + 1) * (slotR * 2.4);
+                                    const slotY = lerp(toggleY, targetY, fanProgress);
+                                    const slotX = toggleX;
+
+                                    ctx.beginPath(); ctx.arc(slotX, slotY, slotR, 0, Math.PI * 2);
+                                    if (sd.filled) {
+                                        ctx.fillStyle = 'rgba(212,160,96,0.15)'; ctx.fill();
+                                        ctx.strokeStyle = '#d4a060'; ctx.lineWidth = 1.5; ctx.stroke();
+                                        ctx.fillStyle = '#fff';
+                                        ctx.font = `${Math.floor(slotR * 0.8)}px sans-serif`;
+                                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                        ctx.fillText(sd.icon, slotX, slotY);
+                                    } else {
+                                        ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fill();
+                                        ctx.setLineDash([3, 3]);
+                                        ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.stroke();
+                                        ctx.setLineDash([]);
+                                        ctx.fillStyle = '#555';
+                                        ctx.font = `${Math.floor(slotR * 0.6)}px sans-serif`;
+                                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                        ctx.fillText('—', slotX, slotY);
+                                    }
+                                }
+
+                                // Tap a filled slot to use it
+                                if (cyc > 3 && cyc < 5.5) {
+                                    const tapSlotY = lerp(toggleY, toggleY + 1 * (slotR * 2.4), 1);
+                                    gTap(ctx, toggleX, tapSlotY, t);
+                                    gT(ctx, w / 2, oy - cs * 0.7, 'Tap a slot to use it!', '#d4a060', Math.floor(cs * 0.3));
+                                }
+
+                                // Show bonus activated
+                                if (cyc > 5.5) {
+                                    const flash = Math.sin(t * 6) > 0;
+                                    gT(ctx, w / 2, oy - cs * 0.7, '💣 Bomb activated!',
+                                        flash ? '#e2d8a6' : '#d4a060', Math.floor(cs * 0.35));
+                                    // Show slot now empty
+                                    const usedSlotY = lerp(toggleY, toggleY + 1 * (slotR * 2.4), 1);
+                                    ctx.beginPath(); ctx.arc(toggleX, usedSlotY, slotR, 0, Math.PI * 2);
+                                    ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fill();
+                                    ctx.setLineDash([3, 3]);
+                                    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.stroke();
+                                    ctx.setLineDash([]);
+                                }
+                            }
+
+                            // Label at bottom
+                            gT(ctx, w / 2, oy + gs * cs + cs * 0.5, 'Buy slots in Shop · Fill for 500 coins', '#706c58', Math.floor(cs * 0.22));
+                        }
                     }
                 ]
             },
@@ -9235,7 +10512,7 @@ class Game {
                 slides: [
                     {
                         title: 'Earning Bonuses',
-                        desc: 'Every 1,000 points you score, you unlock a random bonus power-up! A glowing bonus button appears — tap it to activate. There are 7 types: Letter Pick, Bomb, Wildcard, Line Clear, Freeze, Shuffle, and Score ×2. Most bonuses also award bonus points when used! The randomizer is smart — it considers your play style, board state, and history to offer useful bonuses at the right time.',
+                        desc: 'Every 1,000 points, you earn a random bonus! Tap the glowing button to activate it. There are 7 types: Letter Pick, Bomb, Wildcard, Line Clear, Freeze, Shuffle, and Score ×2. Most bonuses also award bonus points!',
                         draw(ctx, w, h, t) {
                             const cyc = t % 4;
                             const score = cyc < 2 ? Math.floor(lerp(800, 1000, ease(Math.min(cyc / 2, 1)))) : 1000;
@@ -9261,7 +10538,7 @@ class Game {
                     },
                     {
                         title: 'Letter Pick 🔤',
-                        desc: 'The Letter Pick bonus lets you choose EXACTLY which letter you want for your next falling block. A full alphabet grid appears — tap any letter to select it. This is perfect when you\'re one letter away from completing a big word or setting up a chain reaction. Think strategically about which letter will score the most points!',
+                        desc: 'Choose exactly which letter you want next! A full alphabet grid appears — tap any letter to select it. Perfect when you\'re one letter away from completing a big word.',
                         draw(ctx, w, h, t) {
                             const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
                             const cols = 7, bsz = Math.floor(w / (cols + 2));
@@ -9292,7 +10569,7 @@ class Game {
                     },
                     {
                         title: 'Bomb 💣',
-                        desc: 'The Bomb replaces your next block with a 💣 that falls just like a normal letter. When it lands, it EXPLODES — clearing every letter in its entire landing ROW and the entire COLUMN it\'s in, forming a cross-shaped blast! You earn 15 bonus points for each letter cleared by the explosion. Drop it in a crowded intersection for maximum destruction and points!',
+                        desc: 'Your next block becomes a 💣 bomb. When it lands, it explodes and clears the entire row and column (cross shape). You earn 15 points per letter cleared. Drop it in a crowded spot for maximum effect!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9332,7 +10609,7 @@ class Game {
                     },
                     {
                         title: 'Wildcard ★',
-                        desc: 'The Wildcard places a golden ★ star block that counts as ANY letter! When checking for words, the game tries all 26 letters in that position to see if a valid word can be formed. It works in every direction — horizontal, vertical, and diagonal. A single wildcard can even complete MULTIPLE words at once if it\'s positioned at an intersection. It\'s the most versatile bonus in the game!',
+                        desc: 'Places a golden ★ block that counts as any letter. The game checks all 26 possibilities to find valid words. One wildcard can complete multiple words at once if it sits at an intersection!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9373,7 +10650,7 @@ class Game {
                     },
                     {
                         title: 'Line Clear & Freeze',
-                        desc: 'LINE CLEAR (─) lets you tap any two letters in a straight line — horizontal, vertical, or diagonal — and every letter between them gets selected! Press Clear to remove them (20 pts per letter) or Cancel to re-pick. Even a single letter works. FREEZE (□) pauses block falling for 10 seconds (+50 pts). Tap the freeze timer early to unfreeze and earn up to 100 bonus points based on time left!',
+                        desc: 'LINE CLEAR: Tap two letters in a straight line to select everything between them, then press Clear to remove them (20 pts each). FREEZE: Pauses block falling for 10 seconds (+50 pts). Tap the timer early to unfreeze and earn up to 100 bonus points!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, -10);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9436,7 +10713,7 @@ class Game {
                     },
                     {
                         title: 'Shuffle & Score ×2',
-                        desc: 'SHUFFLE (🔀) randomly rearranges ALL letters currently on the grid into new positions — this can break up dead-end layouts and sometimes accidentally create new words! Great when you feel stuck. SCORE ×2 (💰) activates a point multiplier that DOUBLES the score of your very next claimed word. Save it for a long word or a chain to maximize points — a 5-letter word goes from 250 to 500!',
+                        desc: 'SHUFFLE rearranges all letters on the grid randomly — great for breaking up dead-end layouts. SCORE ×2 doubles the points of your next claimed word. Save it for a long word to maximize the payoff!',
                         draw(ctx, w, h, t) {
                             const gs = 4, { cs, ox, oy } = gL(w, h, gs, -10);
                             const cyc = t % 8;
@@ -9487,7 +10764,7 @@ class Game {
                 slides: [
                     {
                         title: 'Sandbox & Timed',
-                        desc: 'Two main game modes to choose from! SANDBOX is relaxed with no time limit — play as long as you want until the grid fills up. Perfect for practicing and learning, but Sandbox earns only 25% of normal points and XP. TIMED mode gives you a countdown clock — score as many points as possible before time runs out! The game ends when either the timer hits zero or the grid fills up, whichever comes first.',
+                        desc: 'SANDBOX has no time limit — play until the grid fills up. Great for practice, but earns only 25% points and XP. TIMED gives you a countdown clock — score as much as you can before time runs out or the grid fills!',
                         draw(ctx, w, h, t) {
                             const mid = w / 2;
                             ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
@@ -9519,7 +10796,7 @@ class Game {
                     },
                     {
                         title: 'Grid Sizes & Difficulty',
-                        desc: 'Pick your grid from 3×3 (tiny and intense!) up to 8×8 (spacious for big words). Larger grids give you more room to build words but also more letters to manage. On 3×3 and 4×4 grids, 2-letter words like "IT" or "GO" are valid! Larger grids require 3+ letters. Two difficulty levels: NORMAL accepts the minimum word length, while HARD requires 4+ letters — short words won\'t count, forcing you to think bigger!',
+                        desc: 'Choose from 3×3 up to 8×8 grids. Larger grids give more room but more letters to manage. On 3×3 and 4×4, 2-letter words count! NORMAL mode requires minimum word length, HARD requires 4+ letters.',
                         draw(ctx, w, h, t) {
                             const sizes = [3, 5, 8];
                             const si = Math.floor(t * 0.4) % sizes.length;
@@ -9538,7 +10815,7 @@ class Game {
                     },
                     {
                         title: 'Hints System',
-                        desc: 'Keep an eye out for cells glowing ORANGE — these are hints! An orange glow means that cell is just ONE letter away from completing a valid word. If you can drop the right letter into that spot, the word will form instantly. Hints update in real-time as the grid changes, so check after every move. Toggle hints ON or OFF with the ◈ button on the RIGHT side of the screen during gameplay. They\'re your best friend for spotting opportunities you might otherwise miss!',
+                        desc: 'Cells glowing orange are hints — they\'re one letter away from completing a word. Drop the right letter there to complete it instantly. Toggle hints on or off with the ◈ button during gameplay. Hints update in real-time as the grid changes.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9576,7 +10853,7 @@ class Game {
                 slides: [
                     {
                         title: 'Target Word',
-                        desc: 'In Target Word challenge, a target word appears at the top of the screen along with your current Level. Your goal: spell that exact word somewhere in the grid — horizontally, vertically, or diagonally! Each time you spell the target word, you earn a 200-point bonus and advance to the next level. Early levels give you short, common words. As you progress through hundreds of levels, words get longer and harder! Your level is saved permanently, so you pick up right where you left off. All challenges are 7 minutes long.',
+                        desc: 'A target word appears at the top. Spell it anywhere on the grid to earn a 200-point bonus and advance to the next level. Words get longer and harder as you progress. Your level is saved permanently. All challenges are 7 minutes.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, 15);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9618,7 +10895,7 @@ class Game {
                     },
                     {
                         title: 'Speed Round',
-                        desc: 'Speed Round starts at normal pace, but every 500 points the falling speed INCREASES! Blocks drop faster and faster, leaving you less time to think and place them. There is NO spawn freeze — the next block starts falling immediately! The speed keeps ramping up until it hits maximum velocity. Score as high as you can in 3 minutes before the grid fills up! This challenge tests your reaction time and quick thinking.',
+                        desc: 'Blocks fall faster every 500 points — and there\'s no spawn freeze! Score as high as you can in 3 minutes before the grid fills up. Tests your reaction time and quick thinking.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9643,7 +10920,7 @@ class Game {
                     },
                     {
                         title: 'Word Category',
-                        desc: 'In Word Category challenge, you are given a category like "Food & Cooking" or "Animals" at the top of the screen. Your goal: find as many words that fit the category as possible! Category words earn 2× points, while other words earn only ¼ the usual points. The more category words you find, the more XP you earn. Finding zero category words slashes your XP! Swipe left on the Words Found screen to see your category matches. Game lasts 7 minutes.',
+                        desc: 'A category like "Food" or "Animals" appears at the top. Category words earn 2× points, other words earn only ¼. Find as many category matches as possible in 7 minutes! Swipe left on the results screen to see your matches.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, 15);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9675,7 +10952,7 @@ class Game {
                     },
                     {
                         title: 'Word Search',
-                        desc: 'Word Search is a completely different game mode! Instead of falling blocks, you get a grid filled with letters and must find hidden words by swiping across them. No word list is shown — you discover valid words yourself! Words can go horizontally, vertically, or diagonally. Each level is timed at 7 minutes. As you progress through hundreds of levels, grids get larger, words get longer and harder, and more directions are introduced. Your level is saved permanently!',
+                        desc: 'A grid filled with letters — find hidden words by swiping across them. Words go horizontal, vertical, or diagonal. As levels increase, grids get larger and words get harder. Your level is saved. Each round is 7 minutes.',
                         draw(ctx, w, h, t) {
                             const gs = 8, { cs, ox, oy } = gL(w, h, gs, 10);
                             gBg(ctx, ox, oy, cs, gs);
@@ -9734,7 +11011,7 @@ class Game {
                     },
                     {
                         title: 'Word Runner',
-                        desc: 'Word Runner is a side-scrolling action mode! Your character runs automatically through a neon-lit procedural world. TAP or PRESS SPACE to jump — you get up to 5 jumps (1 ground + 4 air). Dodge spike obstacles and leap over gaps — falling into a hole or hitting spikes ends the game! Floating letters appear in the air — run into them to collect and fill your word boxes. Press the VALIDATE button (or tap a filled box) to submit your word. Valid words earn big points and bonus coins; invalid words shake and clear. Choose your target word length (3-8) before starting. Speed increases the further you go!',
+                        desc: 'Side-scrolling action! Your character runs automatically. Tap or press space to jump (up to 5 jumps). Dodge spikes, leap gaps, and collect floating letters to fill word boxes. Submit valid words for points and coins. Speed increases as you go!',
                         _spineState: null,
                         draw(ctx, w, h, t) {
 
@@ -9959,7 +11236,7 @@ class Game {
                 slides: [
                     {
                         title: 'Skill-Based Rankings',
-                        desc: 'The leaderboard ranks players by a SKILL RATING — not just high scores. Your rating is calculated from multiple factors: scoring consistency, word quality, combo efficiency, and how many games you\'ve played. The more you play and improve, the higher your rating climbs. Ratings range from 0 to 10,000 and are updated after every game. You need at least 15 games before your rating stabilizes.',
+                        desc: 'Players are ranked by skill rating, not just high scores. Your rating (0–10,000) is based on consistency, word quality, combo efficiency, and games played. It updates after every game. You need 15 games for it to stabilize.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10008,7 +11285,7 @@ class Game {
                     },
                     {
                         title: 'Classes & Tabs',
-                        desc: 'Players are grouped into three classes based on their skill rating: HIGH CLASS (top tier, gold), MEDIUM CLASS (mid tier, blue), and LOW CLASS (still climbing). Filter the leaderboard by class to see where you stand among similar players. The leaderboard has tabs for OVERALL ranking plus separate tabs for each challenge mode — Target Word, Speed Round, Word Category, Word Search, and Word Runner — each with its own independent skill rating!',
+                        desc: 'Players are grouped into High, Medium, and Low classes. Filter by class to compare with similar players. Separate tabs show rankings for Overall and each challenge mode, each with its own skill rating.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10081,7 +11358,7 @@ class Game {
                     },
                     {
                         title: 'Player Analysis',
-                        desc: 'Tap any player on the leaderboard to see their detailed skill analysis! The analysis shows performance breakdowns: consistency, scoring trends, average word length, combo efficiency, and more. Use this to understand your strengths and identify areas to improve. Each challenge tab has its own analysis showing challenge-specific stats like target words hit, speed round survival, or category accuracy.',
+                        desc: 'Tap any player to see their stats — consistency, average word length, combo rate, rating trend, and more. Each challenge tab has its own analysis with challenge-specific stats.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10202,7 +11479,7 @@ class Game {
                     },
                     {
                         title: 'Reordering Tracks',
-                        desc: 'Want to change the play order? Each track has a ☰ drag handle on the right side. Press and hold the handle, then drag the track up or down to reposition it. The order you set is saved and used for auto-play — when one song finishes, the next one in your list starts automatically. Reorder the default "All Songs" list or any custom playlist you create!',
+                        desc: 'Hold the ☰ handle on any track and drag it up or down to reorder. Your custom order is used for auto-play — when one song ends, the next starts automatically.',
                         draw(ctx, w, h, t) {
                             const pad = 20, cw = w - pad * 2;
                             ctx.fillStyle = '#1a1a2e';
@@ -10246,7 +11523,7 @@ class Game {
                     },
                     {
                         title: 'Custom Playlists',
-                        desc: 'Create your own playlists! Tap the "+ New" tab at the top of the music screen to open the playlist creator. Give your playlist a name, then check the boxes next to the songs you want to include. Tap Save and your playlist appears as a new tab! You can switch between playlists by tapping the tabs. Each custom playlist can be renamed, deleted, or have tracks removed with the ✕ button.',
+                        desc: 'Tap "+ New" to create a playlist. Name it, check the songs you want, and tap Save. Your playlist appears as a new tab. You can rename, delete, or remove tracks with the ✕ button.',
                         draw(ctx, w, h, t) {
                             const pad = 20, cw = w - pad * 2;
                             const cyc = t % 8;
@@ -10335,7 +11612,7 @@ class Game {
                     },
                     {
                         title: 'In-Game Controls',
-                        desc: 'You don\'t have to leave the game to control your music! A mini now-playing bar appears at the bottom of the screen showing the current track name. It has ◁ previous, ▶ play/pause, and ▷ next buttons so you can skip songs or pause without interrupting your game. Music auto-advances to the next track in your playlist when a song finishes.',
+                        desc: 'A mini player bar appears at the bottom during gameplay. Use ◁ ▶ ▷ to skip or pause tracks without leaving the game. Music auto-advances when a song finishes.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, -30);
                             gBg(ctx, ox, oy, cs, gs);
@@ -10380,7 +11657,7 @@ class Game {
                     },
                     {
                         title: 'Mute & Unmute',
-                        desc: 'The ♪ speaker button in the top-right corner of the screen is always visible — on every screen and during gameplay. Tap it once to MUTE all music (the icon changes to ♭). Tap it again to UNMUTE and resume playback right where you left off. Your mute preference is saved, so it stays muted or unmuted across sessions. Perfect for when you need to quickly silence the music without pausing your game!',
+                        desc: 'The ♪ button in the top-right corner mutes or unmutes all music. It\'s on every screen. Your preference is saved across sessions.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#1a1a2e';
                             ctx.fillRect(20, 30, w - 40, h - 60);
@@ -10464,7 +11741,7 @@ class Game {
                 slides: [
                     {
                         title: 'How XP Works',
-                        desc: 'Every game earns XP based on multiple factors: your score, grid size (smaller grids give more XP!), word quality (longer words = bigger bonus), difficulty, game mode, time pressure, and how you perform against your personal best. Finding long words, beating your high score, surviving timed modes, and playing on small grids all boost your XP! Note: Sandbox mode earns only 25% XP compared to Timed.',
+                        desc: 'Every game earns XP based on your score, grid size, word quality, difficulty, and game mode. Smaller grids and harder modes give more XP. Sandbox earns only 25% XP.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10520,7 +11797,7 @@ class Game {
                     },
                     {
                         title: 'Beating Your Best',
-                        desc: 'Your best score in each mode combo (grid size + difficulty + game type) is tracked. Score higher than your personal best to get bonus XP! The bigger the improvement, the bigger the bonus. If you score much lower, you still get XP, but less. The system compares every game against YOUR history — you\'re always competing with yourself.',
+                        desc: 'Your best score in each mode combo is tracked. Beat your personal best to get bonus XP! The bigger the improvement, the bigger the bonus.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10575,7 +11852,7 @@ class Game {
                 slides: [
                     {
                         title: 'Earning Coins',
-                        desc: 'You earn coins by playing the game! Every word you find awards coins based on its length — longer words earn more. Building combos by claiming words quickly in a row adds a combo coin bonus. You also earn coins when you level up, and milestone achievements (like finding 50 unique words or reaching Level 5) award big one-time coin payouts. Check your coin balance in the top bar during gameplay or in the Shop.',
+                        desc: 'Earn coins by finding words — longer words earn more. Combos add a coin bonus. You also earn coins from leveling up and milestone achievements.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10609,7 +11886,7 @@ class Game {
                     },
                     {
                         title: 'Browsing the Shop',
-                        desc: 'Open the Shop from the main menu. The shop has four tabs: Grid (visual themes for the game board), Blocks (letter block styles), Slots (extra bonus storage slots), and Perks (one-time starting perks for your next game). Swipe left or right on the shop content to switch between tabs, or tap the tab buttons at the top. Your current coin balance is shown in the top-right corner of the shop screen.',
+                        desc: 'The shop has four tabs: Grid (board themes), Blocks (letter styles), Slots (bonus storage), and Perks (one-time boosts). Swipe between tabs or tap them. Your coin balance shows in the top-right.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10661,7 +11938,7 @@ class Game {
                     },
                     {
                         title: 'Buying & Equipping',
-                        desc: 'Tap an item in the shop to see its details. If you have enough coins, tap "Buy" to purchase it. Cosmetic items (Grid Themes and Block Styles) can be equipped after buying — tap "Equip" to apply them to your game. You can only have one grid theme and one block style active at a time. Items you own show an "Owned" badge, and the one you\'re using shows "Equipped".',
+                        desc: 'Tap an item to see details, then tap Buy if you have enough coins. Cosmetics can be equipped after buying — one grid theme and one block style active at a time. Owned items show badges.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10705,7 +11982,7 @@ class Game {
                     },
                     {
                         title: 'Bonus Slots & Perks',
-                        desc: 'BONUS SLOTS let you store extra bonuses during gameplay instead of using them immediately. Buy up to 3 slots from the shop — they\'re permanent unlocks! During a game, when a bonus appears, you can save it in a slot for later. STARTING PERKS are one-time boosts you activate before a game — like Head Start (+200 starting points), Slow Start (slower drops for 30 seconds), or Lucky Draw (guaranteed powerful first bonus). Buy perks, and they\'ll be available to use at the start of your next game.',
+                        desc: 'Buy up to 3 bonus slots to store power-ups for later instead of using them right away. Starting perks give a one-time boost to your next game — like extra points, slower drops, or a guaranteed strong first bonus.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10750,7 +12027,7 @@ class Game {
                     },
                     {
                         title: 'Milestones',
-                        desc: 'Milestones are one-time achievements that reward you with coins! They unlock automatically as you play — find unique words, play games, reach levels, score high, and maintain play streaks. When you earn a milestone, a gold toast notification appears with the achievement name and coin reward. Check the Leveling tutorial to learn how XP and levels work, since some milestones are tied to reaching specific levels.',
+                        desc: 'Milestones are one-time achievements that reward coins. They unlock as you find words, play games, reach levels, and build streaks. A gold notification appears when you earn one.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -10782,6 +12059,282 @@ class Game {
                         }
                     }
                 ]
+            },
+
+            // ═══ DICTIONARY ═══
+            {
+                id: 'dictionary', icon: '📖', label: 'Dictionary',
+                desc: 'Browse words, definitions, synonyms & filters',
+                slides: [
+                    {
+                        title: 'Search & Browse',
+                        desc: 'Open the Dictionary from the main menu. Use the search bar to find any word, or tap a letter in the A-Z bar to jump to that section. Over 20,000 words to explore!',
+                        draw(ctx, w, h, t) {
+                            const pad = 20, cw = w - pad * 2;
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(pad, 20, cw, h - 40);
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
+                            ctx.strokeRect(pad, 20, cw, h - 40);
+
+                            gT(ctx, w / 2, 42, '📖 Dictionary', '#e2d8a6', 16);
+
+                            // Search bar
+                            const searchY = 56;
+                            ctx.fillStyle = '#222'; ctx.fillRect(pad + 12, searchY, cw - 24, 26);
+                            ctx.strokeStyle = '#5c5b4c'; ctx.strokeRect(pad + 12, searchY, cw - 24, 26);
+                            const cyc = t % 6;
+                            const searchText = 'plum';
+                            const typed = searchText.substring(0, Math.floor(clamp(cyc / 1.5, 0, 1) * searchText.length));
+                            ctx.fillStyle = typed ? '#fff' : '#706c58';
+                            ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                            ctx.fillText(typed ? '⌕ ' + typed.toUpperCase() : '⌕ Search words...', pad + 20, searchY + 13);
+
+                            // A-Z bar
+                            const azY = searchY + 34;
+                            const azH = 14, azLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                            const letterW = (cw - 24) / 26;
+                            const activeIdx = Math.floor(t * 2) % 26;
+                            for (let i = 0; i < 26; i++) {
+                                const lx = pad + 12 + i * letterW;
+                                const isActive = i === activeIdx;
+                                ctx.fillStyle = isActive ? '#e2d8a6' : '#706c58';
+                                ctx.font = `${isActive ? 'bold ' : ''}${Math.floor(letterW * 0.8)}px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(azLetters[i], lx + letterW / 2, azY + azH / 2);
+                            }
+
+                            // Word list entries
+                            const words = ['PLUMB', 'PLUME', 'PLUMMET', 'PLUMP', 'PLUNDER'];
+                            const startY = azY + azH + 12;
+                            for (let i = 0; i < words.length; i++) {
+                                const wy = startY + i * 28;
+                                if (wy > h - 50) break;
+                                const highlighted = cyc > 1.5 && i === 0;
+                                ctx.fillStyle = highlighted ? 'rgba(226,216,166,0.08)' : 'transparent';
+                                ctx.fillRect(pad + 12, wy, cw - 24, 24);
+                                ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
+                                ctx.strokeRect(pad + 12, wy, cw - 24, 24);
+                                ctx.fillStyle = highlighted ? '#e2d8a6' : '#b0a878';
+                                ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+                                ctx.fillText(words[i], pad + 20, wy + 14);
+                                // Length badge
+                                ctx.fillStyle = '#4a493e';
+                                const bw = 16, bx = pad + cw - 36;
+                                ctx.fillRect(bx, wy + 5, bw, 14);
+                                ctx.fillStyle = '#888'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+                                ctx.fillText(words[i].length, bx + bw / 2, wy + 13);
+                            }
+
+                            gT(ctx, w / 2, h - 30, '20,000+ words', '#706c58', 10);
+                        }
+                    },
+                    {
+                        title: 'Filters',
+                        desc: 'Filter words by type (Nouns, Verbs, Adjectives, Adverbs), by length (2-3, 4-5, 6-7, 8+), or by category (Food, Animals, Nature, Tech, Sports, and more). Combine filters to narrow results.',
+                        draw(ctx, w, h, t) {
+                            const pad = 20, cw = w - pad * 2;
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(pad, 20, cw, h - 40);
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
+                            ctx.strokeRect(pad, 20, cw, h - 40);
+
+                            gT(ctx, w / 2, 42, 'Filter Words', '#e2d8a6', 16);
+
+                            // POS filter chips
+                            const posFilters = ['All', '📦 Nouns', '⚡ Verbs', '✨ Adj', '📣 Adv'];
+                            const posY = 58;
+                            const posActive = Math.floor(t * 0.5) % posFilters.length;
+                            let posX = pad + 12;
+                            for (let i = 0; i < posFilters.length; i++) {
+                                const chipW = ctx.measureText ? 8 + posFilters[i].length * 6.5 : 50;
+                                ctx.font = '10px sans-serif';
+                                const tw = posFilters[i].length * 6 + 12;
+                                const isA = i === posActive;
+                                ctx.fillStyle = isA ? '#e2d8a6' : '#333';
+                                ctx.fillRect(posX, posY, tw, 20);
+                                ctx.strokeStyle = isA ? '#e2d8a6' : '#5c5b4c'; ctx.lineWidth = 1;
+                                ctx.strokeRect(posX, posY, tw, 20);
+                                ctx.fillStyle = isA ? '#111' : '#888';
+                                ctx.font = `${isA ? 'bold ' : ''}9px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(posFilters[i], posX + tw / 2, posY + 10);
+                                posX += tw + 4;
+                            }
+
+                            // Length filter chips
+                            const lenFilters = ['2-3', '4-5', '6-7', '8+'];
+                            const lenY = posY + 28;
+                            const lenActive = Math.floor(t * 0.4) % lenFilters.length;
+                            let lenX = pad + 12;
+                            gT(ctx, pad + 10, lenY - 4, 'Length:', '#706c58', 9);
+                            lenX = pad + 48;
+                            for (let i = 0; i < lenFilters.length; i++) {
+                                const tw = 28;
+                                const isA = i === lenActive;
+                                ctx.fillStyle = isA ? '#8cb860' : '#333';
+                                ctx.fillRect(lenX, lenY, tw, 20);
+                                ctx.strokeStyle = isA ? '#8cb860' : '#5c5b4c'; ctx.lineWidth = 1;
+                                ctx.strokeRect(lenX, lenY, tw, 20);
+                                ctx.fillStyle = isA ? '#111' : '#888';
+                                ctx.font = `${isA ? 'bold ' : ''}9px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(lenFilters[i], lenX + tw / 2, lenY + 10);
+                                lenX += tw + 4;
+                            }
+
+                            // Category chips
+                            const cats = ['🍕 Food', '🐾 Animals', '🌿 Nature', '💻 Tech', '⚽ Sports'];
+                            const catY = lenY + 28;
+                            let catX = pad + 12;
+                            for (let i = 0; i < cats.length; i++) {
+                                const tw = cats[i].length * 6.5 + 8;
+                                const isA = i === Math.floor(t * 0.6) % cats.length;
+                                ctx.fillStyle = isA ? '#7eb8ff' : '#333';
+                                ctx.fillRect(catX, catY, tw, 20);
+                                ctx.strokeStyle = isA ? '#7eb8ff' : '#5c5b4c'; ctx.lineWidth = 1;
+                                ctx.strokeRect(catX, catY, tw, 20);
+                                ctx.fillStyle = isA ? '#111' : '#888';
+                                ctx.font = `${isA ? 'bold ' : ''}9px sans-serif`;
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(cats[i], catX + tw / 2, catY + 10);
+                                catX += tw + 4;
+                                if (catX > w - pad - 20) { catX = pad + 12; }
+                            }
+
+                            // Result count
+                            const counts = [20000, 8200, 5400, 3100, 820];
+                            const count = counts[posActive];
+                            gT(ctx, w / 2, h - 48, count.toLocaleString() + ' results', '#b0a878', 12);
+
+                            // Sample filtered results
+                            const resultY = catY + 32;
+                            const results = ['APPLE', 'BACON', 'BREAD', 'CAKE'];
+                            for (let i = 0; i < results.length; i++) {
+                                const ry = resultY + i * 22;
+                                if (ry > h - 58) break;
+                                ctx.fillStyle = '#b0a878'; ctx.font = '10px sans-serif';
+                                ctx.textAlign = 'left'; ctx.fillText(results[i], pad + 20, ry);
+                            }
+                        }
+                    },
+                    {
+                        title: 'Word Cards',
+                        desc: 'Tap any word to expand its card. See definitions with part-of-speech tags, synonyms you can tap to jump to, and length badges. A great way to discover new words for your next game!',
+                        draw(ctx, w, h, t) {
+                            const pad = 20, cw = w - pad * 2;
+                            ctx.fillStyle = '#1a1a2e';
+                            ctx.fillRect(pad, 20, cw, h - 40);
+                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
+                            ctx.strokeRect(pad, 20, cw, h - 40);
+
+                            const cyc = t % 6;
+                            const isExpanded = cyc > 1.5;
+
+                            // Collapsed card
+                            const cardY = 36;
+                            const cardH = isExpanded ? 130 : 32;
+                            ctx.fillStyle = isExpanded ? 'rgba(226,216,166,0.06)' : '#222';
+                            ctx.fillRect(pad + 10, cardY, cw - 20, cardH);
+                            ctx.strokeStyle = isExpanded ? '#e2d8a6' : '#4a493e'; ctx.lineWidth = 1;
+                            ctx.strokeRect(pad + 10, cardY, cw - 20, cardH);
+
+                            // Word title
+                            ctx.fillStyle = '#e2d8a6'; ctx.font = 'bold 13px sans-serif';
+                            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                            ctx.fillText('PLUMMET', pad + 18, cardY + 16);
+
+                            // POS badges
+                            const badges = [{ label: 'noun', color: '#4a7a4a' }, { label: 'verb', color: '#4a4a7a' }];
+                            let bx = pad + 82;
+                            for (const b of badges) {
+                                const bw = b.label.length * 6.5 + 8;
+                                ctx.fillStyle = b.color; ctx.fillRect(bx, cardY + 8, bw, 16);
+                                ctx.fillStyle = '#ddd'; ctx.font = '9px sans-serif';
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(b.label, bx + bw / 2, cardY + 16);
+                                bx += bw + 4;
+                            }
+
+                            // Length badge
+                            ctx.fillStyle = '#4a493e';
+                            ctx.fillRect(pad + cw - 42, cardY + 8, 22, 16);
+                            ctx.fillStyle = '#888'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+                            ctx.fillText('7', pad + cw - 31, cardY + 16);
+
+                            // Chevron
+                            ctx.fillStyle = '#888'; ctx.font = '12px sans-serif';
+                            ctx.textAlign = 'right';
+                            ctx.fillText(isExpanded ? '▴' : '▾', pad + cw - 16, cardY + 16);
+
+                            if (isExpanded) {
+                                // Definitions
+                                const defY = cardY + 38;
+                                ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+                                ctx.fillText('1. (noun) a steep, rapid fall', pad + 18, defY);
+                                ctx.fillText('2. (verb) to fall or drop straight', pad + 18, defY + 16);
+                                ctx.fillText('   down at high speed', pad + 18, defY + 28);
+
+                                // Synonyms
+                                const synY = defY + 46;
+                                ctx.fillStyle = '#706c58'; ctx.font = '9px sans-serif';
+                                ctx.fillText('Synonyms:', pad + 18, synY);
+                                const syns = ['drop', 'fall', 'plunge', 'dive'];
+                                let sx = pad + 18;
+                                for (const syn of syns) {
+                                    const sw = syn.length * 6 + 10;
+                                    ctx.fillStyle = '#2a2a3e'; ctx.fillRect(sx, synY + 6, sw, 18);
+                                    ctx.strokeStyle = '#5c5b4c'; ctx.lineWidth = 0.5;
+                                    ctx.strokeRect(sx, synY + 6, sw, 18);
+                                    ctx.fillStyle = '#7eb8ff'; ctx.font = '9px sans-serif';
+                                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                    ctx.fillText(syn, sx + sw / 2, synY + 15);
+                                    sx += sw + 4;
+                                }
+                            }
+
+                            if (!isExpanded) {
+                                gTap(ctx, w / 2, cardY + 16, t);
+                                gT(ctx, w / 2, cardY + 46, 'Tap to expand', '#706c58', 10);
+                            }
+
+                            // Second card (collapsed) below
+                            const card2Y = cardY + cardH + 8;
+                            if (card2Y < h - 60) {
+                                ctx.fillStyle = '#222';
+                                ctx.fillRect(pad + 10, card2Y, cw - 20, 32);
+                                ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
+                                ctx.strokeRect(pad + 10, card2Y, cw - 20, 32);
+                                ctx.fillStyle = '#b0a878'; ctx.font = 'bold 13px sans-serif';
+                                ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                                ctx.fillText('PLUMP', pad + 18, card2Y + 16);
+                                ctx.fillStyle = '#4a7a4a'; ctx.fillRect(pad + 70, card2Y + 8, 28, 16);
+                                ctx.fillStyle = '#ddd'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+                                ctx.fillText('adj', pad + 84, card2Y + 16);
+                                ctx.fillStyle = '#888'; ctx.font = '12px sans-serif';
+                                ctx.textAlign = 'right';
+                                ctx.fillText('▾', pad + cw - 16, card2Y + 16);
+                            }
+
+                            // Third card
+                            const card3Y = card2Y + 40;
+                            if (card3Y < h - 58) {
+                                ctx.fillStyle = '#222';
+                                ctx.fillRect(pad + 10, card3Y, cw - 20, 32);
+                                ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
+                                ctx.strokeRect(pad + 10, card3Y, cw - 20, 32);
+                                ctx.fillStyle = '#b0a878'; ctx.font = 'bold 13px sans-serif';
+                                ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                                ctx.fillText('PLUNDER', pad + 18, card3Y + 16);
+                                ctx.fillStyle = '#4a4a7a'; ctx.fillRect(pad + 82, card3Y + 8, 30, 16);
+                                ctx.fillStyle = '#ddd'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+                                ctx.fillText('verb', pad + 97, card3Y + 16);
+                                ctx.fillStyle = '#888'; ctx.font = '12px sans-serif';
+                                ctx.textAlign = 'right';
+                                ctx.fillText('▾', pad + cw - 16, card3Y + 16);
+                            }
+                        }
+                    }
+                ]
             }
         ];
     }
@@ -10789,10 +12342,35 @@ class Game {
     _openTutorial() {
         this._initTutorialSlides();
         this._stopTutorialAnim();
+        this._tutorialMenuView = 'root';
+        this._tutorialParentMenuView = 'root';
+        this._renderTutorialMenu();
 
-        // Build category buttons
+        this.els.tutorialMenu.style.display = '';
+        this.els.tutorialSlides.classList.add('hidden');
+        this.els.tutorialOverlay.classList.add('active');
+    }
+
+    _renderTutorialMenu() {
+        if (this._tutorialMenuView === 'guided') {
+            this._renderGuidedTutorialMenu();
+            return;
+        }
+        this._renderTutorialRootMenu();
+    }
+
+    _renderTutorialRootMenu() {
         const list = this.els.tutorialMenuList;
         list.innerHTML = '';
+
+        // Guided Tours section hidden for now — code preserved, UI removed
+        // To re-enable, uncomment the guided heading + button block below
+
+        const standardHeading = document.createElement('div');
+        standardHeading.className = 'tutorial-menu-section-title';
+        standardHeading.textContent = 'Tutorial Library';
+        list.appendChild(standardHeading);
+
         for (let i = 0; i < this._tutorialCategories.length; i++) {
             const cat = this._tutorialCategories[i];
             const btn = document.createElement('button');
@@ -10802,18 +12380,1486 @@ class Game {
                     <span class="tutorial-cat-label">${cat.label}</span>
                     <span class="tutorial-cat-desc">${cat.desc}</span>
                 </span>`;
-            btn.addEventListener('click', () => this._openTutorialCategory(i));
+            btn.addEventListener('click', () => this._openTutorialCategory(i, 'root'));
             list.appendChild(btn);
         }
-
-        this.els.tutorialMenu.style.display = '';
-        this.els.tutorialSlides.classList.add('hidden');
-        this.els.tutorialOverlay.classList.add('active');
     }
 
-    _openTutorialCategory(catIndex) {
+    _renderGuidedTutorialMenu() {
+        const list = this.els.tutorialMenuList;
+        list.innerHTML = '';
+
+        const backBtn = document.createElement('button');
+        backBtn.className = 'tutorial-submenu-back-btn';
+        backBtn.textContent = '← Back to Tutorials';
+        backBtn.addEventListener('click', () => {
+            this._tutorialMenuView = 'root';
+            this._renderTutorialMenu();
+        });
+        list.appendChild(backBtn);
+
+        const heading = document.createElement('div');
+        heading.className = 'tutorial-menu-section-title';
+        heading.textContent = 'Guided Tour Options';
+        list.appendChild(heading);
+
+        const note = document.createElement('div');
+        note.className = 'tutorial-guided-note';
+        note.textContent = 'These entries are now grouped in their own guided-tour submenu at the top of the tutorial menu.';
+        list.appendChild(note);
+
+        const options = this._getGuidedTutorialOptions();
+        for (const option of options) {
+            const btn = document.createElement('button');
+            btn.className = 'tutorial-category-btn tutorial-guided-option-btn';
+            btn.innerHTML = `<span class="tutorial-cat-icon">${option.icon}</span>
+                <span class="tutorial-cat-info">
+                    <span class="tutorial-cat-label">${option.label}</span>
+                    <span class="tutorial-cat-desc">${option.desc}</span>
+                </span>`;
+            btn.addEventListener('click', () => this._openGuidedTutorialOption(option));
+            list.appendChild(btn);
+        }
+    }
+
+    _getGuidedTutorialOptions() {
+        return [
+            {
+                id: 'guided-general',
+                icon: '◉',
+                label: 'General Tour',
+                desc: 'Main grid gameplay, pause menu, hints, shop, dictionary, and music.',
+                fallbackCategoryId: 'basics',
+            },
+            {
+                id: 'guided-target-word',
+                icon: '◎',
+                label: 'Target Word Tour',
+                desc: 'Challenge-specific walkthrough for Target Word.',
+                fallbackCategoryId: 'challenges',
+            },
+            {
+                id: 'guided-speed-round',
+                icon: '▲',
+                label: 'Speed Round Tour',
+                desc: 'Challenge-specific walkthrough for Speed Round.',
+                fallbackCategoryId: 'challenges',
+            },
+            {
+                id: 'guided-word-category',
+                icon: '▦',
+                label: 'Word Category Tour',
+                desc: 'Challenge-specific walkthrough for category-based scoring.',
+                fallbackCategoryId: 'challenges',
+            },
+            {
+                id: 'guided-word-search',
+                icon: '🔍',
+                label: 'Word Search Tour',
+                desc: 'Challenge-specific walkthrough for hidden-word gameplay.',
+                fallbackCategoryId: 'challenges',
+            },
+            {
+                id: 'guided-word-runner',
+                icon: '🏃',
+                label: 'Word Runner Tour',
+                desc: 'Challenge-specific walkthrough for the runner mode.',
+                fallbackCategoryId: 'challenges',
+            },
+            {
+                id: 'guided-bonuses',
+                icon: '◇',
+                label: 'Bonuses Tour',
+                desc: 'Dedicated walkthrough for bonuses, slots, and power-ups.',
+                fallbackCategoryId: 'bonuses',
+            },
+            {
+                id: 'guided-leaderboard',
+                icon: '⬡',
+                label: 'Leaderboards & Skill System',
+                desc: 'Dedicated walkthrough for leaderboards, classes, and skill rating.',
+                fallbackCategoryId: 'leaderboard',
+            },
+        ];
+    }
+
+    _openGuidedTutorialOption(option) {
+        this._startGuidedTour(option.id);
+    }
+
+    _startGuidedTour(tourId) {
+        const tours = this._getGuidedTourDefinitions();
+        const tour = tours[tourId];
+        if (!tour) return;
+
+        this._cleanupGuidedTourStep();
+        this._guidedTour.active = true;
+        this._guidedTour.tour = tour;
+        this._guidedTour.stepIndex = 0;
+        this._guidedTour.restoreTutorialOverlay = this.els.tutorialOverlay.classList.contains('active');
+        this._guidedTour.restoreTutorialMenuView = this._tutorialMenuView || 'root';
+        this._guidedTour.restoreScreen = this._activeScreen || 'menu';
+        this._guidedTour.restoreMenuPage = this._menuPage || 1;
+
+        this._stopTutorialAnim();
+        this._unbindTutorialSwipe();
+        this.els.tutorialOverlay.classList.remove('active');
+
+        this.els.guidedTourOverlay.classList.add('active');
+        // Ensure clean initial state for overlay layers
+        this.els.guidedTourDim.style.opacity = '0';
+        this.els.guidedTourFocus.style.opacity = '0';
+        this.els.guidedTourCard.classList.remove('visible');
+        this.els.guidedTourCard.classList.remove('hidden');
+        if (!this._guidedTour.resizeHandler) {
+            this._guidedTour.resizeHandler = () => this._positionGuidedTourStep();
+        }
+        window.addEventListener('resize', this._guidedTour.resizeHandler);
+        this._enterGuidedTourStep(0);
+    }
+
+    _getGuidedTourDefinitions() {
+        const call = (method, ...args) => ({ type: 'call', method, args });
+        const hot = (container, x, y, width, height, extra = {}) => ({
+            type: 'hotspot',
+            container,
+            x,
+            y,
+            width,
+            height,
+            radius: extra.radius || '18px',
+        });
+
+        return {
+            'guided-general': {
+                label: 'General Tour',
+                steps: [
+                    {
+                        title: 'Welcome to PLUMMET!',
+                        body: 'Let\'s walk you through the game step by step. We\'ll show you how everything works so you\'re ready to play!',
+                        mode: 'continue',
+                        target: '#menu-profile-name',
+                        onEnter: [call('_setupGuidedMenuPage', 1)],
+                        focusPadding: 10,
+                        hideArrow: true,
+                    },
+                    {
+                        title: 'Game Settings',
+                        body: 'Before you play, pick your grid size and difficulty here. Bigger grids and harder modes give more points but are trickier!',
+                        mode: 'continue',
+                        target: '#grid-size-selector',
+                        onEnter: [call('_setupGuidedMenuPage', 1)],
+                        focusPadding: 12,
+                    },
+                    {
+                        title: 'Challenges',
+                        body: 'Tap here to try special game modes like Target Word, Speed Round, and more. Each one has different rules and rewards.',
+                        mode: 'continue',
+                        target: '#challenges-btn',
+                        onEnter: [call('_setupGuidedMenuPage', 1)],
+                    },
+                    {
+                        title: 'Start Playing!',
+                        body: 'Tap the Start button to jump into a practice round. Don\'t worry — this is just for learning!',
+                        mode: 'tap-target',
+                        target: '#start-btn',
+                        onEnter: [call('_setupGuidedMenuPage', 1)],
+                        onAdvance: [call('_setupGuidedPlummetScene', {
+                            score: 0,
+                            coins: 12,
+                            nextLetter: 'A',
+                            bonusVisible: true,
+                            popupText: 'Guided practice board',
+                            levelText: 'Lv. 6',
+                            xpText: '420 / 700',
+                            wordsButtonText: 'Words So Far',
+                        })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Your Game Info',
+                        body: 'This bar at the top shows your score, coins, level, and high score. Keep an eye on it during the game!',
+                        mode: 'continue',
+                        target: '#score-bar',
+                        focusPadding: 14,
+                    },
+                    {
+                        title: 'Next Letter',
+                        body: 'This shows what letter is coming next. Use it to plan ahead instead of just reacting!',
+                        mode: 'continue',
+                        target: '#next-letter-display',
+                    },
+                    {
+                        title: 'Place a Letter',
+                        body: 'Tap the glowing spot on the board to drop a letter there. Try to spell words across or down!',
+                        mode: 'tap-target',
+                        target: hot('#canvas-wrapper', 0.43, 0.36, 0.14, 0.14),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedPlummetScene', {
+                            score: 120,
+                            coins: 15,
+                            nextLetter: 'R',
+                            bonusVisible: true,
+                            popupText: 'CAT +120',
+                            levelText: 'Lv. 6',
+                            xpText: '448 / 700',
+                        })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Make Multiple Words!',
+                        body: 'Nice — one letter can make more than one word at a time! Tap here to see it in action.',
+                        mode: 'tap-target',
+                        target: hot('#canvas-wrapper', 0.58, 0.51, 0.14, 0.14),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedPlummetScene', {
+                            score: 340,
+                            coins: 22,
+                            nextLetter: 'E',
+                            bonusVisible: true,
+                            popupText: 'CAT +120   CAR +100',
+                            radialVisible: true,
+                            levelText: 'Lv. 6',
+                            xpText: '501 / 700',
+                        })],
+                        showPointer: true,
+                        pointerX: 0.72,
+                        pointerY: 0.62,
+                    },
+                    {
+                        title: 'Need a Hint?',
+                        body: 'Stuck? Tap the hint button to get help finding a word. It\'s right here on the board.',
+                        mode: 'continue',
+                        target: '#hints-btn',
+                    },
+                    {
+                        title: 'Bonuses',
+                        body: 'The Bonus button gives you a power-up right away. The slots around it let you save power-ups for later when you really need them.',
+                        mode: 'continue',
+                        target: '#radial-menu',
+                        focusPadding: 14,
+                    },
+                    {
+                        title: 'Words So Far',
+                        body: 'Tap this to see all the words you\'ve made so far in the current game.',
+                        mode: 'continue',
+                        target: '#play-words-found-btn',
+                    },
+                    {
+                        title: 'Pause',
+                        body: 'Tap the pause button to take a break or access other options.',
+                        mode: 'tap-target',
+                        target: '#pause-btn',
+                        onAdvance: [call('_openGuidedPauseOverlay')],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Pause Menu',
+                        body: 'From here you can resume, check your words, open the dictionary, change music, visit the shop, or quit the game.',
+                        mode: 'continue',
+                        target: '#pause-overlay .overlay-content',
+                        focusPadding: 16,
+                    },
+                    {
+                        title: 'The Shop',
+                        body: 'Spend your coins here on themes, extra bonus slots, and other goodies to power up your game.',
+                        mode: 'continue',
+                        target: '#shop-tabs',
+                        onEnter: [call('_setupGuidedShopScene')],
+                    },
+                    {
+                        title: 'Dictionary',
+                        body: 'Look up any word! You can search, filter by length, and browse by category. Great for building your vocabulary.',
+                        mode: 'continue',
+                        target: '#dict-search-bar',
+                        onEnter: [call('_setupGuidedDictionaryScene')],
+                        focusPadding: 14,
+                    },
+                    {
+                        title: 'Music Player',
+                        body: 'Control the background music here — play, pause, skip, shuffle, and adjust volume.',
+                        mode: 'continue',
+                        target: '#now-playing-bar',
+                        onEnter: [call('_setupGuidedMusicScene')],
+                        focusPadding: 16,
+                    },
+                    {
+                        title: 'Tour Complete!',
+                        body: 'That\'s the basics — settings, gameplay, hints, bonuses, pause menu, shop, dictionary, and music. You\'re ready to play for real!',
+                        mode: 'continue',
+                        target: '#np-controls',
+                        hideArrow: true,
+                    },
+                ],
+            },
+            'guided-target-word': {
+                label: 'Target Word Tour',
+                steps: [
+                    {
+                        title: 'Target Word Mode',
+                        body: 'In this mode, you\'re given a specific word to spell. Tap this card to start!',
+                        mode: 'tap-target',
+                        target: '.challenge-card[data-challenge="target-word"]',
+                        onEnter: [call('_setupGuidedChallengeSelectScene')],
+                        onAdvance: [call('_setupGuidedChallengeSetupScene', CHALLENGE_TYPES.TARGET_WORD)],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Setup Screen',
+                        body: 'This is where you start the challenge. Check the details, then jump in when you\'re ready!',
+                        mode: 'continue',
+                        target: '#challenge-setup-name',
+                    },
+                    {
+                        title: 'Ready to Go',
+                        body: 'Hit this button to begin. Your goal is to spell the target word shown on screen.',
+                        mode: 'continue',
+                        target: '#challenge-start-btn',
+                    },
+                    {
+                        title: 'Your Target Word',
+                        body: 'See it right here! This is the word you need to spell. Keep your eye on it the whole time.',
+                        mode: 'continue',
+                        target: '#target-word-display',
+                        onEnter: [call('_setupGuidedPlummetScene', {
+                            score: 340,
+                            coins: 24,
+                            nextLetter: 'T',
+                            bonusVisible: false,
+                            popupText: 'Target Word practice',
+                            targetWord: 'TREE',
+                            targetLabel: 'TARGET:',
+                            showTargetWord: true,
+                            levelText: 'Lv. 9',
+                            xpText: '290 / 900',
+                        })],
+                    },
+                    {
+                        title: 'Build the Word',
+                        body: 'Tap the glowing spot to place a letter. Every letter you drop should help you spell the target!',
+                        mode: 'tap-target',
+                        target: hot('#canvas-wrapper', 0.48, 0.42, 0.14, 0.14),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedPlummetScene', {
+                            score: 520,
+                            coins: 29,
+                            nextLetter: 'E',
+                            bonusVisible: false,
+                            popupText: 'TREE progress +180',
+                            targetWord: 'TREE',
+                            targetLabel: 'TARGET:',
+                            showTargetWord: true,
+                            levelText: 'Lv. 9',
+                            xpText: '372 / 900',
+                        })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Finish the Word!',
+                        body: 'Almost there! Tap again to complete the target word and earn bonus points.',
+                        mode: 'tap-target',
+                        target: hot('#canvas-wrapper', 0.62, 0.34, 0.14, 0.14),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedPlummetScene', {
+                            score: 890,
+                            coins: 38,
+                            nextLetter: 'B',
+                            bonusVisible: true,
+                            popupText: 'TARGET COMPLETE +370',
+                            targetWord: 'BARK',
+                            targetLabel: 'NEXT:',
+                            showTargetWord: true,
+                            levelText: 'Lv. 10',
+                            xpText: '110 / 1000',
+                        })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Next Target!',
+                        body: 'Done! A new target word appears automatically. Keep spelling to rack up points!',
+                        mode: 'continue',
+                        target: '#target-word-display',
+                    },
+                ],
+            },
+            'guided-speed-round': {
+                label: 'Speed Round Tour',
+                steps: [
+                    {
+                        title: 'Speed Round Mode',
+                        body: 'This is a race against the clock! Spell words fast before time runs out. Tap here to start.',
+                        mode: 'tap-target',
+                        target: '.challenge-card[data-challenge="speed-round"]',
+                        onEnter: [call('_setupGuidedChallengeSelectScene')],
+                        onAdvance: [call('_setupGuidedChallengeSetupScene', CHALLENGE_TYPES.SPEED_ROUND)],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Setup Screen',
+                        body: 'Ready? Once you start, the timer begins ticking right away!',
+                        mode: 'continue',
+                        target: '#challenge-setup-name',
+                    },
+                    {
+                        title: 'The Timer',
+                        body: 'See the clock? It\'s counting down! You need to spell words quickly to score before time\'s up.',
+                        mode: 'continue',
+                        target: '#timer-score-item',
+                        onEnter: [call('_setupGuidedPlummetScene', {
+                            score: 680,
+                            coins: 18,
+                            nextLetter: 'S',
+                            bonusVisible: false,
+                            popupText: 'Speed Round simulation',
+                            timerText: '0:45',
+                            showTimer: true,
+                            levelText: 'Lv. 7',
+                            xpText: '510 / 780',
+                        })],
+                    },
+                    {
+                        title: 'Quick! Place a Letter',
+                        body: 'Tap fast! Every second counts in Speed Round. Drop letters and make words before the timer hits zero.',
+                        mode: 'tap-target',
+                        target: hot('#canvas-wrapper', 0.36, 0.48, 0.14, 0.14),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedPlummetScene', {
+                            score: 810,
+                            coins: 21,
+                            nextLetter: 'D',
+                            bonusVisible: false,
+                            popupText: 'Quick score +130',
+                            timerText: '0:31',
+                            showTimer: true,
+                            levelText: 'Lv. 7',
+                            xpText: '553 / 780',
+                        })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Keep Going!',
+                        body: 'Your score and timer are both up top. The faster you spell words, the higher your score!',
+                        mode: 'continue',
+                        target: '#score-bar',
+                    },
+                    {
+                        title: 'Need a Breather?',
+                        body: 'Even in Speed Round, you can pause. Tap the pause button if you need a moment.',
+                        mode: 'tap-target',
+                        target: '#pause-btn',
+                        onAdvance: [call('_openGuidedPauseOverlay')],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Pause Menu',
+                        body: 'Take a breath! From here you can resume, check your words, or quit if you need to.',
+                        mode: 'continue',
+                        target: '#pause-overlay .overlay-content',
+                    },
+                ],
+            },
+            'guided-word-category': {
+                label: 'Word Category Tour',
+                steps: [
+                    {
+                        title: 'Word Category Mode',
+                        body: 'In this mode, you pick a topic and try to spell words that match it. Tap the card to get started!',
+                        mode: 'tap-target',
+                        target: '.challenge-card[data-challenge="word-category"]',
+                        onEnter: [call('_setupGuidedChallengeSelectScene')],
+                        onAdvance: [call('_setupGuidedChallengeSetupScene', CHALLENGE_TYPES.WORD_CATEGORY, { categoryKey: 'nature' })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Pick a Topic',
+                        body: 'Choose a category like Nature, Food, or Animals. You\'ll get extra points for words that fit your topic!',
+                        mode: 'continue',
+                        target: '#challenge-category-selector',
+                        focusPadding: 14,
+                    },
+                    {
+                        title: 'Your Pick',
+                        body: 'This is the category you chose. Words matching this topic will score higher!',
+                        mode: 'continue',
+                        target: '.category-pick-btn.selected',
+                    },
+                    {
+                        title: 'Category on Screen',
+                        body: 'During the game, your chosen category shows up here. Spell words that match it for bonus points!',
+                        mode: 'continue',
+                        target: '#target-word-display',
+                        onEnter: [call('_setupGuidedPlummetScene', {
+                            score: 420,
+                            coins: 16,
+                            nextLetter: 'N',
+                            bonusVisible: false,
+                            popupText: 'Nature category practice',
+                            targetWord: '🌿 Nature',
+                            targetLabel: 'CATEGORY:',
+                            showTargetWord: true,
+                            levelText: 'Lv. 8',
+                            xpText: '280 / 840',
+                        })],
+                    },
+                    {
+                        title: 'Match the Topic!',
+                        body: 'Tap here to place a letter. If the word you make fits the category, you get extra points!',
+                        mode: 'tap-target',
+                        target: hot('#canvas-wrapper', 0.57, 0.40, 0.14, 0.14),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedPlummetScene', {
+                            score: 630,
+                            coins: 22,
+                            nextLetter: 'G',
+                            bonusVisible: false,
+                            popupText: 'Category match bonus +210',
+                            targetWord: '🌿 Nature',
+                            targetLabel: 'CATEGORY:',
+                            showTargetWord: true,
+                            levelText: 'Lv. 8',
+                            xpText: '349 / 840',
+                        })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Not Every Word Counts',
+                        body: 'You can still spell any word, but only words that match the category give you the bonus. That\'s the challenge!',
+                        mode: 'continue',
+                        target: '#target-word-display',
+                    },
+                ],
+            },
+            'guided-word-search': {
+                label: 'Word Search Tour',
+                steps: [
+                    {
+                        title: 'Word Search Mode',
+                        body: 'This one works differently — find hidden words in a grid of letters! Tap the card to try it.',
+                        mode: 'tap-target',
+                        target: '.challenge-card[data-challenge="word-search"]',
+                        onEnter: [call('_setupGuidedChallengeSelectScene')],
+                        onAdvance: [call('_setupGuidedChallengeSetupScene', CHALLENGE_TYPES.WORD_SEARCH)],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Setup',
+                        body: 'Word Search has its own setup. Jump in and start hunting for hidden words!',
+                        mode: 'continue',
+                        target: '#challenge-setup-name',
+                    },
+                    {
+                        title: 'The Word Grid',
+                        body: 'Here\'s the grid! Swipe across letters to find hidden words. They can go in any direction.',
+                        mode: 'continue',
+                        target: '#ws-grid-container',
+                        noOverlay: true,
+                        onEnter: [call('_setupGuidedWsScene', {
+                            score: '180',
+                            timer: '5:00',
+                            words: 'Words Found: 2',
+                            level: '3',
+                            coins: '8',
+                            levelText: 'Lv. 3',
+                        })],
+                    },
+                    {
+                        title: 'Find a Word!',
+                        body: 'Tap the glowing area to find a hidden word. In the real game, you\'d swipe across the letters.',
+                        mode: 'tap-target',
+                        target: hot('#ws-grid-container', 0.22, 0.28, 0.28, 0.12, { radius: '12px' }),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedWsScene', {
+                            score: '320',
+                            timer: '4:36',
+                            words: 'Words Found: 3',
+                            level: '3',
+                            coins: '11',
+                            levelText: 'Lv. 3',
+                        })],
+                        showPointer: true,
+                        pointerX: 0.5,
+                        pointerY: 0.5,
+                    },
+                    {
+                        title: 'Words Found',
+                        body: 'This counter shows how many words you\'ve discovered so far. Find them all to win!',
+                        mode: 'continue',
+                        target: '#ws-words-found-bar',
+                    },
+                    {
+                        title: 'Timer',
+                        body: 'You still have a time limit, but it\'s more relaxed than Speed Round. Take your time to search!',
+                        mode: 'continue',
+                        target: '#ws-score-bar',
+                    },
+                    {
+                        title: 'Pause',
+                        body: 'Tap pause to take a break from searching.',
+                        mode: 'tap-target',
+                        target: '#ws-pause-btn',
+                        onAdvance: [call('_openGuidedWsPauseOverlay')],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Pause Options',
+                        body: 'Same as before — resume, check your words, open the dictionary, listen to music, or quit.',
+                        mode: 'continue',
+                        target: '#ws-pause-overlay .overlay-content',
+                    },
+                ],
+            },
+            'guided-word-runner': {
+                label: 'Word Runner Tour',
+                steps: [
+                    {
+                        title: 'Word Runner Mode',
+                        body: 'This is an endless runner with a twist — you collect letters to spell words as you run! Tap to start.',
+                        mode: 'tap-target',
+                        target: '.challenge-card[data-challenge="word-runner"]',
+                        onEnter: [call('_setupGuidedChallengeSelectScene')],
+                        onAdvance: [call('_setupGuidedChallengeSetupScene', CHALLENGE_TYPES.WORD_RUNNER)],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Setup',
+                        body: 'Once you start, your character runs automatically. Get ready to jump and collect!',
+                        mode: 'continue',
+                        target: '#challenge-setup-name',
+                    },
+                    {
+                        title: 'The Runner',
+                        body: 'Here\'s the game! Your character runs forward while you jump to grab letters floating above.',
+                        mode: 'continue',
+                        target: '#wr-canvas-container',
+                        noOverlay: true,
+                        onEnter: [call('_setupGuidedWrScene', {
+                            score: '250',
+                            distance: '42m',
+                            coins: '11',
+                            wordBoxesHtml: '<div class="wr-box guided-wr-box">C</div><div class="wr-box guided-wr-box">A</div><div class="wr-box guided-wr-box empty">_</div>'
+                        })],
+                    },
+                    {
+                        title: 'Jump & Collect!',
+                        body: 'Tap to jump and grab a letter! Collect the right letters to spell words.',
+                        mode: 'tap-target',
+                        target: hot('#wr-canvas-container', 0.38, 0.46, 0.2, 0.18),
+                        noOverlay: true,
+                        onAdvance: [call('_setupGuidedWrScene', {
+                            score: '390',
+                            distance: '61m',
+                            coins: '14',
+                            wordBoxesHtml: '<div class="wr-box guided-wr-box">C</div><div class="wr-box guided-wr-box">A</div><div class="wr-box guided-wr-box">T</div>'
+                        })],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Letter Boxes',
+                        body: 'These boxes at the top show the letters you\'ve collected. Fill them up to spell a word!',
+                        mode: 'continue',
+                        target: '#wr-word-boxes',
+                    },
+                    {
+                        title: 'Submit Your Word',
+                        body: 'When the boxes are full, tap this button to check if it\'s a real word. If it is, you score points!',
+                        mode: 'continue',
+                        target: '#wr-validate-btn',
+                    },
+                    {
+                        title: 'Pause',
+                        body: 'Need a break from running? Tap pause.',
+                        mode: 'tap-target',
+                        target: '#wr-pause-btn',
+                        onAdvance: [call('_openGuidedWrPauseOverlay')],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Pause Menu',
+                        body: 'Resume, check your words, open the dictionary, change music, visit the shop, or call it a day.',
+                        mode: 'continue',
+                        target: '#wr-pause-overlay .overlay-content',
+                    },
+                ],
+            },
+            'guided-bonuses': {
+                label: 'Bonuses Tour',
+                steps: [
+                    {
+                        title: 'Bonuses!',
+                        body: 'During a game, you\'ll earn power-ups called bonuses. This button appears when one is ready to use!',
+                        mode: 'continue',
+                        target: '#bonus-btn',
+                        onEnter: [call('_setupGuidedPlummetScene', {
+                            score: 900,
+                            coins: 33,
+                            nextLetter: 'B',
+                            bonusVisible: true,
+                            popupText: 'Bonus tutorial scene',
+                            radialVisible: true,
+                            levelText: 'Lv. 12',
+                            xpText: '480 / 1200',
+                        })],
+                    },
+                    {
+                        title: 'Bonus Slots',
+                        body: 'These slots let you save bonuses for later. Don\'t have to use them right away — hold onto them for when you really need help!',
+                        mode: 'continue',
+                        target: '#radial-toggle',
+                    },
+                    {
+                        title: 'Use It Now',
+                        body: 'Or tap the bonus button to use your power-up immediately. It\'s up to you — save it or use it!',
+                        mode: 'continue',
+                        target: '#bonus-btn',
+                    },
+                    {
+                        title: 'Freeze Power-Up',
+                        body: 'Freeze stops the letters from falling for a few seconds. Great when you need time to think!',
+                        mode: 'continue',
+                        target: '#freeze-indicator',
+                        onEnter: [call('_setupGuidedPlummetScene', {
+                            score: 1040,
+                            coins: 36,
+                            nextLetter: 'F',
+                            bonusVisible: true,
+                            popupText: 'Freeze active',
+                            radialVisible: true,
+                            freezeVisible: true,
+                            levelText: 'Lv. 12',
+                            xpText: '536 / 1200',
+                        })],
+                    },
+                    {
+                        title: 'Save for Later',
+                        body: 'Your saved bonuses stay in these slots until you choose to use them. Sometimes the perfect moment comes later!',
+                        mode: 'continue',
+                        target: '#radial-slots',
+                    },
+                    {
+                        title: '2× Score!',
+                        body: 'This power-up doubles the points from your next word. Try to use it right before a big word!',
+                        mode: 'continue',
+                        target: '#score-2x-indicator',
+                        onEnter: [call('_setupGuidedPlummetScene', {
+                            score: 1180,
+                            coins: 39,
+                            nextLetter: 'X',
+                            bonusVisible: true,
+                            popupText: '2× next word',
+                            radialVisible: true,
+                            score2xVisible: true,
+                            levelText: 'Lv. 12',
+                            xpText: '601 / 1200',
+                        })],
+                    },
+                    {
+                        title: 'Bonus Wrap-Up',
+                        body: 'That\'s bonuses! Use them now for quick help, or save them for the perfect moment. Smart timing wins games!',
+                        mode: 'continue',
+                        target: '#radial-menu',
+                    },
+                ],
+            },
+            'guided-leaderboard': {
+                label: 'Leaderboards & Skill System',
+                steps: [
+                    {
+                        title: 'Rankings',
+                        body: 'Tap here to see how you stack up against other players!',
+                        mode: 'continue',
+                        target: '#leaderboard-btn',
+                        onEnter: [call('_setupGuidedMenuPage', 2)],
+                    },
+                    {
+                        title: 'Open Leaderboards',
+                        body: 'Tap to see the full leaderboard and your ranking!',
+                        mode: 'tap-target',
+                        target: '#leaderboard-btn',
+                        onAdvance: [call('_setupGuidedLeaderboardScene')],
+                        showPointer: true,
+                    },
+                    {
+                        title: 'Different Boards',
+                        body: 'There are separate leaderboards for the main game and each challenge mode. Tap the tabs to switch between them.',
+                        mode: 'continue',
+                        target: '#lb-tabs',
+                        focusPadding: 14,
+                    },
+                    {
+                        title: 'Skill Levels',
+                        body: 'Players are grouped by skill level. You compete against people at your level, so it\'s always a fair match!',
+                        mode: 'continue',
+                        target: '#lb-class-filter',
+                        focusPadding: 14,
+                    },
+                    {
+                        title: 'Your Rank',
+                        body: 'Here\'s where you stand! This shows your current rank and skill level.',
+                        mode: 'continue',
+                        target: '#lb-my-rank',
+                    },
+                    {
+                        title: 'Your Stats',
+                        body: 'This breaks down how your rank is calculated — your best scores, how often you play, and your challenge results all count.',
+                        mode: 'continue',
+                        target: '#lb-my-stats',
+                        focusPadding: 14,
+                    },
+                    {
+                        title: 'The Ladder',
+                        body: 'See where everyone else is! Climb higher by playing well and completing challenges.',
+                        mode: 'continue',
+                        target: '#lb-list',
+                        focusPadding: 18,
+                    },
+                    {
+                        title: 'All Done!',
+                        body: 'Your rank isn\'t just about one lucky game — it\'s about real skill over time. Keep playing and watch yourself climb!',
+                        mode: 'continue',
+                        target: '#lb-header',
+                        hideArrow: true,
+                    },
+                ],
+            },
+        };
+    }
+
+    _enterGuidedTourStep(index) {
+        if (!this._guidedTour.active || !this._guidedTour.tour) return;
+        if (index >= this._guidedTour.tour.steps.length) {
+            this._stopGuidedTour(true);
+            return;
+        }
+        if (index < 0) {
+            index = 0;
+        }
+        this._cleanupGuidedTourStep();
+        this._guidedTour.stepIndex = index;
+        const step = this._guidedTour.tour.steps[index];
+        
+        // Intro mode: show full screen first, no overlay, no card
+        if (step.mode === 'intro') {
+            this.els.guidedTourCard.classList.add('hidden');
+            this.els.guidedTourCard.classList.remove('visible');
+            this.els.guidedTourDim.style.opacity = '0';
+            this.els.guidedTourFocus.style.opacity = '0';
+            this.els.guidedTourFocus.style.width = '0px';
+            this.els.guidedTourFocus.style.height = '0px';
+            this.els.guidedTourArrow.style.opacity = '0';
+            this.els.guidedTourPointer.classList.remove('active');
+            // On next tap/click anywhere, show the explanation
+            const introHandler = () => {
+                document.removeEventListener('click', introHandler, true);
+                this._showGuidedTourCard(step);
+            };
+            document.addEventListener('click', introHandler, true);
+            return;
+        }
+        
+        this._showGuidedTourCard(step);
+    }
+
+    _showGuidedTourCard(step) {
+        if (Array.isArray(step.onEnter)) this._runGuidedTourCommands(step.onEnter);
+
+        // Hide card first for transition
+        this.els.guidedTourCard.classList.remove('visible');
+        this.els.guidedTourCard.classList.remove('hidden');
+
+        this.els.guidedTourTitle.textContent = step.title || this._guidedTour.tour.label;
+        this.els.guidedTourBody.textContent = step.body || '';
+        this.els.guidedTourCounter.textContent = `${this._guidedTour.stepIndex + 1} / ${this._guidedTour.tour.steps.length}`;
+        this.els.guidedTourContinueBtn.textContent = step.continueLabel || 'Tap to Continue';
+        this.els.guidedTourContinueBtn.classList.toggle('hidden', step.mode === 'tap-target');
+        this.els.guidedTourBackBtn.classList.toggle('hidden', this._guidedTour.stepIndex === 0);
+        this.els.guidedTourHint.textContent = step.mode === 'tap-target'
+            ? 'Tap the highlighted area to continue.'
+            : 'Tap to Continue when you are ready.';
+
+        // Position everything, then reveal card with transition
+        requestAnimationFrame(() => {
+            this._positionGuidedTourStep();
+            // Trigger the card entrance after positioning
+            requestAnimationFrame(() => {
+                this.els.guidedTourCard.classList.add('visible');
+            });
+        });
+    }
+
+    _resolveGuidedTourTarget(step) {
+        if (!step || !step.target) return null;
+        const padding = step.focusPadding ?? 6;
+        if (typeof step.target === 'string') {
+            const el = document.querySelector(step.target);
+            if (!el) return null;
+            return {
+                type: 'selector',
+                element: el,
+                rect: el.getBoundingClientRect(),
+                radius: getComputedStyle(el).borderRadius || '18px',
+                padding,
+            };
+        }
+        if (step.target.type === 'hotspot') {
+            const container = document.querySelector(step.target.container);
+            if (!container) return null;
+            const rect = container.getBoundingClientRect();
+            return {
+                type: 'hotspot',
+                rect: {
+                    left: rect.left + rect.width * step.target.x,
+                    top: rect.top + rect.height * step.target.y,
+                    width: rect.width * step.target.width,
+                    height: rect.height * step.target.height,
+                    right: rect.left + rect.width * (step.target.x + step.target.width),
+                    bottom: rect.top + rect.height * (step.target.y + step.target.height),
+                },
+                radius: step.target.radius || '18px',
+                padding,
+            };
+        }
+        return null;
+    }
+
+    _positionGuidedTourStep() {
+        if (!this._guidedTour.active || !this._guidedTour.tour) return;
+        const step = this._guidedTour.tour.steps[this._guidedTour.stepIndex];
+        const target = this._resolveGuidedTourTarget(step);
+
+        // "noOverlay" mode: no dimming or spotlight at all — screen is fully visible
+        if (step.noOverlay) {
+            this.els.guidedTourDim.style.opacity = '0';
+            this.els.guidedTourFocus.style.opacity = '0';
+            this.els.guidedTourFocus.style.width = '0px';
+            this.els.guidedTourFocus.style.height = '0px';
+            this.els.guidedTourArrow.style.opacity = '0';
+            this.els.guidedTourPointer.classList.remove('active');
+            this.els.guidedTourHotspot.classList.add('hidden');
+            if (target && step.mode === 'tap-target') {
+                // Still set up tap handler even without overlay
+                if (target.type === 'hotspot') {
+                    this.els.guidedTourHotspot.classList.remove('hidden');
+                    const rect = target.rect;
+                    this.els.guidedTourHotspot.style.left = `${rect.left}px`;
+                    this.els.guidedTourHotspot.style.top = `${rect.top}px`;
+                    this.els.guidedTourHotspot.style.width = `${rect.width}px`;
+                    this.els.guidedTourHotspot.style.height = `${rect.height}px`;
+                    this.els.guidedTourHotspot.style.borderRadius = target.radius;
+                    const handler = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this._advanceGuidedTour('target');
+                    };
+                    this.els.guidedTourHotspot.addEventListener('click', handler, true);
+                    this._guidedTour.cleanupHotspotHandler = () => this.els.guidedTourHotspot.removeEventListener('click', handler, true);
+                } else if (target.type === 'selector' && target.element) {
+                    target.element.classList.add('guided-tour-focus-target');
+                    this._guidedTour.activeTargetEl = target.element;
+                    const handler = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this._advanceGuidedTour('target');
+                    };
+                    target.element.addEventListener('click', handler, true);
+                    this._guidedTour.cleanupTargetHandler = () => target.element.removeEventListener('click', handler, true);
+                }
+                this._positionGuidedTourPointer(target.rect, step);
+            }
+            this._positionGuidedTourCard(target ? target.rect : null);
+            return;
+        }
+
+        if (!target) {
+            // No target: use dim overlay (full-screen darkness), hide spotlight
+            this.els.guidedTourDim.style.opacity = '1';
+            this.els.guidedTourFocus.style.opacity = '0';
+            this.els.guidedTourFocus.style.width = '0px';
+            this.els.guidedTourFocus.style.height = '0px';
+            this.els.guidedTourArrow.style.opacity = '0';
+            this.els.guidedTourPointer.classList.remove('active');
+            this.els.guidedTourHotspot.classList.add('hidden');
+            this._positionGuidedTourCard(null);
+            return;
+        }
+
+        // Has target: use spotlight focus (box-shadow provides darkness), hide dim
+        this.els.guidedTourDim.style.opacity = '0';
+        this.els.guidedTourFocus.style.opacity = '1';
+
+        const rect = target.rect;
+        const pad = target.padding ?? 6;
+        this.els.guidedTourFocus.style.left = `${rect.left - pad}px`;
+        this.els.guidedTourFocus.style.top = `${rect.top - pad}px`;
+        this.els.guidedTourFocus.style.width = `${rect.width + pad * 2}px`;
+        this.els.guidedTourFocus.style.height = `${rect.height + pad * 2}px`;
+        this.els.guidedTourFocus.style.borderRadius = target.radius;
+
+        if (target.type === 'selector' && target.element) {
+            target.element.classList.add('guided-tour-focus-target');
+            this._guidedTour.activeTargetEl = target.element;
+            if (step.mode === 'tap-target') {
+                const handler = (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this._advanceGuidedTour('target');
+                };
+                target.element.addEventListener('click', handler, true);
+                this._guidedTour.cleanupTargetHandler = () => target.element.removeEventListener('click', handler, true);
+            }
+            this.els.guidedTourHotspot.classList.add('hidden');
+        } else if (target.type === 'hotspot') {
+            this.els.guidedTourHotspot.classList.remove('hidden');
+            this.els.guidedTourHotspot.style.left = `${rect.left}px`;
+            this.els.guidedTourHotspot.style.top = `${rect.top}px`;
+            this.els.guidedTourHotspot.style.width = `${rect.width}px`;
+            this.els.guidedTourHotspot.style.height = `${rect.height}px`;
+            this.els.guidedTourHotspot.style.borderRadius = target.radius;
+            if (step.mode === 'tap-target') {
+                const handler = (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this._advanceGuidedTour('target');
+                };
+                this.els.guidedTourHotspot.addEventListener('click', handler, true);
+                this._guidedTour.cleanupHotspotHandler = () => this.els.guidedTourHotspot.removeEventListener('click', handler, true);
+            }
+        }
+
+        this._positionGuidedTourCard(rect);
+        this._positionGuidedTourArrow(rect, step);
+        this._positionGuidedTourPointer(rect, step);
+    }
+
+    _positionGuidedTourArrow(targetRect, step) {
+        const arrow = this.els.guidedTourArrow;
+        const card = this.els.guidedTourCard;
+        if (!targetRect || !card) {
+            arrow.style.opacity = '0';
+            return;
+        }
+
+        const cardRect = card.getBoundingClientRect();
+        const startX = cardRect.left + cardRect.width / 2;
+        const startY = cardRect.top + cardRect.height / 2;
+        const endX = targetRect.left + targetRect.width / 2;
+        const endY = targetRect.top + targetRect.height / 2;
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const len = Math.max(24, Math.sqrt(dx * dx + dy * dy) - 18);
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+        if (step.hideArrow) {
+            arrow.style.opacity = '0';
+            return;
+        }
+
+        arrow.style.left = `${startX}px`;
+        arrow.style.top = `${startY}px`;
+        arrow.style.width = `${len}px`;
+        arrow.style.transform = `rotate(${angle}deg)`;
+        arrow.style.opacity = '1';
+    }
+
+    _positionGuidedTourPointer(targetRect, step) {
+        const pointer = this.els.guidedTourPointer;
+        const shouldShow = step.showPointer ?? (step.mode === 'tap-target');
+        if (!targetRect || !shouldShow) {
+            pointer.classList.remove('active');
+            return;
+        }
+        const x = targetRect.left + targetRect.width * (step.pointerX ?? 0.78);
+        const y = targetRect.top + targetRect.height * (step.pointerY ?? 0.72);
+        pointer.style.left = `${x}px`;
+        pointer.style.top = `${y}px`;
+        pointer.classList.add('active');
+    }
+
+    _positionGuidedTourCard(targetRect) {
+        const card = this.els.guidedTourCard;
+        const margin = 24;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        let left = (vw - card.offsetWidth) / 2;
+        let top = vh - card.offsetHeight - margin;
+
+        if (targetRect) {
+            left = Math.min(Math.max(targetRect.left + targetRect.width / 2 - card.offsetWidth / 2, margin), vw - card.offsetWidth - margin);
+            const spaceBelow = vh - targetRect.bottom;
+            const preferredBelow = targetRect.bottom + margin * 1.5;
+            const preferredAbove = targetRect.top - card.offsetHeight - margin * 1.5;
+            top = spaceBelow > card.offsetHeight + 40 ? preferredBelow : Math.max(margin, preferredAbove);
+        }
+
+        card.style.left = `${left}px`;
+        card.style.top = `${Math.max(margin, Math.min(top, vh - card.offsetHeight - margin))}px`;
+    }
+
+    _advanceGuidedTour(triggerSource) {
+        if (!this._guidedTour.active || !this._guidedTour.tour) return;
+        const step = this._guidedTour.tour.steps[this._guidedTour.stepIndex];
+        if (triggerSource === 'continue' && step.mode === 'tap-target') return;
+        if (triggerSource === 'target' && step.mode !== 'tap-target') return;
+        if (Array.isArray(step.onAdvance)) this._runGuidedTourCommands(step.onAdvance);
+        this._enterGuidedTourStep(this._guidedTour.stepIndex + 1);
+    }
+
+    _backGuidedTour() {
+        if (!this._guidedTour.active || !this._guidedTour.tour) return;
+        if (this._guidedTour.stepIndex > 0) {
+            this._enterGuidedTourStep(this._guidedTour.stepIndex - 1);
+        }
+    }
+
+    _cleanupGuidedTourStep() {
+        if (this._guidedTour.cleanupTargetHandler) {
+            this._guidedTour.cleanupTargetHandler();
+            this._guidedTour.cleanupTargetHandler = null;
+        }
+        if (this._guidedTour.cleanupHotspotHandler) {
+            this._guidedTour.cleanupHotspotHandler();
+            this._guidedTour.cleanupHotspotHandler = null;
+        }
+        if (this._guidedTour.activeTargetEl) {
+            this._guidedTour.activeTargetEl.classList.remove('guided-tour-focus-target');
+            this._guidedTour.activeTargetEl = null;
+        }
+        this.els.guidedTourArrow.style.opacity = '0';
+        this.els.guidedTourPointer.classList.remove('active');
+        this.els.guidedTourHotspot.classList.add('hidden');
+        // Fade out card between steps
+        this.els.guidedTourCard.classList.remove('visible');
+    }
+
+    _stopGuidedTour(restoreUi) {
+        if (!this._guidedTour.active && !this.els.guidedTourOverlay.classList.contains('active')) return;
+        this._cleanupGuidedTourStep();
+        this._teardownGuidedSceneState();
+        // Reset all overlay states
+        this.els.guidedTourDim.style.opacity = '0';
+        this.els.guidedTourFocus.style.opacity = '0';
+        this.els.guidedTourCard.classList.remove('visible');
+        this.els.guidedTourCard.classList.add('hidden');
+        this.els.guidedTourOverlay.classList.remove('active');
+        if (this._guidedTour.resizeHandler) {
+            window.removeEventListener('resize', this._guidedTour.resizeHandler);
+        }
+
+        if (restoreUi) {
+            this._showScreen(this._guidedTour.restoreScreen || 'menu');
+            if ((this._guidedTour.restoreScreen || 'menu') === 'menu') {
+                this._goToMenuPage(this._guidedTour.restoreMenuPage || 1);
+            }
+            if (this._guidedTour.restoreTutorialOverlay) {
+                this._tutorialMenuView = this._guidedTour.restoreTutorialMenuView || 'root';
+                this._renderTutorialMenu();
+                this.els.tutorialMenu.style.display = '';
+                this.els.tutorialSlides.classList.add('hidden');
+                this.els.tutorialOverlay.classList.add('active');
+            }
+        }
+
+        this._guidedTour.active = false;
+        this._guidedTour.tour = null;
+        this._guidedTour.stepIndex = 0;
+    }
+
+    _runGuidedTourCommands(commands) {
+        for (const command of commands) {
+            if (!command || !command.type) continue;
+            if (command.type === 'call' && typeof this[command.method] === 'function') {
+                this[command.method](...(command.args || []));
+            }
+        }
+    }
+
+    _setupGuidedMenuPage(pageIndex = 1) {
+        this._teardownGuidedSceneState();
+        this._showScreen('menu');
+        this._goToMenuPage(pageIndex);
+    }
+
+    _setupGuidedChallengeSelectScene() {
+        this._teardownGuidedSceneState();
+        this._showScreen('challenges');
+    }
+
+    _setupGuidedChallengeSetupScene(challengeType, config = {}) {
+        this._teardownGuidedSceneState();
+        this._openChallengeSetup(challengeType);
+        if (challengeType === CHALLENGE_TYPES.WORD_CATEGORY && config.categoryKey) {
+            const btn = this.els.challengeCategoryButtons?.querySelector(`.category-pick-btn[data-cat="${config.categoryKey}"]`);
+            if (btn) btn.click();
+        }
+    }
+
+    _setupGuidedShopScene() {
+        this._teardownGuidedSceneState();
+        this._showScreen('shop');
+        this._renderShop();
+    }
+
+    _setupGuidedDictionaryScene() {
+        this._teardownGuidedSceneState();
+        this._showScreen('dict');
+        if (!this._dictSortedWords.length) this._dictBuildWordList();
+        this._dictApplyFilters();
+    }
+
+    _setupGuidedMusicScene() {
+        this._teardownGuidedSceneState();
+        this._showScreen('music');
+        this._renderMusicScreen();
+    }
+
+    _setupGuidedLeaderboardScene() {
+        this._teardownGuidedSceneState();
+        this._showScreen('leaderboard');
+        this.els.lbMyRank?.classList.remove('hidden');
+        if (this.els.lbMyRankIcon) this.els.lbMyRankIcon.textContent = '⚔️';
+        if (this.els.lbMyRankClass) this.els.lbMyRankClass.textContent = 'Medium Class';
+        if (this.els.lbMyRankPos) this.els.lbMyRankPos.textContent = '#15';
+        if (this.els.lbMyStats) this.els.lbMyStats.classList.remove('hidden');
+    }
+
+    _setupGuidedPlummetScene(config = {}) {
+        this._teardownGuidedSceneState();
+        this._showScreen('play');
+        this.state = State.PAUSED;
+        this.els.pauseOverlay.classList.remove('active');
+        this.els.currentScore.textContent = String(config.score ?? 0);
+        this.els.playCoins.textContent = String(config.coins ?? 0);
+        this.els.playHighScore.textContent = String(config.highScore ?? 900);
+        this.els.nextLetter.textContent = config.nextLetter || 'A';
+        this.els.wordPopup.textContent = config.popupText || '';
+        this.els.bonusBtn.classList.toggle('hidden', !config.bonusVisible);
+        this.els.bonusBtn.textContent = 'Bonus!';
+        this.els.radialMenu.classList.toggle('hidden', !config.radialVisible);
+        this.els.freezeIndicator.classList.toggle('hidden', !config.freezeVisible);
+        this.els.score2xIndicator.classList.toggle('hidden', !config.score2xVisible);
+        this.els.targetWordDisplay.classList.toggle('hidden', !config.showTargetWord);
+        this.els.targetWordText.textContent = config.targetWord || 'TREE';
+        const targetLabel = this.els.targetWordDisplay?.querySelector('.target-label');
+        if (targetLabel) targetLabel.textContent = config.targetLabel || 'TARGET:';
+        this.els.timerScoreItem.classList.toggle('hidden', !config.showTimer);
+        this.els.gameTimer.textContent = config.timerText || '0:45';
+        if (this.els.levelText && config.levelText) this.els.levelText.textContent = config.levelText;
+        if (this.els.xpText && config.xpText) this.els.xpText.textContent = config.xpText;
+        if (this.els.playWordsFoundBtn && config.wordsButtonText) this.els.playWordsFoundBtn.textContent = config.wordsButtonText;
+
+        // Show a simulated grid so the board isn't blank
+        const boardState = config.board || this._getDefaultGuidedBoard(config);
+        this._setupGuidedSimulatedGrid({ cols: 5, rows: 5, grid: boardState });
+    }
+
+    _getDefaultGuidedBoard(config) {
+        // Return different pre-set boards depending on what the scene is showing
+        const score = config.score ?? 0;
+        if (config.showTargetWord && config.targetWord === 'TREE') {
+            if (score >= 520) {
+                // Progress made on TREE
+                return [
+                    [null, null, null, null, null],
+                    [null, 'T',  'R',  'E',  null],
+                    ['W',  'O',  'R',  'D',  null],
+                    [null, 'P',  null, 'A',  null],
+                    ['S',  'A',  'T',  null, null],
+                ];
+            }
+            return [
+                [null, null, null, null, null],
+                [null, 'T',  'R',  null, null],
+                ['W',  'O',  'R',  'D',  null],
+                [null, 'P',  null, null, null],
+                ['S',  'A',  'T',  null, null],
+            ];
+        }
+        if (config.showTargetWord && config.targetWord === 'BARK') {
+            return [
+                [null, null, null, 'B',  null],
+                [null, 'T',  'R',  'E',  'E'],
+                ['W',  'O',  'R',  'D',  null],
+                [null, 'P',  null, 'A',  null],
+                ['S',  'A',  'T',  null, null],
+            ];
+        }
+        if (config.showTimer) {
+            // Speed round board
+            if (score >= 810) {
+                return [
+                    [null, null, null, null, null],
+                    ['F',  'A',  'S',  'T',  null],
+                    [null, 'R',  'U',  'N',  null],
+                    ['G',  'O',  null, 'E',  'W'],
+                    ['S',  'P',  'E',  'D',  null],
+                ];
+            }
+            return [
+                [null, null, null, null, null],
+                ['F',  'A',  'S',  'T',  null],
+                [null, 'R',  'U',  'N',  null],
+                ['G',  'O',  null, null, null],
+                ['S',  'P',  'E',  'D',  null],
+            ];
+        }
+        if (config.showTargetWord && config.targetLabel === 'CATEGORY:') {
+            // Word category board
+            if (score >= 630) {
+                return [
+                    [null, null, 'L',  null, null],
+                    [null, 'O',  'A',  'K',  null],
+                    ['R',  'O',  'S',  'E',  null],
+                    ['F',  'E',  'R',  'N',  null],
+                    [null, 'L',  null, null, null],
+                ];
+            }
+            return [
+                [null, null, null, null, null],
+                [null, 'O',  'A',  'K',  null],
+                ['R',  'O',  'S',  'E',  null],
+                [null, 'E',  'R',  'N',  null],
+                [null, 'L',  null, null, null],
+            ];
+        }
+        if (config.freezeVisible || config.score2xVisible) {
+            // Bonus tour board
+            return [
+                [null, 'B',  null, null, null],
+                ['F',  'L',  'A',  'T',  null],
+                [null, 'O',  'R',  'E',  null],
+                ['G',  'C',  null, 'A',  'M'],
+                ['S',  'K',  'I',  'P',  null],
+            ];
+        }
+        // Default starter board
+        if (score >= 340) {
+            return [
+                [null, null, null, null, null],
+                [null, 'C',  'A',  'T',  null],
+                [null, null, 'R',  null, null],
+                ['W',  'O',  'R',  'D',  null],
+                ['P',  'L',  'A',  'Y',  null],
+            ];
+        }
+        if (score >= 120) {
+            return [
+                [null, null, null, null, null],
+                [null, 'C',  'A',  'T',  null],
+                [null, null, null, null, null],
+                ['W',  'O',  'R',  'D',  null],
+                ['P',  'L',  'A',  'Y',  null],
+            ];
+        }
+        // Fresh board (score 0)
+        return [
+            [null, null, null, null, null],
+            [null, null, null, null, null],
+            [null, null, null, null, null],
+            ['W',  'O',  'R',  'D',  null],
+            ['P',  'L',  'A',  'Y',  null],
+        ];
+    }
+
+    _setupGuidedWsScene(config = {}) {
+        this._teardownGuidedSceneState();
+        this._showScreen('ws');
+        if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.remove('active');
+        if (this.els.wsScore) this.els.wsScore.textContent = config.score || '0';
+        if (this.els.wsTimer) this.els.wsTimer.textContent = config.timer || '5:00';
+        if (this.els.wsWordsFoundCount) this.els.wsWordsFoundCount.textContent = config.words || 'Words Found: 0';
+        if (this.els.wsLevelNum) this.els.wsLevelNum.textContent = config.level || '1';
+        if (this.els.wsCoins) this.els.wsCoins.textContent = config.coins || '0';
+        if (this.els.wsLevelText && config.levelText) this.els.wsLevelText.textContent = config.levelText;
+    }
+
+    _setupGuidedWrScene(config = {}) {
+        this._teardownGuidedSceneState();
+        this._showScreen('wr');
+        if (this.els.wrPauseOverlay) this.els.wrPauseOverlay.classList.remove('active');
+        if (this.els.wrScore) this.els.wrScore.textContent = config.score || '0';
+        if (this.els.wrDistance) this.els.wrDistance.textContent = config.distance || '0m';
+        if (this.els.wrCoins) this.els.wrCoins.textContent = config.coins || '0';
+        if (this.els.wrWordBoxes && config.wordBoxesHtml !== undefined) this.els.wrWordBoxes.innerHTML = config.wordBoxesHtml;
+    }
+
+    _openGuidedPauseOverlay() {
+        this.els.pauseOverlay.classList.add('active');
+    }
+
+    _openGuidedWsPauseOverlay() {
+        if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.add('active');
+    }
+
+    _openGuidedWrPauseOverlay() {
+        if (this.els.wrPauseOverlay) this.els.wrPauseOverlay.classList.add('active');
+    }
+
+    _setupGuidedSimulatedGrid(config = {}) {
+        // Create a visual teaching grid overlaid on the canvas-wrapper
+        // config.grid = 2D array of letters (null = empty cell), e.g.:
+        //   [
+        //     [null, null, null, null, null],
+        //     [null, 'C',  'A',  'T',  null],
+        //     [null, null, 'R',  null, null],
+        //     ...
+        //   ]
+        // config.cols / config.rows override grid dimensions (default 5×5)
+        const canvas = this.els.canvasWrapper;
+        if (!canvas) return;
+
+        // Remove any existing teaching grid
+        let existing = document.getElementById('guided-teaching-grid');
+        if (existing) existing.remove();
+
+        const cols = config.cols || 5;
+        const rows = config.rows || 5;
+        const grid = config.grid || [];
+
+        const gridEl = document.createElement('div');
+        gridEl.id = 'guided-teaching-grid';
+        gridEl.className = 'guided-teaching-grid';
+        gridEl.style.setProperty('--gt-cols', cols);
+        gridEl.style.setProperty('--gt-rows', rows);
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const letter = (grid[r] && grid[r][c]) || null;
+                const cell = document.createElement('div');
+                cell.className = letter ? 'gt-cell gt-filled' : 'gt-cell gt-empty';
+                if (letter) cell.textContent = letter;
+                gridEl.appendChild(cell);
+            }
+        }
+
+        canvas.appendChild(gridEl);
+        return gridEl;
+    }
+
+    _teardownGuidedSceneState() {
+        // Clean up teaching grid if it exists
+        const teachingGrid = document.getElementById('guided-teaching-grid');
+        if (teachingGrid) teachingGrid.remove();
+
+        this.els.pauseOverlay.classList.remove('active');
+        if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.remove('active');
+        if (this.els.wrPauseOverlay) this.els.wrPauseOverlay.classList.remove('active');
+        this.els.wordPopup.textContent = '';
+        this.els.bonusBtn.classList.add('hidden');
+        this.els.radialMenu.classList.add('hidden');
+        this.els.freezeIndicator.classList.add('hidden');
+        this.els.score2xIndicator.classList.add('hidden');
+        this.els.targetWordDisplay.classList.add('hidden');
+        const targetLabel = this.els.targetWordDisplay?.querySelector('.target-label');
+        if (targetLabel) targetLabel.textContent = 'TARGET:';
+        this.els.timerScoreItem.classList.add('hidden');
+        if (this.els.playWordsFoundBtn) this.els.playWordsFoundBtn.textContent = 'Words So Far';
+        if (this.els.wrWordBoxes) this.els.wrWordBoxes.innerHTML = '';
+    }
+
+    _openTutorialCategory(catIndex, parentMenuView = 'root') {
         this._tutorialCatIndex = catIndex;
         this._tutorialIndex = 0;
+        this._tutorialParentMenuView = parentMenuView;
         const cat = this._tutorialCategories[catIndex];
         this._tutorialSlides = cat.slides;
         this._tutorialTotal = cat.slides.length;
@@ -10874,12 +13920,16 @@ class Game {
         this._stopTutorialAnim();
         this._unbindTutorialSwipe();
         this.els.tutorialSlides.classList.add('hidden');
+        this._tutorialMenuView = this._tutorialParentMenuView || 'root';
+        this._renderTutorialMenu();
         this.els.tutorialMenu.style.display = '';
     }
 
     _closeTutorial() {
         this._stopTutorialAnim();
         this._unbindTutorialSwipe();
+        this._tutorialMenuView = 'root';
+        this._tutorialParentMenuView = 'root';
         this.els.tutorialOverlay.classList.remove('active');
     }
 
@@ -11375,7 +14425,7 @@ class Game {
     // ── Target Word: tap-to-claim ──
 
     // Verify that the letters at the given cells still exist on the grid
-    // AND that those letters match the word (multiset check).
+    // AND that those letters match the word (accounting for wildcards).
     _verifyGroupOnGrid(group) {
         const letters = [];
         for (const key of group.cells) {
@@ -11383,6 +14433,15 @@ class Game {
             const ch = this.grid.get(r, c);
             if (!ch || !isWordLetter(ch)) return false;
             letters.push(ch);
+        }
+        // If any cell is a wildcard, do per-position check instead of sorted multiset
+        if (letters.includes(WILDCARD_SYMBOL)) {
+            if (letters.length !== group.word.length) return false;
+            for (let i = 0; i < letters.length; i++) {
+                if (letters[i] === WILDCARD_SYMBOL) continue; // wildcard matches any letter
+                if (letters[i] !== group.word[i]) return false;
+            }
+            return true;
         }
         return letters.sort().join("") === group.word.split("").sort().join("");
     }
@@ -13021,15 +16080,19 @@ class Game {
             }
 
             // Render
-            this.renderer.draw(this.grid, this.block, dt);
-            this._checkBonusBtnOverlap();
+            if (this.grid) {
+                this.renderer.draw(this.grid, this.block, dt);
+                this._checkPlayBtnOverlaps();
+            }
 
             // ── Matter.js physics particles overlay ──
             updatePhysics(dt);
         } else if (this.state === State.PAUSED) {
             // Still draw but don't update
-            this.renderer.draw(this.grid, this.block, 0);
-            this._checkBonusBtnOverlap();
+            if (this.grid) {
+                this.renderer.draw(this.grid, this.block, 0);
+                this._checkPlayBtnOverlaps();
+            }
         }
 
         if (!this._destroyed) requestAnimationFrame((t) => this._loop(t));
@@ -13397,9 +16460,25 @@ class Game {
         this._authUser = user;
         // Load profiles from Supabase and sync with local ProfileManager
         try {
-            const { getProfiles } = await import('./src/lib/supabase.js');
+            const { getProfiles, getInventory, getChallengeStats } = await import('./src/lib/supabase.js');
             const cloudProfiles = await getProfiles(user.id);
+            // For each cloud profile, also fetch inventory and challenge stats
+            for (const cp of cloudProfiles) {
+                try {
+                    const [inventory, challengeStats] = await Promise.all([
+                        getInventory(cp.id),
+                        getChallengeStats(cp.id),
+                    ]);
+                    cp._inventory = inventory;          // attach for merge
+                    cp._challengeStats = challengeStats; // attach for merge
+                } catch (e) {
+                    console.warn('[auth] failed to load extras for profile:', cp.id, e);
+                }
+            }
             this._syncCloudProfilesToLocal(cloudProfiles);
+            // Load milestone timestamps after profiles are synced
+            await this._loadMilestonesFromCloud();
+            this._renderMilestonesPage();
         } catch (err) {
             console.error('[auth] failed to load cloud profiles:', err);
         }
@@ -13407,21 +16486,23 @@ class Game {
 
     _syncCloudProfilesToLocal(cloudProfiles) {
         if (!cloudProfiles || cloudProfiles.length === 0) return;
-        const localProfiles = this.profileMgr.getAll();
+
+        // Cloud is the source of truth when authenticated.
+        // Build the new local profile list from cloud profiles only.
+        const oldLocal = this.profileMgr.getAll();
+        const cloudIds = new Set(cloudProfiles.map(cp => cp.id));
 
         for (const cloud of cloudProfiles) {
             // Check if a local profile is already linked to this cloud ID
-            const linked = localProfiles.find(lp => lp.cloudId === cloud.id);
+            const linked = oldLocal.find(lp => lp.cloudId === cloud.id);
             if (linked) {
-                // Merge cloud data into local — cloud is source of truth for progression
                 this._mergeCloudIntoLocal(linked, cloud);
                 continue;
             }
 
             // Check if a local profile matches by username (unlinked)
-            const byName = localProfiles.find(lp => !lp.cloudId && lp.username === cloud.username);
+            const byName = oldLocal.find(lp => !lp.cloudId && lp.username === cloud.username);
             if (byName) {
-                // Link existing local profile to cloud and merge
                 byName.cloudId = cloud.id;
                 this._mergeCloudIntoLocal(byName, cloud);
                 continue;
@@ -13433,26 +16514,55 @@ class Game {
             this._mergeCloudIntoLocal(imported, cloud);
         }
 
+        // Remove local-only profiles that don't exist in the cloud.
+        // When authenticated, cloud is the authority on which profiles exist.
+        const orphaned = this.profileMgr.profiles.filter(lp => lp.cloudId && !cloudIds.has(lp.cloudId));
+        const unlinked = this.profileMgr.profiles.filter(lp => !lp.cloudId);
+        if (orphaned.length > 0 || unlinked.length > 0) {
+            const removed = [...orphaned, ...unlinked];
+            this.profileMgr.profiles = this.profileMgr.profiles.filter(
+                lp => !removed.includes(lp)
+            );
+            console.log(`[sync] Removed ${removed.length} local-only/orphaned profile(s):`,
+                removed.map(p => p.username));
+            // If active profile was removed, switch to first available
+            if (this.profileMgr.activeId && !this.profileMgr.profiles.find(p => p.id === this.profileMgr.activeId)) {
+                this.profileMgr.activeId = this.profileMgr.profiles[0]?.id || null;
+            }
+        }
+
         this.profileMgr._save();
         this._renderProfilesList();
     }
 
     /**
      * Merge cloud profile fields into local profile.
-     * For additive stats (score, games, words, xp, coins), take the max.
+     * Cloud is source of truth — it has the most recently pushed state.
+     * For monotonically-increasing stats (score, games, words, xp), take the max.
+     * For spendable resources (coins), cloud wins if it was updated more recently.
      * For preferences/cosmetics, cloud wins.
+     * For inventory and challenge stats, merge from attached _inventory/_challengeStats.
      */
     _mergeCloudIntoLocal(local, cloud) {
         local.username = cloud.username;
-        // Take max for progression stats
+        // Determine which is more recent for conflict resolution
+        const cloudUpdated = cloud.updated_at ? new Date(cloud.updated_at).getTime() : 0;
+        const localUpdated = local._lastSyncedAt ? new Date(local._lastSyncedAt).getTime() : 0;
+        const cloudIsNewer = cloudUpdated >= localUpdated;
+        // Take max for monotonically-increasing stats
         local.level = Math.max(local.level || 1, cloud.level || 1);
         local.xp = Math.max(local.xp || 0, cloud.xp || 0);
         local.totalXp = Math.max(local.totalXp || 0, cloud.total_xp || 0);
         local.highScore = Math.max(local.highScore || 0, cloud.high_score || 0);
         local.gamesPlayed = Math.max(local.gamesPlayed || 0, cloud.games_played || 0);
         local.totalWords = Math.max(local.totalWords || 0, cloud.total_words || 0);
-        local.coins = Math.max(local.coins || 0, cloud.coins || 0);
         local.totalCoinsEarned = Math.max(local.totalCoinsEarned || 0, cloud.total_coins_earned || 0);
+        // Coins: cloud wins if newer (coins go up AND down via spending)
+        if (cloudIsNewer) {
+            local.coins = cloud.coins ?? local.coins ?? 0;
+        } else {
+            local.coins = Math.max(local.coins || 0, cloud.coins || 0);
+        }
         // Preferences — cloud wins
         if (cloud.preferred_grid_size) local.gridSize = cloud.preferred_grid_size;
         if (cloud.preferred_difficulty) local.difficulty = cloud.preferred_difficulty;
@@ -13487,6 +16597,39 @@ class Game {
             for (const w of cloud.unique_words_found) localWords.add(w);
             local.uniqueWordsFound = [...localWords];
         }
+        // Inventory — union of local and cloud items
+        if (cloud._inventory?.length) {
+            const localInv = new Set(local.inventory || []);
+            for (const itemId of cloud._inventory) localInv.add(itemId);
+            local.inventory = [...localInv];
+        }
+        // Challenge stats — merge from cloud (take max for each challenge type)
+        if (cloud._challengeStats?.length) {
+            if (!local.challengeStats) local.challengeStats = {};
+            for (const cs of cloud._challengeStats) {
+                const type = cs.challenge_type;
+                if (!local.challengeStats[type]) {
+                    local.challengeStats[type] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], targetWordLevel: 1 };
+                }
+                const ls = local.challengeStats[type];
+                ls.highScore = Math.max(ls.highScore || 0, cs.high_score || 0);
+                ls.gamesPlayed = Math.max(ls.gamesPlayed || 0, cs.games_played || 0);
+                ls.totalWords = Math.max(ls.totalWords || 0, cs.total_words || 0);
+                ls.targetWordLevel = Math.max(ls.targetWordLevel || 1, cs.target_word_level || 1);
+                // Word search uses wordSearchLevel locally, mapped to target_word_level in DB
+                if (type === CHALLENGE_TYPES.WORD_SEARCH) {
+                    ls.wordSearchLevel = Math.max(ls.wordSearchLevel || 1, cs.target_word_level || 1);
+                }
+                // Unique words — union
+                if (cs.unique_words_found?.length) {
+                    const wordSet = new Set(ls.uniqueWordsFound || []);
+                    for (const w of cs.unique_words_found) wordSet.add(w);
+                    ls.uniqueWordsFound = [...wordSet];
+                }
+            }
+        }
+        // Record sync timestamp for future conflict resolution
+        local._lastSyncedAt = new Date().toISOString();
     }
 
     _showAuthError(msg) {
@@ -14089,11 +17232,6 @@ class Game {
             this._wsEndGame("endgame");
         });
 
-        // Mini music player buttons
-        this.els.wsMiniPrev?.addEventListener("click", () => this.music.prev());
-        this.els.wsMiniToggle?.addEventListener("click", () => this.music.toggle());
-        this.els.wsMiniNext?.addEventListener("click", () => this.music.next());
-
         // Touch/mouse input on canvas
         const canvas = this.els.wsCanvas;
         if (!canvas) return;
@@ -14618,18 +17756,8 @@ class Game {
     }
 
     _wsUpdateMiniPlayer() {
-        if (!this.music) return;
-        const track = this.music.getCurrentTrack();
-        if (this.els.wsMiniTitle) {
-            this.els.wsMiniTitle.textContent = track ? `♪ ${track.title} – ${track.artist}` : "♪ ---";
-        }
-        this._setMusicControlButton(this.els.wsMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
-        // Sync mini progress bar
-        if (this.els.wsMiniProgressFill && this.music.audio) {
-            const d = this.music.audio.duration || 1;
-            const pct = (this.music.audio.currentTime / d) * 100;
-            this.els.wsMiniProgressFill.style.width = pct + "%";
-        }
+        // Mini player removed — global music dropdown handles this now
+        this._syncGlobalMusicPanel();
     }
 
     _wsTogglePause() {
@@ -14810,7 +17938,8 @@ class Game {
         this.profileMgr.addCoins(finalCoins);
 
         // Check milestones
-        this.profileMgr.checkMilestones();
+        const wsNewMilestones = this.profileMgr.checkMilestones();
+        if (wsNewMilestones.length > 0) this._syncMilestonesToCloud(wsNewMilestones);
 
         // Compute placed vs bonus words for analytics
         const placedWordsFound = [...ws.placedWordSet].filter(w => ws.foundWords.has(w)).length;
@@ -15091,10 +18220,6 @@ class Game {
             this._wrEndGame("save");
         });
 
-        // Mini music player buttons
-        this.els.wrMiniPrev?.addEventListener("click", () => this.music.prev());
-        this.els.wrMiniToggle?.addEventListener("click", () => this.music.toggle());
-        this.els.wrMiniNext?.addEventListener("click", () => this.music.next());
         // NOTE: Jump input is handled by Phaser's own input system.
     }
 
@@ -15511,6 +18636,9 @@ class Game {
 
         this._gameOverChallenge = CHALLENGE_TYPES.WORD_RUNNER;
         this._gameOverCategoryKey = null;
+        // Tag restart button for robust detection on Play Again
+        this.els.restartBtn.dataset.challenge = CHALLENGE_TYPES.WORD_RUNNER;
+        delete this.els.restartBtn.dataset.categoryKey;
 
         this.wordsFound = wordsFound;
         this._wordsFoundData = wordsFound;
@@ -15623,17 +18751,8 @@ class Game {
     }
 
     _wrUpdateMiniPlayer() {
-        if (!this.music) return;
-        const track = this.music.getCurrentTrack();
-        if (this.els.wrMiniTitle) {
-            this.els.wrMiniTitle.textContent = track ? `♪ ${track.title} – ${track.artist}` : "♪ ---";
-        }
-        this._setMusicControlButton(this.els.wrMiniToggle, this.music.playing ? "pause" : "play", this.music.playing ? "Pause" : "Play");
-        if (this.els.wrMiniProgressFill && this.music.audio) {
-            const d = this.music.audio.duration || 1;
-            const pct = (this.music.audio.currentTime / d) * 100;
-            this.els.wrMiniProgressFill.style.width = pct + "%";
-        }
+        // Mini player removed — global music dropdown handles this now
+        this._syncGlobalMusicPanel();
     }
 
     destroy() {
@@ -15730,7 +18849,8 @@ Promise.all([
         console.error("Dictionary initialization failed.", err);
         DICTIONARY = new Set();
         _buildHintSets();
-    })
+    }),
+    loadEnrichedDict()
 ]).then(() => {
     // Clean up previous instance (HMR reload) to prevent double audio / double game loops
     const prev = window._game;
