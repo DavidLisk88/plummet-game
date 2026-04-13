@@ -11,7 +11,8 @@ import { Capacitor } from '@capacitor/core';
 import funMessagesData from './fun-messages.json';
 
 const STORAGE_KEY = 'plummet_fun_msg_history';
-const HISTORY_SIZE = 100; // Track last 100 messages to avoid repeats
+// Track 80% of total messages to ensure variety while allowing eventual repeats
+const HISTORY_SIZE = Math.floor(funMessagesData.messages.length * 0.8);
 const NOTIFICATION_CHANNEL_ID = 'plummet-fun-messages';
 const NOTIFICATION_ID = 9002; // Different from WOTD (9001)
 const ENABLED_KEY = 'plummet_fun_msg_enabled';
@@ -154,18 +155,25 @@ export async function scheduleFunMessage() {
                 id: NOTIFICATION_ID,
                 title: message.title,
                 body: message.body,
+                largeBody: message.body, // Full content for expanded view (Android)
+                summaryText: 'Tap to play Plummet', // Shown when collapsed (Android)
                 schedule: {
                     at: scheduleTime,
-                    allowWhileIdle: true
+                    allowWhileIdle: true // Ensure delivery even in Doze mode
                 },
                 sound: 'wotd_chime.wav',
                 channelId: NOTIFICATION_CHANNEL_ID,
                 extra: {
                     type: 'fun-message'
                 },
+                // iOS specific
+                attachments: null,
+                actionTypeId: '',
+                threadIdentifier: 'plummet-fun',
+                // Android specific styling
                 smallIcon: 'ic_notification',
                 largeIcon: 'ic_launcher',
-                iconColor: '#e2d8a6'
+                iconColor: '#e2d8a6' // Plummet accent color
             }
         ]
     });

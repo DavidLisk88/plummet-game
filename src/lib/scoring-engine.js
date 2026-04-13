@@ -343,7 +343,7 @@ export function computeEnhancedSkillRating(playerData) {
         skillRating = previousRating;
     }
 
-    const skillClass = skillRating >= 5000 ? 'high' : skillRating >= 1500 ? 'medium' : 'low';
+    const skillClass = skillRating >= 10000 ? 'master' : skillRating >= 5000 ? 'high' : skillRating >= 1500 ? 'medium' : 'low';
 
     return {
         skillRating,

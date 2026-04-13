@@ -6459,6 +6459,7 @@ body.touch-input #mobile-controls {
     border-radius: 50%;
     display: inline-block;
 }
+.class-dot-master { background: linear-gradient(135deg, #a855f7, #6366f1); box-shadow: 0 0 4px rgba(168,85,247,0.5); }
 .class-dot-high { background: #FFD700; }
 .class-dot-medium { background: #C0C0C0; }
 .class-dot-low { background: #CD7F32; }
@@ -6639,6 +6640,12 @@ body.touch-input #mobile-controls {
     font-weight: 600;
     letter-spacing: 0.3px;
     text-transform: uppercase;
+}
+.lb-class-badge.class-master {
+    background: linear-gradient(135deg, rgba(168,85,247,0.2), rgba(99,102,241,0.2));
+    color: #c084fc;
+    border: 1px solid rgba(168,85,247,0.4);
+    box-shadow: 0 0 8px rgba(168,85,247,0.3);
 }
 .lb-class-badge.class-high {
     background: rgba(255,215,0,0.15);

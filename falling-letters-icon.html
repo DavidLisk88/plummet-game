@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plummet - Falling Letters Icon Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #fff;
+        }
+
+        h1 {
+            text-align: center;
+            color: #e2d8a6;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 40px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .preview-section {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            flex-wrap: wrap;
+            margin-bottom: 40px;
+        }
+
+        .preview-card {
+            background: rgba(47, 48, 41, 0.6);
+            border-radius: 16px;
+            padding: 30px;
+            border: 1px solid rgba(226, 216, 166, 0.2);
+            text-align: center;
+        }
+
+        .preview-card h3 {
+            color: #e2d8a6;
+            margin-bottom: 20px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .icon-preview {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+
+        .icon-preview.dark {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .icon-preview.light {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .icon-preview.tinted {
+            background: #2f3029;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .size-label {
+            font-size: 12px;
+            color: #888;
+        }
+
+        /* Main canvas area */
+        .canvas-section {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+
+        #mainCanvas {
+            border: 2px dashed rgba(226, 216, 166, 0.3);
+            border-radius: 12px;
+        }
+
+        /* Controls */
+        .controls {
+            background: rgba(47, 48, 41, 0.6);
+            border-radius: 16px;
+            padding: 30px;
+            border: 1px solid rgba(226, 216, 166, 0.2);
+            margin-bottom: 40px;
+        }
+
+        .controls h3 {
+            color: #e2d8a6;
+            margin-bottom: 20px;
+        }
+
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 13px;
+            color: #aaa;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            accent-color: #e2d8a6;
+        }
+
+        .control-group input[type="number"] {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            width: 100%;
+        }
+
+        .control-group select {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            width: 100%;
+        }
+
+        /* Export section */
+        .export-section {
+            background: rgba(47, 48, 41, 0.6);
+            border-radius: 16px;
+            padding: 30px;
+            border: 1px solid rgba(226, 216, 166, 0.2);
+        }
+
+        .export-section h3 {
+            color: #e2d8a6;
+            margin-bottom: 20px;
+        }
+
+        .export-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .export-item {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .export-item canvas {
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        .export-item .size-info {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .export-item .density {
+            font-size: 11px;
+            color: #e2d8a6;
+            margin-bottom: 8px;
+        }
+
+        .download-btn {
+            background: linear-gradient(135deg, #2f3029 0%, #3d3e35 100%);
+            color: #e2d8a6;
+            border: 1px solid rgba(226, 216, 166, 0.3);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .download-btn:hover {
+            background: linear-gradient(135deg, #3d3e35 0%, #4d4e45 100%);
+            border-color: rgba(226, 216, 166, 0.5);
+        }
+
+        .download-all-btn {
+            display: block;
+            width: 100%;
+            background: linear-gradient(135deg, #e2d8a6 0%, #c4b88a 100%);
+            color: #2f3029;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .download-all-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(226, 216, 166, 0.3);
+        }
+
+        .info-box {
+            background: rgba(226, 216, 166, 0.1);
+            border: 1px solid rgba(226, 216, 166, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .info-box h4 {
+            color: #e2d8a6;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .info-box p {
+            font-size: 13px;
+            color: #aaa;
+            line-height: 1.5;
+        }
+
+        .info-box code {
+            background: #2a2a2a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #e2d8a6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Falling Letters Notification Icon</h1>
+        <p class="subtitle">Generate Android notification icons for Plummet</p>
+
+        <!-- Main Preview -->
+        <div class="canvas-section">
+            <canvas id="mainCanvas" width="192" height="192"></canvas>
+        </div>
+
+        <!-- Preview in contexts -->
+        <div class="preview-section">
+            <div class="preview-card">
+                <h3>Dark Status Bar</h3>
+                <div class="icon-preview dark">
+                    <canvas id="previewDark" width="48" height="48"></canvas>
+                </div>
+                <div class="size-label">As it appears in status bar</div>
+            </div>
+            <div class="preview-card">
+                <h3>Light Status Bar</h3>
+                <div class="icon-preview light">
+                    <canvas id="previewLight" width="48" height="48"></canvas>
+                </div>
+                <div class="size-label">Inverted for light themes</div>
+            </div>
+            <div class="preview-card">
+                <h3>With Plummet Tint</h3>
+                <div class="icon-preview tinted">
+                    <canvas id="previewTinted" width="48" height="48"></canvas>
+                </div>
+                <div class="size-label">With #e2d8a6 iconColor</div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <h3>Customize Design</h3>
+            <div class="control-grid">
+                <div class="control-group">
+                    <label>Style</label>
+                    <select id="style" onchange="redraw()">
+                        <option value="falling1">Falling Letters (Cascade)</option>
+                        <option value="falling2">Falling Letters (Scattered)</option>
+                        <option value="falling3">Letters with Motion Lines</option>
+                        <option value="stack">Stacked Blocks</option>
+                        <option value="grid">Mini Grid</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Letter Count: <span id="countValue">4</span></label>
+                    <input type="range" id="letterCount" min="3" max="6" value="4" onchange="updateCount(); redraw()">
+                </div>
+                <div class="control-group">
+                    <label>Letter Size: <span id="sizeValue">28</span>px</label>
+                    <input type="range" id="letterSize" min="16" max="40" value="28" onchange="updateSize(); redraw()">
+                </div>
+                <div class="control-group">
+                    <label>Spacing: <span id="spacingValue">8</span>px</label>
+                    <input type="range" id="spacing" min="2" max="20" value="8" onchange="updateSpacing(); redraw()">
+                </div>
+                <div class="control-group">
+                    <label>Corner Radius: <span id="radiusValue">4</span>px</label>
+                    <input type="range" id="cornerRadius" min="0" max="12" value="4" onchange="updateRadius(); redraw()">
+                </div>
+                <div class="control-group">
+                    <label>Line Weight: <span id="weightValue">2</span>px</label>
+                    <input type="range" id="lineWeight" min="1" max="5" value="2" onchange="updateWeight(); redraw()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Section -->
+        <div class="export-section">
+            <h3>Export Icons</h3>
+            <div class="export-grid">
+                <div class="export-item">
+                    <canvas id="export-mdpi" width="24" height="24"></canvas>
+                    <div class="size-info">24 × 24</div>
+                    <div class="density">mdpi</div>
+                    <button class="download-btn" onclick="downloadIcon('mdpi', 24)">Download</button>
+                </div>
+                <div class="export-item">
+                    <canvas id="export-hdpi" width="36" height="36"></canvas>
+                    <div class="size-info">36 × 36</div>
+                    <div class="density">hdpi</div>
+                    <button class="download-btn" onclick="downloadIcon('hdpi', 36)">Download</button>
+                </div>
+                <div class="export-item">
+                    <canvas id="export-xhdpi" width="48" height="48"></canvas>
+                    <div class="size-info">48 × 48</div>
+                    <div class="density">xhdpi</div>
+                    <button class="download-btn" onclick="downloadIcon('xhdpi', 48)">Download</button>
+                </div>
+                <div class="export-item">
+                    <canvas id="export-xxhdpi" width="72" height="72"></canvas>
+                    <div class="size-info">72 × 72</div>
+                    <div class="density">xxhdpi</div>
+                    <button class="download-btn" onclick="downloadIcon('xxhdpi', 72)">Download</button>
+                </div>
+                <div class="export-item">
+                    <canvas id="export-xxxhdpi" width="96" height="96"></canvas>
+                    <div class="size-info">96 × 96</div>
+                    <div class="density">xxxhdpi</div>
+                    <button class="download-btn" onclick="downloadIcon('xxxhdpi', 96)">Download</button>
+                </div>
+            </div>
+            <button class="download-all-btn" onclick="downloadAll()">📦 Download All Sizes (ZIP)</button>
+
+            <div class="info-box">
+                <h4>Installation Instructions</h4>
+                <p>
+                    After downloading, place each PNG in the corresponding folder:<br><br>
+                    <code>android/app/src/main/res/drawable-mdpi/ic_notification.png</code><br>
+                    <code>android/app/src/main/res/drawable-hdpi/ic_notification.png</code><br>
+                    <code>android/app/src/main/res/drawable-xhdpi/ic_notification.png</code><br>
+                    <code>android/app/src/main/res/drawable-xxhdpi/ic_notification.png</code><br>
+                    <code>android/app/src/main/res/drawable-xxxhdpi/ic_notification.png</code><br><br>
+                    Then rebuild your Android app for the new icons to take effect.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+        const letters = ['P', 'L', 'U', 'M', 'M', 'E', 'T'];
+        
+        function updateCount() {
+            document.getElementById('countValue').textContent = document.getElementById('letterCount').value;
+        }
+        function updateSize() {
+            document.getElementById('sizeValue').textContent = document.getElementById('letterSize').value;
+        }
+        function updateSpacing() {
+            document.getElementById('spacingValue').textContent = document.getElementById('spacing').value;
+        }
+        function updateRadius() {
+            document.getElementById('radiusValue').textContent = document.getElementById('cornerRadius').value;
+        }
+        function updateWeight() {
+            document.getElementById('weightValue').textContent = document.getElementById('lineWeight').value;
+        }
+
+        function drawIcon(ctx, size, style, options = {}) {
+            const { 
+                letterCount = 4, 
+                letterSize = 28, 
+                spacing = 8, 
+                cornerRadius = 4,
+                lineWeight = 2,
+                tintColor = null
+            } = options;
+
+            const scale = size / 96; // Base size is 96
+            const scaledLetterSize = letterSize * scale;
+            const scaledSpacing = spacing * scale;
+            const scaledRadius = cornerRadius * scale;
+            const scaledWeight = Math.max(1, lineWeight * scale);
+
+            ctx.clearRect(0, 0, size, size);
+            
+            const color = tintColor || '#FFFFFF';
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = scaledWeight;
+            ctx.font = `bold ${scaledLetterSize * 0.65}px -apple-system, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const usedLetters = letters.slice(0, letterCount);
+            
+            switch(style) {
+                case 'falling1': // Cascade diagonal
+                    drawFallingCascade(ctx, size, usedLetters, scaledLetterSize, scaledSpacing, scaledRadius, scaledWeight);
+                    break;
+                case 'falling2': // Scattered
+                    drawFallingScattered(ctx, size, usedLetters, scaledLetterSize, scaledSpacing, scaledRadius, scaledWeight);
+                    break;
+                case 'falling3': // With motion lines
+                    drawFallingWithMotion(ctx, size, usedLetters, scaledLetterSize, scaledSpacing, scaledRadius, scaledWeight);
+                    break;
+                case 'stack': // Stacked blocks
+                    drawStackedBlocks(ctx, size, usedLetters, scaledLetterSize, scaledSpacing, scaledRadius, scaledWeight);
+                    break;
+                case 'grid': // Mini grid
+                    drawMiniGrid(ctx, size, usedLetters, scaledLetterSize, scaledRadius, scaledWeight);
+                    break;
+            }
+        }
+
+        function drawRoundedRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        function drawFallingCascade(ctx, size, letters, letterSize, spacing, radius, weight) {
+            const totalWidth = letters.length * letterSize + (letters.length - 1) * spacing * 0.3;
+            const totalHeight = letters.length * letterSize * 0.5 + letterSize;
+            const startX = (size - totalWidth) / 2 + letterSize / 2;
+            const startY = (size - totalHeight) / 2;
+
+            letters.forEach((letter, i) => {
+                const x = startX + i * (letterSize + spacing * 0.3);
+                const y = startY + i * letterSize * 0.5;
+                
+                // Draw tile outline
+                drawRoundedRect(ctx, x - letterSize/2, y, letterSize, letterSize, radius);
+                ctx.stroke();
+                
+                // Draw letter
+                ctx.fillText(letter, x, y + letterSize/2);
+            });
+        }
+
+        function drawFallingScattered(ctx, size, letters, letterSize, spacing, radius, weight) {
+            const positions = [
+                { x: 0.25, y: 0.15 },
+                { x: 0.65, y: 0.25 },
+                { x: 0.35, y: 0.45 },
+                { x: 0.7, y: 0.55 },
+                { x: 0.25, y: 0.7 },
+                { x: 0.6, y: 0.78 }
+            ];
+
+            letters.forEach((letter, i) => {
+                if (i >= positions.length) return;
+                const x = positions[i].x * size;
+                const y = positions[i].y * size;
+                
+                drawRoundedRect(ctx, x - letterSize/2, y - letterSize/2, letterSize, letterSize, radius);
+                ctx.stroke();
+                ctx.fillText(letter, x, y);
+            });
+        }
+
+        function drawFallingWithMotion(ctx, size, letters, letterSize, spacing, radius, weight) {
+            const centerX = size / 2;
+            const startY = size * 0.12;
+            
+            // Draw motion lines at top
+            ctx.lineWidth = weight * 0.5;
+            for (let i = 0; i < 3; i++) {
+                const lineX = centerX + (i - 1) * letterSize * 0.5;
+                const lineY = startY + i * 4;
+                ctx.beginPath();
+                ctx.moveTo(lineX - letterSize * 0.3, lineY);
+                ctx.lineTo(lineX + letterSize * 0.3, lineY);
+                ctx.stroke();
+            }
+            ctx.lineWidth = weight;
+
+            // Draw falling letters
+            const totalHeight = letters.length * (letterSize * 0.7);
+            const letterStartY = startY + 15;
+
+            letters.forEach((letter, i) => {
+                const x = centerX;
+                const y = letterStartY + i * letterSize * 0.7;
+                
+                // Slight horizontal offset for natural look
+                const offsetX = Math.sin(i * 0.8) * letterSize * 0.15;
+                
+                drawRoundedRect(ctx, x - letterSize/2 + offsetX, y, letterSize, letterSize * 0.85, radius);
+                ctx.stroke();
+                ctx.fillText(letter, x + offsetX, y + letterSize * 0.85 / 2);
+            });
+        }
+
+        function drawStackedBlocks(ctx, size, letters, letterSize, spacing, radius, weight) {
+            const totalHeight = letters.length * (letterSize + spacing * 0.3);
+            const startY = (size - totalHeight) / 2;
+            const centerX = size / 2;
+
+            letters.forEach((letter, i) => {
+                const y = startY + i * (letterSize + spacing * 0.3);
+                const offsetX = (i % 2 === 0 ? -1 : 1) * letterSize * 0.1;
+                
+                drawRoundedRect(ctx, centerX - letterSize/2 + offsetX, y, letterSize, letterSize, radius);
+                ctx.stroke();
+                ctx.fillText(letter, centerX + offsetX, y + letterSize/2);
+            });
+        }
+
+        function drawMiniGrid(ctx, size, letters, letterSize, radius, weight) {
+            const gridSize = Math.ceil(Math.sqrt(letters.length));
+            const cellSize = letterSize * 0.9;
+            const gap = 3 * (size / 96);
+            const totalSize = gridSize * cellSize + (gridSize - 1) * gap;
+            const startX = (size - totalSize) / 2;
+            const startY = (size - totalSize) / 2;
+
+            letters.forEach((letter, i) => {
+                const row = Math.floor(i / gridSize);
+                const col = i % gridSize;
+                const x = startX + col * (cellSize + gap);
+                const y = startY + row * (cellSize + gap);
+                
+                drawRoundedRect(ctx, x, y, cellSize, cellSize, radius);
+                ctx.stroke();
+                
+                ctx.font = `bold ${cellSize * 0.6}px -apple-system, sans-serif`;
+                ctx.fillText(letter, x + cellSize/2, y + cellSize/2);
+            });
+        }
+
+        function getOptions() {
+            return {
+                letterCount: parseInt(document.getElementById('letterCount').value),
+                letterSize: parseInt(document.getElementById('letterSize').value),
+                spacing: parseInt(document.getElementById('spacing').value),
+                cornerRadius: parseInt(document.getElementById('cornerRadius').value),
+                lineWeight: parseInt(document.getElementById('lineWeight').value)
+            };
+        }
+
+        function redraw() {
+            const style = document.getElementById('style').value;
+            const options = getOptions();
+
+            // Main canvas
+            const mainCtx = document.getElementById('mainCanvas').getContext('2d');
+            drawIcon(mainCtx, 192, style, options);
+
+            // Preview canvases
+            const darkCtx = document.getElementById('previewDark').getContext('2d');
+            drawIcon(darkCtx, 48, style, options);
+
+            const lightCtx = document.getElementById('previewLight').getContext('2d');
+            drawIcon(lightCtx, 48, style, { ...options, tintColor: '#333333' });
+
+            const tintedCtx = document.getElementById('previewTinted').getContext('2d');
+            drawIcon(tintedCtx, 48, style, { ...options, tintColor: '#e2d8a6' });
+
+            // Export canvases
+            const sizes = [
+                { id: 'mdpi', size: 24 },
+                { id: 'hdpi', size: 36 },
+                { id: 'xhdpi', size: 48 },
+                { id: 'xxhdpi', size: 72 },
+                { id: 'xxxhdpi', size: 96 }
+            ];
+
+            sizes.forEach(({ id, size }) => {
+                const ctx = document.getElementById(`export-${id}`).getContext('2d');
+                drawIcon(ctx, size, style, options);
+            });
+        }
+
+        function downloadIcon(density, size) {
+            const canvas = document.getElementById(`export-${density}`);
+            const link = document.createElement('a');
+            link.download = `ic_notification_${density}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        async function downloadAll() {
+            const zip = new JSZip();
+            const sizes = [
+                { id: 'mdpi', size: 24, folder: 'drawable-mdpi' },
+                { id: 'hdpi', size: 36, folder: 'drawable-hdpi' },
+                { id: 'xhdpi', size: 48, folder: 'drawable-xhdpi' },
+                { id: 'xxhdpi', size: 72, folder: 'drawable-xxhdpi' },
+                { id: 'xxxhdpi', size: 96, folder: 'drawable-xxxhdpi' }
+            ];
+
+            for (const { id, folder } of sizes) {
+                const canvas = document.getElementById(`export-${id}`);
+                const dataUrl = canvas.toDataURL('image/png');
+                const data = dataUrl.split(',')[1];
+                zip.file(`${folder}/ic_notification.png`, data, { base64: true });
+            }
+
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            link.download = 'plummet_notification_icons.zip';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        }
+
+        // Initial draw
+        redraw();
+    </script>
+</body>
+</html>

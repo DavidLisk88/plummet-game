@@ -30,7 +30,7 @@ function _setCache(key, data) {
  * @param {Object} opts
  * @param {number} opts.limit
  * @param {number} opts.offset
- * @param {string|null} opts.classFilter - 'high', 'medium', 'low', or null for all
+ * @param {string|null} opts.classFilter - 'master', 'high', 'medium', 'low', or null for all
  * @param {boolean} opts.forceRefresh
  * @returns {Promise<Array>}
  */

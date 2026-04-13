@@ -230,16 +230,35 @@ export async function getChallengeStats(profileId) {
 
 export async function upsertChallengeStats(profileId, challengeType, stats) {
     if (isLocalMode) return null;
+    
+    // Fetch existing record to prevent accidental downgrades of level values
+    const { data: existing } = await supabase
+        .from('profile_challenge_stats')
+        .select('high_score, games_played, total_words, target_word_level, unique_words_found')
+        .eq('profile_id', profileId)
+        .eq('challenge_type', challengeType)
+        .maybeSingle();
+    
+    // Use Math.max for monotonically increasing values (never decrease levels/scores)
+    const newLevel = stats.targetWordLevel || stats.wordSearchLevel || 1;
+    const existingLevel = existing?.target_word_level || 1;
+    const safeLevel = Math.max(newLevel, existingLevel);
+    
+    // Union unique words
+    const existingWords = existing?.unique_words_found || [];
+    const newWords = stats.uniqueWordsFound || [];
+    const mergedWords = [...new Set([...existingWords, ...newWords])];
+    
     const { data, error } = await supabase
         .from('profile_challenge_stats')
         .upsert({
             profile_id: profileId,
             challenge_type: challengeType,
-            high_score: stats.highScore || 0,
-            games_played: stats.gamesPlayed || 0,
-            total_words: stats.totalWords || 0,
-            target_word_level: stats.targetWordLevel || stats.wordSearchLevel || 1,
-            unique_words_found: stats.uniqueWordsFound || [],
+            high_score: Math.max(stats.highScore || 0, existing?.high_score || 0),
+            games_played: Math.max(stats.gamesPlayed || 0, existing?.games_played || 0),
+            total_words: Math.max(stats.totalWords || 0, existing?.total_words || 0),
+            target_word_level: safeLevel,
+            unique_words_found: mergedWords,
             updated_at: new Date().toISOString(),
         }, { onConflict: 'profile_id,challenge_type' })
         .select()

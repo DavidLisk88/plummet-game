@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plummet Notification Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #fff;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #e2d8a6;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 40px;
+            font-size: 0.9rem;
+        }
+
+        .preview-container {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            flex-wrap: wrap;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .device-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .device-label {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #e2d8a6;
+        }
+
+        /* iOS Device Frame */
+        .iphone {
+            width: 320px;
+            height: 650px;
+            background: #000;
+            border-radius: 45px;
+            padding: 12px;
+            position: relative;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.5);
+        }
+
+        .iphone::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 35px;
+            background: #000;
+            border-radius: 0 0 20px 20px;
+            z-index: 10;
+        }
+
+        .iphone-screen {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #1c1c1e 0%, #2c2c2e 100%);
+            border-radius: 35px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .ios-status-bar {
+            height: 50px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 0 28px 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .ios-time {
+            color: #fff;
+        }
+
+        .ios-icons {
+            display: flex;
+            gap: 5px;
+            color: #fff;
+            font-size: 12px;
+        }
+
+        /* iOS Notification */
+        .ios-notification {
+            margin: 15px 10px;
+            background: rgba(50, 50, 52, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+
+        .ios-notif-header {
+            display: flex;
+            align-items: center;
+            padding: 12px 14px 8px;
+            gap: 8px;
+        }
+
+        .ios-app-icon {
+            width: 22px;
+            height: 22px;
+            background: linear-gradient(135deg, #2f3029 0%, #3d3e35 100%);
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #e2d8a6;
+            font-weight: bold;
+        }
+
+        .ios-app-name {
+            font-size: 13px;
+            color: #8e8e93;
+            text-transform: uppercase;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .ios-notif-time {
+            margin-left: auto;
+            font-size: 12px;
+            color: #8e8e93;
+        }
+
+        .ios-notif-content {
+            padding: 0 14px 14px;
+        }
+
+        .ios-notif-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .ios-notif-body {
+            font-size: 14px;
+            color: #ebebf5;
+            line-height: 1.4;
+            opacity: 0.85;
+        }
+
+        /* Android Device Frame */
+        .android {
+            width: 320px;
+            height: 650px;
+            background: #222;
+            border-radius: 30px;
+            padding: 10px;
+            position: relative;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.5);
+        }
+
+        .android-screen {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #121212 0%, #1e1e1e 100%);
+            border-radius: 22px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .android-status-bar {
+            height: 28px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 0 16px;
+            font-size: 12px;
+            color: #fff;
+            gap: 8px;
+        }
+
+        .android-camera {
+            position: absolute;
+            top: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 10px;
+            height: 10px;
+            background: #333;
+            border-radius: 50%;
+        }
+
+        /* Android Notification */
+        .android-notification {
+            margin: 15px 12px;
+            background: #2d2d2d;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .android-notif-header {
+            display: flex;
+            align-items: center;
+            padding: 14px 16px 6px;
+            gap: 10px;
+        }
+
+        .android-app-icon {
+            width: 24px;
+            height: 24px;
+            background: #2f3029;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #e2d8a6;
+            font-weight: bold;
+        }
+
+        .android-small-icon {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #e2d8a6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #2f3029;
+            font-weight: bold;
+        }
+
+        .android-app-name {
+            font-size: 13px;
+            color: #e2d8a6;
+            font-weight: 500;
+        }
+
+        .android-notif-time {
+            margin-left: auto;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .android-notif-content {
+            padding: 4px 16px 16px;
+        }
+
+        .android-notif-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .android-notif-body {
+            font-size: 14px;
+            color: #b0b0b0;
+            line-height: 1.4;
+        }
+
+        .android-notif-summary {
+            font-size: 12px;
+            color: #e2d8a6;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #404040;
+        }
+
+        /* Message Cards */
+        .message-samples {
+            max-width: 1000px;
+            margin: 60px auto 0;
+        }
+
+        .samples-title {
+            text-align: center;
+            color: #e2d8a6;
+            margin-bottom: 30px;
+            font-size: 1.4rem;
+        }
+
+        .samples-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .sample-card {
+            background: rgba(47, 48, 41, 0.6);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(226, 216, 166, 0.2);
+        }
+
+        .sample-type {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #e2d8a6;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            opacity: 0.7;
+        }
+
+        .sample-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .sample-body {
+            font-size: 14px;
+            color: #aaa;
+            line-height: 1.5;
+        }
+
+        .refresh-btn {
+            display: block;
+            margin: 40px auto 0;
+            padding: 14px 32px;
+            background: linear-gradient(135deg, #2f3029 0%, #3d3e35 100%);
+            color: #e2d8a6;
+            border: 1px solid rgba(226, 216, 166, 0.3);
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            background: linear-gradient(135deg, #3d3e35 0%, #4d4e45 100%);
+            border-color: rgba(226, 216, 166, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+
+        .color-info {
+            text-align: center;
+            margin-top: 50px;
+            padding: 25px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .color-info h3 {
+            color: #e2d8a6;
+            margin-bottom: 15px;
+        }
+
+        .color-swatches {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .swatch {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .swatch-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: 2px solid rgba(255,255,255,0.1);
+        }
+
+        .swatch-label {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .swatch-value {
+            font-family: monospace;
+            color: #fff;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Plummet Push Notification Preview</h1>
+    <p class="subtitle">Visual preview of how notifications appear on iOS and Android devices</p>
+
+    <div class="preview-container">
+        <!-- iOS Device -->
+        <div class="device-section">
+            <div class="device-label">iOS (iPhone)</div>
+            <div class="iphone">
+                <div class="iphone-screen">
+                    <div class="ios-status-bar">
+                        <span class="ios-time">9:41</span>
+                        <span class="ios-icons">📶 📡 🔋</span>
+                    </div>
+                    
+                    <!-- Fun Message Notification -->
+                    <div class="ios-notification" id="ios-fun-notif">
+                        <div class="ios-notif-header">
+                            <div class="ios-app-icon">P</div>
+                            <span class="ios-app-name">Plummet</span>
+                            <span class="ios-notif-time">now</span>
+                        </div>
+                        <div class="ios-notif-content">
+                            <div class="ios-notif-title" id="ios-fun-title">Word Nerd Alert ◈</div>
+                            <div class="ios-notif-body" id="ios-fun-body">Did you know? The word 'set' has the most definitions of any English word - over 430!</div>
+                        </div>
+                    </div>
+
+                    <!-- Word of the Day Notification -->
+                    <div class="ios-notification">
+                        <div class="ios-notif-header">
+                            <div class="ios-app-icon">P</div>
+                            <span class="ios-app-name">Plummet</span>
+                            <span class="ios-notif-time">12:00 PM</span>
+                        </div>
+                        <div class="ios-notif-content">
+                            <div class="ios-notif-title">📖 Word of the Day</div>
+                            <div class="ios-notif-body">EPHEMERAL (adj.) - lasting for a very short time; transitory</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Android Device -->
+        <div class="device-section">
+            <div class="device-label">Android</div>
+            <div class="android">
+                <div class="android-screen">
+                    <div class="android-camera"></div>
+                    <div class="android-status-bar">
+                        <span>📶</span>
+                        <span>🔋 85%</span>
+                        <span>4:20</span>
+                    </div>
+
+                    <!-- Fun Message Notification -->
+                    <div class="android-notification" id="android-fun-notif">
+                        <div class="android-notif-header">
+                            <div class="android-small-icon">P</div>
+                            <span class="android-app-name">Plummet</span>
+                            <span class="android-notif-time">Just now</span>
+                        </div>
+                        <div class="android-notif-content">
+                            <div class="android-notif-title" id="android-fun-title">Word Nerd Alert ◈</div>
+                            <div class="android-notif-body" id="android-fun-body">Did you know? The word 'set' has the most definitions of any English word - over 430!</div>
+                            <div class="android-notif-summary">Tap to play Plummet</div>
+                        </div>
+                    </div>
+
+                    <!-- Word of the Day Notification -->
+                    <div class="android-notification">
+                        <div class="android-notif-header">
+                            <div class="android-small-icon">P</div>
+                            <span class="android-app-name">Plummet</span>
+                            <span class="android-notif-time">12:00 PM</span>
+                        </div>
+                        <div class="android-notif-content">
+                            <div class="android-notif-title">📖 Word of the Day</div>
+                            <div class="android-notif-body">EPHEMERAL (adj.) - lasting for a very short time; transitory</div>
+                            <div class="android-notif-summary">Tap to expand your vocabulary!</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sample Messages -->
+    <div class="message-samples">
+        <h2 class="samples-title">Sample Fun Messages (431 total)</h2>
+        <div class="samples-grid" id="samples-grid">
+            <!-- Populated by JS -->
+        </div>
+        <button class="refresh-btn" onclick="refreshSamples()">🔄 Show Different Messages</button>
+    </div>
+
+    <!-- Color Info -->
+    <div class="color-info">
+        <h3>Plummet Brand Colors</h3>
+        <div class="color-swatches">
+            <div class="swatch">
+                <div class="swatch-color" style="background: #2f3029;"></div>
+                <div>
+                    <div class="swatch-label">Background</div>
+                    <div class="swatch-value">#2f3029</div>
+                </div>
+            </div>
+            <div class="swatch">
+                <div class="swatch-color" style="background: #e2d8a6;"></div>
+                <div>
+                    <div class="swatch-label">Accent</div>
+                    <div class="swatch-value">#e2d8a6</div>
+                </div>
+            </div>
+            <div class="swatch">
+                <div class="swatch-color" style="background: linear-gradient(135deg, #2f3029, #3d3e35);"></div>
+                <div>
+                    <div class="swatch-label">Icon Gradient</div>
+                    <div class="swatch-value">135° gradient</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const funMessages = [
+            { title: "Word Nerd Alert ◈", body: "Did you know? The word 'set' has the most definitions of any English word - over 430!" },
+            { title: "Quick Brain Teaser ⬡", body: "What 5-letter word becomes shorter when you add two letters? Answer: Short!" },
+            { title: "Plummet Wisdom ◐", body: "The longest word you can type using only the top row of a keyboard is 'typewriter'!" },
+            { title: "Time for Wordplay ▣", body: "Your letters miss you. They've been sitting there spelling nothing without you." },
+            { title: "Fun Fact ◇", body: "'Dreamt' is the only English word ending in 'mt'. Sweet dreams!" },
+            { title: "Letter Lovers Unite ⊕", body: "The quick brown fox jumps over the lazy dog. (That's every letter! Can you beat that?)" },
+            { title: "Daily Giggle ◎", body: "Why did the word go to therapy? It had too many issues with its past tense." },
+            { title: "Mind Blown ✦", body: "'Underground' and 'underfund' are the only English words starting and ending with 'und'!" },
+            { title: "Plummet Pun ◉", body: "I told my friend a word joke. It was a play on words... he didn't get the letter of it." },
+            { title: "Random Wisdom ⬢", body: "'Bookkeeper' and 'bookkeeping' have three consecutive double letters. Try finding another!" },
+            { title: "Grammar Giggles ◆", body: "The past, present, and future walked into a bar. It was tense." },
+            { title: "Word Wizard Tip ✧", body: "Pro tip: Words with Q but no U exist! Try QI, QOPH, or QADI in your next game." },
+            { title: "Linguistic Luck ⊙", body: "'Almost' is the longest common English word with all letters in alphabetical order!" },
+            { title: "Plummet Puzzle ▲", body: "Can you think of a word with all 5 vowels? How about 'sequoia' or 'facetious'?" },
+            { title: "Wordsmith Alert ⬣", body: "The dot over the letters 'i' and 'j' is called a tittle. Now you know!" },
+            { title: "Letter Logic ◌", body: "'Rhythm' is the longest English word without a vowel. Can you find it in Plummet?" },
+            { title: "Quick Wit ⊞", body: "What do you call a fish without eyes? A fsh!" },
+            { title: "Vocabulary Vibes ⧫", body: "New word: 'Petrichor' - the pleasant smell of rain on dry earth. Beautiful, right?" },
+            { title: "Word Wonder ◑", body: "'Strengths' is the longest word with just one vowel. Eight consonants strong!" },
+            { title: "Plummet Break ▽", body: "Take a deep breath. Now spell 'RELAX' in your next game!" }
+        ];
+
+        function shuffleArray(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function refreshSamples() {
+            const grid = document.getElementById('samples-grid');
+            const shuffled = shuffleArray(funMessages);
+            const selected = shuffled.slice(0, 6);
+            
+            grid.innerHTML = selected.map((msg, i) => `
+                <div class="sample-card">
+                    <div class="sample-type">Fun Message ${i + 1}</div>
+                    <div class="sample-title">${msg.title}</div>
+                    <div class="sample-body">${msg.body}</div>
+                </div>
+            `).join('');
+
+            // Also update device previews
+            const first = selected[0];
+            document.getElementById('ios-fun-title').textContent = first.title;
+            document.getElementById('ios-fun-body').textContent = first.body;
+            document.getElementById('android-fun-title').textContent = first.title;
+            document.getElementById('android-fun-body').textContent = first.body;
+        }
+
+        // Initial load
+        refreshSamples();
+    </script>
+</body>
+</html>

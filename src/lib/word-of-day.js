@@ -214,8 +214,8 @@ export async function scheduleWordOfDay(wordsData) {
         notifications: [
             {
                 id: NOTIFICATION_ID,
-                title: `📖 Word of the Day: ${formatted.word}`,
-                body: formatted.shortText,
+                title: '📖 Word of the Day',
+                body: `${formatted.word} — ${formatted.shortText}`,
                 largeBody: formatted.fullText, // Expandable content (Android)
                 summaryText: 'Tap to learn more', // Shown when collapsed (Android)
                 schedule: {

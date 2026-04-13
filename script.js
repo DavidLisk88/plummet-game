@@ -1299,6 +1299,246 @@ const MILESTONES = [
     { id: "bs_timed_3k",    cat: "bestScores", label: "Timed 3K",           desc: "Score 3,000+ on Timed mode",    check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 3000); }, coins: 60 },
     { id: "bs_timed_5k",    cat: "bestScores", label: "Timed 5K",           desc: "Score 5,000+ on Timed mode",    check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 5000); }, coins: 125 },
     { id: "bs_timed_10k",   cat: "bestScores", label: "Timed 10K",          desc: "Score 10,000+ on Timed mode",   check: p => { const bs = p.bestScores || {}; return Object.entries(bs).some(([k,v]) => k.endsWith("-timed") && v >= 10000); }, coins: 250 },
+
+    // ─── LONG WORDS (15) ───
+    { id: "lw_4",           cat: "longWords", label: "Four Letter",         desc: "Find a 4-letter word",          check: p => (p.longestWord || 0) >= 4, coins: 2 },
+    { id: "lw_5",           cat: "longWords", label: "Five Letter",         desc: "Find a 5-letter word",          check: p => (p.longestWord || 0) >= 5, coins: 5 },
+    { id: "lw_6",           cat: "longWords", label: "Six Letter",          desc: "Find a 6-letter word",          check: p => (p.longestWord || 0) >= 6, coins: 10 },
+    { id: "lw_7",           cat: "longWords", label: "Seven Letter",        desc: "Find a 7-letter word",          check: p => (p.longestWord || 0) >= 7, coins: 20 },
+    { id: "lw_8",           cat: "longWords", label: "Eight Letter",        desc: "Find an 8-letter word",         check: p => (p.longestWord || 0) >= 8, coins: 35 },
+    { id: "lw_9",           cat: "longWords", label: "Nine Letter",         desc: "Find a 9-letter word",          check: p => (p.longestWord || 0) >= 9, coins: 50 },
+    { id: "lw_10",          cat: "longWords", label: "Ten Letter",          desc: "Find a 10-letter word",         check: p => (p.longestWord || 0) >= 10, coins: 75 },
+    { id: "lw_11",          cat: "longWords", label: "Eleven Letter",       desc: "Find an 11-letter word",        check: p => (p.longestWord || 0) >= 11, coins: 100 },
+    { id: "lw_12",          cat: "longWords", label: "Twelve Letter",       desc: "Find a 12-letter word",         check: p => (p.longestWord || 0) >= 12, coins: 150 },
+    { id: "lw_13",          cat: "longWords", label: "Thirteen Letter",     desc: "Find a 13-letter word",         check: p => (p.longestWord || 0) >= 13, coins: 200 },
+    { id: "lw_14",          cat: "longWords", label: "Fourteen Letter",     desc: "Find a 14-letter word",         check: p => (p.longestWord || 0) >= 14, coins: 300 },
+    { id: "lw_15",          cat: "longWords", label: "Fifteen Letter",      desc: "Find a 15-letter word",         check: p => (p.longestWord || 0) >= 15, coins: 500 },
+    { id: "lw_long_10",     cat: "longWords", label: "Long Word Hunter",    desc: "Find 10 words of 6+ letters",   check: p => (p.longWordsFound || 0) >= 10, coins: 15 },
+    { id: "lw_long_50",     cat: "longWords", label: "Long Word Seeker",    desc: "Find 50 words of 6+ letters",   check: p => (p.longWordsFound || 0) >= 50, coins: 40 },
+    { id: "lw_long_200",    cat: "longWords", label: "Long Word Master",    desc: "Find 200 words of 6+ letters",  check: p => (p.longWordsFound || 0) >= 200, coins: 100 },
+
+    // ─── COMBOS & STREAKS IN-GAME (12) ───
+    { id: "combo_3",        cat: "combo",    label: "Triple Combo",          desc: "Get a 3x combo in a game",      check: p => (p.bestCombo || 0) >= 3, coins: 5 },
+    { id: "combo_5",        cat: "combo",    label: "Combo Starter",         desc: "Get a 5x combo in a game",      check: p => (p.bestCombo || 0) >= 5, coins: 10 },
+    { id: "combo_7",        cat: "combo",    label: "Combo Builder",         desc: "Get a 7x combo in a game",      check: p => (p.bestCombo || 0) >= 7, coins: 20 },
+    { id: "combo_10",       cat: "combo",    label: "Combo King",            desc: "Get a 10x combo in a game",     check: p => (p.bestCombo || 0) >= 10, coins: 35 },
+    { id: "combo_15",       cat: "combo",    label: "Combo Lord",            desc: "Get a 15x combo in a game",     check: p => (p.bestCombo || 0) >= 15, coins: 60 },
+    { id: "combo_20",       cat: "combo",    label: "Combo Master",          desc: "Get a 20x combo in a game",     check: p => (p.bestCombo || 0) >= 20, coins: 100 },
+    { id: "combo_25",       cat: "combo",    label: "Combo Legend",          desc: "Get a 25x combo in a game",     check: p => (p.bestCombo || 0) >= 25, coins: 150 },
+    { id: "combo_30",       cat: "combo",    label: "Combo God",             desc: "Get a 30x combo in a game",     check: p => (p.bestCombo || 0) >= 30, coins: 250 },
+    { id: "combo_total_50", cat: "combo",    label: "Combo Counter",         desc: "Achieve 50 total combos",       check: p => (p.totalCombos || 0) >= 50, coins: 15 },
+    { id: "combo_total_200",cat: "combo",    label: "Combo Addict",          desc: "Achieve 200 total combos",      check: p => (p.totalCombos || 0) >= 200, coins: 40 },
+    { id: "combo_total_500",cat: "combo",    label: "Combo Maniac",          desc: "Achieve 500 total combos",      check: p => (p.totalCombos || 0) >= 500, coins: 75 },
+    { id: "combo_total_1k", cat: "combo",    label: "Combo Overlord",        desc: "Achieve 1,000 total combos",    check: p => (p.totalCombos || 0) >= 1000, coins: 150 },
+
+    // ─── WORDS PER GAME (10) ───
+    { id: "wpg_5",          cat: "wordsPerGame", label: "Five Words",        desc: "Find 5 words in one game",      check: p => (p.bestWordsInGame || 0) >= 5, coins: 3 },
+    { id: "wpg_10",         cat: "wordsPerGame", label: "Ten Words",         desc: "Find 10 words in one game",     check: p => (p.bestWordsInGame || 0) >= 10, coins: 8 },
+    { id: "wpg_15",         cat: "wordsPerGame", label: "Fifteen Words",     desc: "Find 15 words in one game",     check: p => (p.bestWordsInGame || 0) >= 15, coins: 15 },
+    { id: "wpg_20",         cat: "wordsPerGame", label: "Twenty Words",      desc: "Find 20 words in one game",     check: p => (p.bestWordsInGame || 0) >= 20, coins: 25 },
+    { id: "wpg_30",         cat: "wordsPerGame", label: "Thirty Words",      desc: "Find 30 words in one game",     check: p => (p.bestWordsInGame || 0) >= 30, coins: 40 },
+    { id: "wpg_40",         cat: "wordsPerGame", label: "Forty Words",       desc: "Find 40 words in one game",     check: p => (p.bestWordsInGame || 0) >= 40, coins: 60 },
+    { id: "wpg_50",         cat: "wordsPerGame", label: "Fifty Words",       desc: "Find 50 words in one game",     check: p => (p.bestWordsInGame || 0) >= 50, coins: 85 },
+    { id: "wpg_75",         cat: "wordsPerGame", label: "Seventy-Five Words",desc: "Find 75 words in one game",     check: p => (p.bestWordsInGame || 0) >= 75, coins: 125 },
+    { id: "wpg_100",        cat: "wordsPerGame", label: "Century Game",      desc: "Find 100 words in one game",    check: p => (p.bestWordsInGame || 0) >= 100, coins: 200 },
+    { id: "wpg_150",        cat: "wordsPerGame", label: "Word Flood",        desc: "Find 150 words in one game",    check: p => (p.bestWordsInGame || 0) >= 150, coins: 350 },
+
+    // ─── PERFECT GAMES (8) ───
+    { id: "perf_clear",     cat: "perfect",  label: "Grid Cleaner",          desc: "Clear an entire grid",          check: p => (p.perfectClears || 0) >= 1, coins: 25 },
+    { id: "perf_clear_5",   cat: "perfect",  label: "Clean Sweep",           desc: "Clear 5 entire grids",          check: p => (p.perfectClears || 0) >= 5, coins: 50 },
+    { id: "perf_clear_10",  cat: "perfect",  label: "Immaculate",            desc: "Clear 10 entire grids",         check: p => (p.perfectClears || 0) >= 10, coins: 100 },
+    { id: "perf_clear_25",  cat: "perfect",  label: "Perfectionist",         desc: "Clear 25 entire grids",         check: p => (p.perfectClears || 0) >= 25, coins: 200 },
+    { id: "perf_no_miss",   cat: "perfect",  label: "No Mistakes",           desc: "Complete a game with 0 invalid attempts", check: p => (p.perfectGames || 0) >= 1, coins: 20 },
+    { id: "perf_no_miss_5", cat: "perfect",  label: "Flawless Five",         desc: "Complete 5 games with 0 invalid attempts", check: p => (p.perfectGames || 0) >= 5, coins: 50 },
+    { id: "perf_no_miss_10",cat: "perfect",  label: "Flawless Ten",          desc: "Complete 10 games with 0 invalid attempts", check: p => (p.perfectGames || 0) >= 10, coins: 100 },
+    { id: "perf_no_miss_25",cat: "perfect",  label: "Impeccable",            desc: "Complete 25 games with 0 invalid attempts", check: p => (p.perfectGames || 0) >= 25, coins: 200 },
+
+    // ─── TIME PLAYED (10) ───
+    { id: "time_10m",       cat: "timePlayed", label: "Ten Minutes",        desc: "Play for 10 minutes total",     check: p => (p.totalPlayTimeMinutes || 0) >= 10, coins: 5 },
+    { id: "time_30m",       cat: "timePlayed", label: "Half Hour",          desc: "Play for 30 minutes total",     check: p => (p.totalPlayTimeMinutes || 0) >= 30, coins: 10 },
+    { id: "time_1h",        cat: "timePlayed", label: "One Hour",           desc: "Play for 1 hour total",         check: p => (p.totalPlayTimeMinutes || 0) >= 60, coins: 20 },
+    { id: "time_3h",        cat: "timePlayed", label: "Three Hours",        desc: "Play for 3 hours total",        check: p => (p.totalPlayTimeMinutes || 0) >= 180, coins: 35 },
+    { id: "time_5h",        cat: "timePlayed", label: "Five Hours",         desc: "Play for 5 hours total",        check: p => (p.totalPlayTimeMinutes || 0) >= 300, coins: 50 },
+    { id: "time_10h",       cat: "timePlayed", label: "Ten Hours",          desc: "Play for 10 hours total",       check: p => (p.totalPlayTimeMinutes || 0) >= 600, coins: 75 },
+    { id: "time_24h",       cat: "timePlayed", label: "Full Day",           desc: "Play for 24 hours total",       check: p => (p.totalPlayTimeMinutes || 0) >= 1440, coins: 150 },
+    { id: "time_50h",       cat: "timePlayed", label: "Fifty Hours",        desc: "Play for 50 hours total",       check: p => (p.totalPlayTimeMinutes || 0) >= 3000, coins: 250 },
+    { id: "time_100h",      cat: "timePlayed", label: "Century Hours",      desc: "Play for 100 hours total",      check: p => (p.totalPlayTimeMinutes || 0) >= 6000, coins: 500 },
+    { id: "time_250h",      cat: "timePlayed", label: "Dedicated",          desc: "Play for 250 hours total",      check: p => (p.totalPlayTimeMinutes || 0) >= 15000, coins: 1000 },
+
+    // ─── LETTER MASTERY (15) ───
+    { id: "letter_q",       cat: "letters",  label: "Q Without U",           desc: "Use Q in a word without U",     check: p => (p.qWithoutU || 0) >= 1, coins: 25 },
+    { id: "letter_x",       cat: "letters",  label: "X Marks the Word",      desc: "Find 10 words with X",          check: p => (p.wordsWithX || 0) >= 10, coins: 20 },
+    { id: "letter_z",       cat: "letters",  label: "Zesty",                 desc: "Find 10 words with Z",          check: p => (p.wordsWithZ || 0) >= 10, coins: 20 },
+    { id: "letter_j",       cat: "letters",  label: "J is for Joy",          desc: "Find 10 words with J",          check: p => (p.wordsWithJ || 0) >= 10, coins: 15 },
+    { id: "letter_k",       cat: "letters",  label: "K is Key",              desc: "Find 20 words with K",          check: p => (p.wordsWithK || 0) >= 20, coins: 15 },
+    { id: "letter_v",       cat: "letters",  label: "V for Victory",         desc: "Find 20 words with V",          check: p => (p.wordsWithV || 0) >= 20, coins: 12 },
+    { id: "letter_w",       cat: "letters",  label: "W Wrangler",            desc: "Find 25 words with W",          check: p => (p.wordsWithW || 0) >= 25, coins: 12 },
+    { id: "letter_y",       cat: "letters",  label: "Y Seeker",              desc: "Find 25 words with Y",          check: p => (p.wordsWithY || 0) >= 25, coins: 10 },
+    { id: "letter_double",  cat: "letters",  label: "Double Trouble",        desc: "Find 20 words with double letters", check: p => (p.doubleLetterWords || 0) >= 20, coins: 20 },
+    { id: "letter_triple",  cat: "letters",  label: "Triple Threat",         desc: "Find a word with triple letters", check: p => (p.tripleLetterWords || 0) >= 1, coins: 50 },
+    { id: "letter_vowel",   cat: "letters",  label: "Vowel Heavy",           desc: "Find a word with 4+ vowels",    check: p => (p.highVowelWords || 0) >= 1, coins: 15 },
+    { id: "letter_cons",    cat: "letters",  label: "Consonant Cluster",     desc: "Find a word with 4+ consonants in a row", check: p => (p.consonantClusterWords || 0) >= 1, coins: 25 },
+    { id: "letter_all_vowel",cat: "letters", label: "All Five Vowels",       desc: "Find a word with A, E, I, O, U", check: p => (p.allVowelWords || 0) >= 1, coins: 75 },
+    { id: "letter_rare_100",cat: "letters",  label: "Rare Letter Hunter",    desc: "Use 100 rare letters (Q,X,Z,J)", check: p => (p.rareLettersUsed || 0) >= 100, coins: 40 },
+    { id: "letter_rare_500",cat: "letters",  label: "Rare Letter Master",    desc: "Use 500 rare letters (Q,X,Z,J)", check: p => (p.rareLettersUsed || 0) >= 500, coins: 100 },
+
+    // ─── SCORE MILESTONES EXTENDED (12) ───
+    { id: "score_75k",      cat: "score",    label: "Seventy-Five K",        desc: "Score 75,000+ in a game",       check: p => p.highScore >= 75000,    coins: 500 },
+    { id: "score_100k",     cat: "score",    label: "Hundred Grand",         desc: "Score 100,000+ in a game",      check: p => p.highScore >= 100000,   coins: 750 },
+    { id: "score_150k",     cat: "score",    label: "150 Thousand",          desc: "Score 150,000+ in a game",      check: p => p.highScore >= 150000,   coins: 1000 },
+    { id: "score_200k",     cat: "score",    label: "Two Hundred K",         desc: "Score 200,000+ in a game",      check: p => p.highScore >= 200000,   coins: 1500 },
+    { id: "ts_100k",        cat: "totalScore", label: "100K Total",          desc: "Earn 100,000 total score",      check: p => (p.totalScore || 0) >= 100000, coins: 25 },
+    { id: "ts_500k",        cat: "totalScore", label: "500K Total",          desc: "Earn 500,000 total score",      check: p => (p.totalScore || 0) >= 500000, coins: 60 },
+    { id: "ts_1m",          cat: "totalScore", label: "Million Total",       desc: "Earn 1,000,000 total score",    check: p => (p.totalScore || 0) >= 1000000, coins: 125 },
+    { id: "ts_5m",          cat: "totalScore", label: "5 Million Total",     desc: "Earn 5,000,000 total score",    check: p => (p.totalScore || 0) >= 5000000, coins: 250 },
+    { id: "ts_10m",         cat: "totalScore", label: "10 Million Total",    desc: "Earn 10,000,000 total score",   check: p => (p.totalScore || 0) >= 10000000, coins: 500 },
+    { id: "ts_50m",         cat: "totalScore", label: "50 Million Total",    desc: "Earn 50,000,000 total score",   check: p => (p.totalScore || 0) >= 50000000, coins: 1000 },
+    { id: "ts_100m",        cat: "totalScore", label: "100 Million Total",   desc: "Earn 100,000,000 total score",  check: p => (p.totalScore || 0) >= 100000000, coins: 2000 },
+    { id: "ts_1b",          cat: "totalScore", label: "Billion Club",        desc: "Earn 1 billion total score",    check: p => (p.totalScore || 0) >= 1000000000, coins: 5000 },
+
+    // ─── DAILY ACTIVITIES (10) ───
+    { id: "daily_wotd_1",   cat: "daily",    label: "Word Learner",          desc: "Check Word of the Day once",    check: p => (p.wotdViewed || 0) >= 1, coins: 5 },
+    { id: "daily_wotd_7",   cat: "daily",    label: "Weekly Words",          desc: "Check Word of the Day 7 times", check: p => (p.wotdViewed || 0) >= 7, coins: 15 },
+    { id: "daily_wotd_30",  cat: "daily",    label: "Monthly Vocab",         desc: "Check Word of the Day 30 times", check: p => (p.wotdViewed || 0) >= 30, coins: 40 },
+    { id: "daily_wotd_100", cat: "daily",    label: "Word Scholar",          desc: "Check Word of the Day 100 times", check: p => (p.wotdViewed || 0) >= 100, coins: 100 },
+    { id: "daily_dict_1",   cat: "daily",    label: "Dictionary User",       desc: "Look up a word in the dictionary", check: p => (p.dictLookups || 0) >= 1, coins: 3 },
+    { id: "daily_dict_25",  cat: "daily",    label: "Dictionary Browser",    desc: "Look up 25 words in the dictionary", check: p => (p.dictLookups || 0) >= 25, coins: 15 },
+    { id: "daily_dict_100", cat: "daily",    label: "Dictionary Devotee",    desc: "Look up 100 words in the dictionary", check: p => (p.dictLookups || 0) >= 100, coins: 40 },
+    { id: "daily_dict_500", cat: "daily",    label: "Dictionary Master",     desc: "Look up 500 words in the dictionary", check: p => (p.dictLookups || 0) >= 500, coins: 100 },
+    { id: "daily_login_7",  cat: "daily",    label: "Weekly Player",         desc: "Play on 7 different days",      check: p => (p.uniqueDaysPlayed || 0) >= 7, coins: 15 },
+    { id: "daily_login_30", cat: "daily",    label: "Monthly Regular",       desc: "Play on 30 different days",     check: p => (p.uniqueDaysPlayed || 0) >= 30, coins: 50 },
+
+    // ─── EXTENDED UNIQUEDAYS (8) ───
+    { id: "daily_login_60", cat: "daily",    label: "Two Month Veteran",     desc: "Play on 60 different days",     check: p => (p.uniqueDaysPlayed || 0) >= 60, coins: 75 },
+    { id: "daily_login_90", cat: "daily",    label: "Quarterly Champion",    desc: "Play on 90 different days",     check: p => (p.uniqueDaysPlayed || 0) >= 90, coins: 100 },
+    { id: "daily_login_180",cat: "daily",    label: "Half Year Hero",        desc: "Play on 180 different days",    check: p => (p.uniqueDaysPlayed || 0) >= 180, coins: 200 },
+    { id: "daily_login_365",cat: "daily",    label: "Year Long Player",      desc: "Play on 365 different days",    check: p => (p.uniqueDaysPlayed || 0) >= 365, coins: 500 },
+    { id: "daily_login_500",cat: "daily",    label: "500 Days",              desc: "Play on 500 different days",    check: p => (p.uniqueDaysPlayed || 0) >= 500, coins: 750 },
+    { id: "daily_login_730",cat: "daily",    label: "Two Year Player",       desc: "Play on 730 different days",    check: p => (p.uniqueDaysPlayed || 0) >= 730, coins: 1000 },
+    { id: "daily_login_1000",cat: "daily",   label: "Thousand Days",         desc: "Play on 1000 different days",   check: p => (p.uniqueDaysPlayed || 0) >= 1000, coins: 1500 },
+    { id: "daily_login_1500",cat: "daily",   label: "Legendary Dedication",  desc: "Play on 1500 different days",   check: p => (p.uniqueDaysPlayed || 0) >= 1500, coins: 2500 },
+
+    // ─── ROW CLEARS (10) ───
+    { id: "rows_10",        cat: "rows",     label: "Row Clearer",           desc: "Clear 10 rows",                 check: p => (p.totalRowsCleared || 0) >= 10, coins: 5 },
+    { id: "rows_50",        cat: "rows",     label: "Row Sweeper",           desc: "Clear 50 rows",                 check: p => (p.totalRowsCleared || 0) >= 50, coins: 15 },
+    { id: "rows_100",       cat: "rows",     label: "Row Enthusiast",        desc: "Clear 100 rows",                check: p => (p.totalRowsCleared || 0) >= 100, coins: 25 },
+    { id: "rows_250",       cat: "rows",     label: "Row Hunter",            desc: "Clear 250 rows",                check: p => (p.totalRowsCleared || 0) >= 250, coins: 40 },
+    { id: "rows_500",       cat: "rows",     label: "Row Master",            desc: "Clear 500 rows",                check: p => (p.totalRowsCleared || 0) >= 500, coins: 60 },
+    { id: "rows_1000",      cat: "rows",     label: "Row Champion",          desc: "Clear 1,000 rows",              check: p => (p.totalRowsCleared || 0) >= 1000, coins: 100 },
+    { id: "rows_2500",      cat: "rows",     label: "Row Legend",            desc: "Clear 2,500 rows",              check: p => (p.totalRowsCleared || 0) >= 2500, coins: 175 },
+    { id: "rows_5000",      cat: "rows",     label: "Row Titan",             desc: "Clear 5,000 rows",              check: p => (p.totalRowsCleared || 0) >= 5000, coins: 300 },
+    { id: "rows_10000",     cat: "rows",     label: "Row God",               desc: "Clear 10,000 rows",             check: p => (p.totalRowsCleared || 0) >= 10000, coins: 500 },
+    { id: "rows_game_10",   cat: "rows",     label: "Ten Row Game",          desc: "Clear 10 rows in one game",     check: p => (p.bestRowsInGame || 0) >= 10, coins: 25 },
+
+    // ─── BLOCKS DROPPED (10) ───
+    { id: "blocks_100",     cat: "blocks",   label: "Block Dropper",         desc: "Drop 100 blocks",               check: p => (p.totalBlocksDropped || 0) >= 100, coins: 5 },
+    { id: "blocks_500",     cat: "blocks",   label: "Block Stacker",         desc: "Drop 500 blocks",               check: p => (p.totalBlocksDropped || 0) >= 500, coins: 15 },
+    { id: "blocks_1000",    cat: "blocks",   label: "Block Builder",         desc: "Drop 1,000 blocks",             check: p => (p.totalBlocksDropped || 0) >= 1000, coins: 25 },
+    { id: "blocks_2500",    cat: "blocks",   label: "Block Architect",       desc: "Drop 2,500 blocks",             check: p => (p.totalBlocksDropped || 0) >= 2500, coins: 40 },
+    { id: "blocks_5000",    cat: "blocks",   label: "Block Engineer",        desc: "Drop 5,000 blocks",             check: p => (p.totalBlocksDropped || 0) >= 5000, coins: 60 },
+    { id: "blocks_10000",   cat: "blocks",   label: "Block Master",          desc: "Drop 10,000 blocks",            check: p => (p.totalBlocksDropped || 0) >= 10000, coins: 100 },
+    { id: "blocks_25000",   cat: "blocks",   label: "Block Champion",        desc: "Drop 25,000 blocks",            check: p => (p.totalBlocksDropped || 0) >= 25000, coins: 175 },
+    { id: "blocks_50000",   cat: "blocks",   label: "Block Legend",          desc: "Drop 50,000 blocks",            check: p => (p.totalBlocksDropped || 0) >= 50000, coins: 300 },
+    { id: "blocks_100000",  cat: "blocks",   label: "Block Titan",           desc: "Drop 100,000 blocks",           check: p => (p.totalBlocksDropped || 0) >= 100000, coins: 500 },
+    { id: "blocks_250000",  cat: "blocks",   label: "Block God",             desc: "Drop 250,000 blocks",           check: p => (p.totalBlocksDropped || 0) >= 250000, coins: 1000 },
+
+    // ─── BONUS TILES (12) ───
+    { id: "bonus_2x_10",    cat: "bonus",    label: "Double Collector",      desc: "Collect 10 2x bonus tiles",     check: p => (p.bonus2xCollected || 0) >= 10, coins: 10 },
+    { id: "bonus_2x_50",    cat: "bonus",    label: "Double Hunter",         desc: "Collect 50 2x bonus tiles",     check: p => (p.bonus2xCollected || 0) >= 50, coins: 25 },
+    { id: "bonus_2x_200",   cat: "bonus",    label: "Double Master",         desc: "Collect 200 2x bonus tiles",    check: p => (p.bonus2xCollected || 0) >= 200, coins: 60 },
+    { id: "bonus_3x_10",    cat: "bonus",    label: "Triple Collector",      desc: "Collect 10 3x bonus tiles",     check: p => (p.bonus3xCollected || 0) >= 10, coins: 15 },
+    { id: "bonus_3x_50",    cat: "bonus",    label: "Triple Hunter",         desc: "Collect 50 3x bonus tiles",     check: p => (p.bonus3xCollected || 0) >= 50, coins: 40 },
+    { id: "bonus_3x_200",   cat: "bonus",    label: "Triple Master",         desc: "Collect 200 3x bonus tiles",    check: p => (p.bonus3xCollected || 0) >= 200, coins: 100 },
+    { id: "bonus_wild_5",   cat: "bonus",    label: "Wild Card User",        desc: "Use 5 wild tiles",              check: p => (p.wildTilesUsed || 0) >= 5, coins: 15 },
+    { id: "bonus_wild_25",  cat: "bonus",    label: "Wild Card Fan",         desc: "Use 25 wild tiles",             check: p => (p.wildTilesUsed || 0) >= 25, coins: 40 },
+    { id: "bonus_wild_100", cat: "bonus",    label: "Wild Card Master",      desc: "Use 100 wild tiles",            check: p => (p.wildTilesUsed || 0) >= 100, coins: 100 },
+    { id: "bonus_freeze_5", cat: "bonus",    label: "Freeze User",           desc: "Use 5 freeze power-ups",        check: p => (p.freezeUsed || 0) >= 5, coins: 15 },
+    { id: "bonus_freeze_25",cat: "bonus",    label: "Freeze Fan",            desc: "Use 25 freeze power-ups",       check: p => (p.freezeUsed || 0) >= 25, coins: 40 },
+    { id: "bonus_freeze_100",cat: "bonus",   label: "Freeze Master",         desc: "Use 100 freeze power-ups",      check: p => (p.freezeUsed || 0) >= 100, coins: 100 },
+
+    // ─── WORD SEARCH EXTENDED (10) ───
+    { id: "ws_level_75",    cat: "wordSearch", label: "Search Tier 75",     desc: "Reach Word Search level 75",    check: p => (p.challengeStats?.["word-search"]?.wordSearchLevel || 1) >= 75, coins: 400 },
+    { id: "ws_level_100",   cat: "wordSearch", label: "Search Tier 100",    desc: "Reach Word Search level 100",   check: p => (p.challengeStats?.["word-search"]?.wordSearchLevel || 1) >= 100, coins: 600 },
+    { id: "ws_play_100",    cat: "wordSearch", label: "Search Centurion",   desc: "Play 100 Word Searches",        check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 100, coins: 175 },
+    { id: "ws_play_250",    cat: "wordSearch", label: "Search Veteran",     desc: "Play 250 Word Searches",        check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 250, coins: 300 },
+    { id: "ws_play_500",    cat: "wordSearch", label: "Search Master",      desc: "Play 500 Word Searches",        check: p => (p.challengeStats?.["word-search"]?.gamesPlayed || 0) >= 500, coins: 500 },
+    { id: "ws_score_5k",    cat: "wordSearch", label: "Search Score 5K",    desc: "Score 5,000+ in Word Search",   check: p => (p.challengeStats?.["word-search"]?.highScore || 0) >= 5000, coins: 150 },
+    { id: "ws_score_10k",   cat: "wordSearch", label: "Search Score 10K",   desc: "Score 10,000+ in Word Search",  check: p => (p.challengeStats?.["word-search"]?.highScore || 0) >= 10000, coins: 300 },
+    { id: "ws_words_100",   cat: "wordSearch", label: "Search Words 100",   desc: "Find 100 words in Word Search", check: p => (p.challengeStats?.["word-search"]?.totalWords || 0) >= 100, coins: 30 },
+    { id: "ws_words_500",   cat: "wordSearch", label: "Search Words 500",   desc: "Find 500 words in Word Search", check: p => (p.challengeStats?.["word-search"]?.totalWords || 0) >= 500, coins: 75 },
+    { id: "ws_words_1000",  cat: "wordSearch", label: "Search Words 1K",    desc: "Find 1,000 words in Word Search", check: p => (p.challengeStats?.["word-search"]?.totalWords || 0) >= 1000, coins: 150 },
+
+    // ─── WORD RUNNER EXTENDED (10) ───
+    { id: "wr_play_100",    cat: "wordRunner", label: "Runner Centurion",   desc: "Play 100 Word Runners",         check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 100, coins: 175 },
+    { id: "wr_play_250",    cat: "wordRunner", label: "Runner Veteran",     desc: "Play 250 Word Runners",         check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 250, coins: 300 },
+    { id: "wr_play_500",    cat: "wordRunner", label: "Runner Master",      desc: "Play 500 Word Runners",         check: p => (p.challengeStats?.["word-runner"]?.gamesPlayed || 0) >= 500, coins: 500 },
+    { id: "wr_score_10k",   cat: "wordRunner", label: "Runner Score 10K",   desc: "Score 10,000+ in Word Runner",  check: p => (p.challengeStats?.["word-runner"]?.highScore || 0) >= 10000, coins: 400 },
+    { id: "wr_score_25k",   cat: "wordRunner", label: "Runner Score 25K",   desc: "Score 25,000+ in Word Runner",  check: p => (p.challengeStats?.["word-runner"]?.highScore || 0) >= 25000, coins: 750 },
+    { id: "wr_distance_1k", cat: "wordRunner", label: "Run 1,000m",         desc: "Run 1,000 meters total",        check: p => (p.challengeStats?.["word-runner"]?.totalDistance || 0) >= 1000, coins: 25 },
+    { id: "wr_distance_10k",cat: "wordRunner", label: "Run 10,000m",        desc: "Run 10,000 meters total",       check: p => (p.challengeStats?.["word-runner"]?.totalDistance || 0) >= 10000, coins: 75 },
+    { id: "wr_distance_50k",cat: "wordRunner", label: "Run 50,000m",        desc: "Run 50,000 meters total",       check: p => (p.challengeStats?.["word-runner"]?.totalDistance || 0) >= 50000, coins: 200 },
+    { id: "wr_distance_100k",cat: "wordRunner", label: "Run 100km",         desc: "Run 100,000 meters total",      check: p => (p.challengeStats?.["word-runner"]?.totalDistance || 0) >= 100000, coins: 400 },
+    { id: "wr_distance_1m", cat: "wordRunner", label: "Marathon Runner",    desc: "Run 1,000,000 meters total",    check: p => (p.challengeStats?.["word-runner"]?.totalDistance || 0) >= 1000000, coins: 1000 },
+
+    // ─── TARGET WORD EXTENDED (8) ───
+    { id: "tw_level_75",    cat: "targetWord", label: "Target Tier 75",     desc: "Reach Target Word level 75",    check: p => (p.challengeStats?.["target-word"]?.targetWordLevel || 1) >= 75, coins: 400 },
+    { id: "tw_level_100",   cat: "targetWord", label: "Target Tier 100",    desc: "Reach Target Word level 100",   check: p => (p.challengeStats?.["target-word"]?.targetWordLevel || 1) >= 100, coins: 600 },
+    { id: "tw_play_100",    cat: "targetWord", label: "Target Centurion",   desc: "Play 100 Target Word challenges", check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 100, coins: 175 },
+    { id: "tw_play_250",    cat: "targetWord", label: "Target Veteran",     desc: "Play 250 Target Word challenges", check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 250, coins: 300 },
+    { id: "tw_play_500",    cat: "targetWord", label: "Target Hero",        desc: "Play 500 Target Word challenges", check: p => (p.challengeStats?.["target-word"]?.gamesPlayed || 0) >= 500, coins: 500 },
+    { id: "tw_perfect_1",   cat: "targetWord", label: "Perfect Target",     desc: "Complete Target Word without missing", check: p => (p.challengeStats?.["target-word"]?.perfectGames || 0) >= 1, coins: 50 },
+    { id: "tw_perfect_10",  cat: "targetWord", label: "Perfect Ten Targets",desc: "Complete 10 perfect Target Words", check: p => (p.challengeStats?.["target-word"]?.perfectGames || 0) >= 10, coins: 150 },
+    { id: "tw_perfect_50",  cat: "targetWord", label: "Target Perfectionist",desc: "Complete 50 perfect Target Words", check: p => (p.challengeStats?.["target-word"]?.perfectGames || 0) >= 50, coins: 400 },
+
+    // ─── SPEED ROUND EXTENDED (8) ───
+    { id: "sr_play_100",    cat: "speedRound", label: "Speed Centurion",    desc: "Play 100 Speed Rounds",         check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 100, coins: 175 },
+    { id: "sr_play_250",    cat: "speedRound", label: "Speed Veteran",      desc: "Play 250 Speed Rounds",         check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 250, coins: 300 },
+    { id: "sr_play_500",    cat: "speedRound", label: "Speed Hero",         desc: "Play 500 Speed Rounds",         check: p => (p.challengeStats?.["speed-round"]?.gamesPlayed || 0) >= 500, coins: 500 },
+    { id: "sr_score_5000",  cat: "speedRound", label: "Speed Score 5K",     desc: "Score 5,000+ in Speed Round",   check: p => (p.challengeStats?.["speed-round"]?.highScore || 0) >= 5000, coins: 200 },
+    { id: "sr_score_10000", cat: "speedRound", label: "Speed Score 10K",    desc: "Score 10,000+ in Speed Round",  check: p => (p.challengeStats?.["speed-round"]?.highScore || 0) >= 10000, coins: 400 },
+    { id: "sr_words_100",   cat: "speedRound", label: "Speed Words 100",    desc: "Find 100 words in Speed Rounds", check: p => (p.challengeStats?.["speed-round"]?.totalWords || 0) >= 100, coins: 30 },
+    { id: "sr_words_500",   cat: "speedRound", label: "Speed Words 500",    desc: "Find 500 words in Speed Rounds", check: p => (p.challengeStats?.["speed-round"]?.totalWords || 0) >= 500, coins: 75 },
+    { id: "sr_words_1000",  cat: "speedRound", label: "Speed Words 1K",     desc: "Find 1,000 words in Speed Rounds", check: p => (p.challengeStats?.["speed-round"]?.totalWords || 0) >= 1000, coins: 150 },
+
+    // ─── WORD CATEGORY EXTENDED (8) ───
+    { id: "wc_play_100",    cat: "wordCat",  label: "Category Centurion",   desc: "Play 100 Word Category challenges", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 100, coins: 175 },
+    { id: "wc_play_250",    cat: "wordCat",  label: "Category Veteran",     desc: "Play 250 Word Category challenges", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 250, coins: 300 },
+    { id: "wc_play_500",    cat: "wordCat",  label: "Category Hero",        desc: "Play 500 Word Category challenges", check: p => (p.challengeStats?.["word-category"]?.gamesPlayed || 0) >= 500, coins: 500 },
+    { id: "wc_score_5000",  cat: "wordCat",  label: "Cat. Score 5K",        desc: "Score 5,000+ in Word Category", check: p => (p.challengeStats?.["word-category"]?.highScore || 0) >= 5000, coins: 200 },
+    { id: "wc_score_10000", cat: "wordCat",  label: "Cat. Score 10K",       desc: "Score 10,000+ in Word Category", check: p => (p.challengeStats?.["word-category"]?.highScore || 0) >= 10000, coins: 400 },
+    { id: "wc_cats_5",      cat: "wordCat",  label: "Five Categories",      desc: "Complete 5 different categories", check: p => (p.challengeStats?.["word-category"]?.categoriesCompleted || 0) >= 5, coins: 30 },
+    { id: "wc_cats_15",     cat: "wordCat",  label: "Fifteen Categories",   desc: "Complete 15 different categories", check: p => (p.challengeStats?.["word-category"]?.categoriesCompleted || 0) >= 15, coins: 75 },
+    { id: "wc_cats_all",    cat: "wordCat",  label: "All Categories",       desc: "Complete all available categories", check: p => (p.challengeStats?.["word-category"]?.categoriesCompleted || 0) >= 30, coins: 200 },
+
+    // ─── EXTENDED META MILESTONES (10) ───
+    { id: "meta_175",       cat: "meta",     label: "175 Milestones",        desc: "Earn 175 milestones",           check: p => (p.claimedMilestones || []).length >= 175, coins: 400 },
+    { id: "meta_200",       cat: "meta",     label: "200 Milestones",        desc: "Earn 200 milestones",           check: p => (p.claimedMilestones || []).length >= 200, coins: 500 },
+    { id: "meta_225",       cat: "meta",     label: "225 Milestones",        desc: "Earn 225 milestones",           check: p => (p.claimedMilestones || []).length >= 225, coins: 600 },
+    { id: "meta_250",       cat: "meta",     label: "250 Milestones",        desc: "Earn 250 milestones",           check: p => (p.claimedMilestones || []).length >= 250, coins: 750 },
+    { id: "meta_275",       cat: "meta",     label: "275 Milestones",        desc: "Earn 275 milestones",           check: p => (p.claimedMilestones || []).length >= 275, coins: 900 },
+    { id: "meta_300",       cat: "meta",     label: "300 Milestones",        desc: "Earn 300 milestones",           check: p => (p.claimedMilestones || []).length >= 300, coins: 1100 },
+    { id: "meta_325",       cat: "meta",     label: "325 Milestones",        desc: "Earn 325 milestones",           check: p => (p.claimedMilestones || []).length >= 325, coins: 1300 },
+    { id: "meta_350",       cat: "meta",     label: "350 Milestones",        desc: "Earn 350 milestones",           check: p => (p.claimedMilestones || []).length >= 350, coins: 1500 },
+    { id: "meta_375",       cat: "meta",     label: "375 Milestones",        desc: "Earn 375 milestones",           check: p => (p.claimedMilestones || []).length >= 375, coins: 1750 },
+    { id: "meta_400",       cat: "meta",     label: "400 Club",              desc: "Earn 400 milestones",           check: p => (p.claimedMilestones || []).length >= 400, coins: 2000 },
+
+    // ─── SOCIAL & MISC (6) ───
+    { id: "soc_share_1",    cat: "social",   label: "First Share",           desc: "Share your score once",         check: p => (p.timesShared || 0) >= 1, coins: 10 },
+    { id: "soc_share_10",   cat: "social",   label: "Social Sharer",         desc: "Share your score 10 times",     check: p => (p.timesShared || 0) >= 10, coins: 30 },
+    { id: "soc_share_50",   cat: "social",   label: "Social Star",           desc: "Share your score 50 times",     check: p => (p.timesShared || 0) >= 50, coins: 75 },
+    { id: "soc_leaderboard",cat: "social",   label: "Competitive",           desc: "View the leaderboard",          check: p => (p.leaderboardViews || 0) >= 1, coins: 5 },
+    { id: "soc_top_100",    cat: "social",   label: "Top 100",               desc: "Reach top 100 on leaderboard",  check: p => (p.bestLeaderboardRank || 999999) <= 100, coins: 100 },
+    { id: "soc_top_10",     cat: "social",   label: "Top 10",                desc: "Reach top 10 on leaderboard",   check: p => (p.bestLeaderboardRank || 999999) <= 10, coins: 500 },
+
+    // ─── VARIETY ACHIEVEMENTS (8) ───
+    { id: "var_all_modes",  cat: "variety",  label: "Mode Explorer",         desc: "Play all 3 game modes",         check: p => (p.modesPlayed || 0) >= 3, coins: 25 },
+    { id: "var_all_chal",   cat: "variety",  label: "Challenge Explorer",    desc: "Try all 5 challenge types",     check: p => (p.challengeTypesPlayed || 0) >= 5, coins: 50 },
+    { id: "var_themes_3",   cat: "variety",  label: "Theme Collector",       desc: "Unlock 3 themes",               check: p => (p.themesUnlocked || 0) >= 3, coins: 30 },
+    { id: "var_themes_all", cat: "variety",  label: "Theme Master",          desc: "Unlock all themes",             check: p => (p.themesUnlocked || 0) >= 10, coins: 150 },
+    { id: "var_powerup_1",  cat: "variety",  label: "Power Up",              desc: "Use any power-up",              check: p => (p.powerupsUsed || 0) >= 1, coins: 5 },
+    { id: "var_powerup_50", cat: "variety",  label: "Power User",            desc: "Use 50 power-ups",              check: p => (p.powerupsUsed || 0) >= 50, coins: 40 },
+    { id: "var_powerup_200",cat: "variety",  label: "Power Master",          desc: "Use 200 power-ups",             check: p => (p.powerupsUsed || 0) >= 200, coins: 100 },
+    { id: "var_first_win",  cat: "variety",  label: "First Victory",         desc: "Win your first game",           check: p => (p.gamesWon || 0) >= 1, coins: 10 },
 ];
 
 // ── Shop catalog ──
@@ -5110,18 +5350,21 @@ class Game {
         if (this.els.pauseHowToPlayBtn) {
             this.els.pauseHowToPlayBtn.addEventListener("click", () => {
                 this.els.pauseOverlay.classList.remove("active");
+                this._tutorialReturnToPauseMenu = 'main';
                 this._openTutorial();
             });
         }
         if (this.els.wsHowToPlayBtn) {
             this.els.wsHowToPlayBtn.addEventListener("click", () => {
                 if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.remove("active");
+                this._tutorialReturnToPauseMenu = 'ws';
                 this._openTutorial();
             });
         }
         if (this.els.wrHowToPlayBtn) {
             this.els.wrHowToPlayBtn.addEventListener("click", () => {
                 this.els.wrPauseOverlay.classList.remove("active");
+                this._tutorialReturnToPauseMenu = 'wr';
                 this._openTutorial();
             });
         }
@@ -5934,9 +6177,15 @@ class Game {
         // New playlist tab
         this.els.newPlaylistTab.addEventListener("click", () => this._openPlaylistModal(null));
 
-        // Tutorial buttons
-        this.els.tutorialBtnProfiles.addEventListener("click", () => this._openTutorial());
-        this.els.tutorialBtnMenu.addEventListener("click", () => this._openTutorial());
+        // Tutorial buttons (not from pause menu, so clear return flag)
+        this.els.tutorialBtnProfiles.addEventListener("click", () => {
+            this._tutorialReturnToPauseMenu = null;
+            this._openTutorial();
+        });
+        this.els.tutorialBtnMenu.addEventListener("click", () => {
+            this._tutorialReturnToPauseMenu = null;
+            this._openTutorial();
+        });
         this.els.tutorialCloseBtn.addEventListener("click", () => this._closeTutorial());
         this.els.tutorialSlidesCloseBtn.addEventListener("click", () => this._closeTutorial());
         this.els.tutorialBackBtn.addEventListener("click", () => this._tutorialBackToMenu());
@@ -9613,6 +9862,11 @@ class Game {
         try {
             const { isLocalMode, updateProfile, upsertChallengeStats } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
+            // Don't push local data until we've loaded cloud data (prevents overwriting with stale values)
+            if (!this._initialSyncComplete) {
+                console.log('[supabase] skipping sync - initial cloud load not complete');
+                return;
+            }
             const p = this.profileMgr.getActive();
             if (!p || !p.cloudId) return;
             this.profileMgr._ensureXPFields(p);
@@ -11837,7 +12091,7 @@ class Game {
                     },
                     {
                         title: 'Classes & Tabs',
-                        desc: 'Players are grouped into High, Medium, and Low classes. Filter by class to compare with similar players. Separate tabs show rankings for Overall and each challenge mode, each with its own skill rating.',
+                        desc: 'Players are grouped into Master, High, Medium, and Low classes based on skill rating. Filter by class to compare with similar players. Separate tabs show rankings for Overall and each challenge mode, each with its own skill rating.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -14482,6 +14736,16 @@ class Game {
         this._tutorialMenuView = 'root';
         this._tutorialParentMenuView = 'root';
         this.els.tutorialOverlay.classList.remove('active');
+
+        // Return to pause menu if tutorial was opened from one
+        if (this._tutorialReturnToPauseMenu === 'main') {
+            this.els.pauseOverlay.classList.add('active');
+        } else if (this._tutorialReturnToPauseMenu === 'ws') {
+            if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.add('active');
+        } else if (this._tutorialReturnToPauseMenu === 'wr') {
+            this.els.wrPauseOverlay.classList.add('active');
+        }
+        this._tutorialReturnToPauseMenu = null;
     }
 
     _goToTutorialSlide(index) {
@@ -16666,7 +16930,8 @@ class Game {
     _initStartScreen() {
         // In local mode (no Supabase), go straight to profiles
         // When Supabase is configured, check for existing session
-        import('./src/lib/supabase.js').then(async ({ isLocalMode, getSession, getUser }) => {
+        // Returns a promise so loading screen can wait for auth check
+        this._authReady = import('./src/lib/supabase.js').then(async ({ isLocalMode, getSession, getUser }) => {
             if (isLocalMode) {
                 this._showScreen("profiles");
                 return;
@@ -16687,6 +16952,7 @@ class Game {
         }).catch(() => {
             this._showScreen("profiles");
         });
+        return this._authReady;
     }
 
     _bindAuth() {
@@ -17019,6 +17285,7 @@ class Game {
         localStorage.setItem("wf_auth_user_id", user.id);
 
         this._authUser = user;
+        this._initialSyncComplete = false; // Block cloud pushes until we've loaded cloud data
         // Load profiles from Supabase and sync with local ProfileManager
         try {
             const { getProfiles, getInventory, getChallengeStats } = await import('./src/lib/supabase.js');
@@ -17037,11 +17304,13 @@ class Game {
                 }
             }
             this._syncCloudProfilesToLocal(cloudProfiles);
+            this._initialSyncComplete = true; // Cloud data loaded, safe to push updates
             // Load milestone timestamps after profiles are synced
             await this._loadMilestonesFromCloud();
             this._renderMilestonesPage();
         } catch (err) {
             console.error('[auth] failed to load cloud profiles:', err);
+            this._initialSyncComplete = true; // Even on error, allow syncing (user may have new data)
         }
     }
 
@@ -17481,8 +17750,8 @@ class Game {
         const div = document.createElement("div");
         div.className = "lb-entry";
 
-        const classMap = { high: 'class-high', medium: 'class-medium', low: 'class-low' };
-        const classLabels = { high: 'HIGH', medium: 'MED', low: 'LOW' };
+        const classMap = { master: 'class-master', high: 'class-high', medium: 'class-medium', low: 'class-low' };
+        const classLabels = { master: 'MASTER', high: 'HIGH', medium: 'MED', low: 'LOW' };
         const classCss = classMap[entry.skill_class] || 'class-low';
         const classLabel = classLabels[entry.skill_class] || 'LOW';
 
@@ -17630,7 +17899,7 @@ class Game {
     _updateMyRankDisplay(myRank) {
         // Update the rank card on the menu page 2
         if (myRank) {
-            const classInfo = { high: { icon: '👑', label: 'High Class' }, medium: { icon: '⚔️', label: 'Medium Class' }, low: { icon: '🛡️', label: 'Low Class' } };
+            const classInfo = { master: { icon: '💎', label: 'Master Class' }, high: { icon: '👑', label: 'High Class' }, medium: { icon: '⚔️', label: 'Medium Class' }, low: { icon: '🛡️', label: 'Low Class' } };
             const info = classInfo[myRank.skill_class] || classInfo.low;
 
             if (this.els.myRankCard) {
@@ -19654,6 +19923,12 @@ Promise.all([
         }
     } catch (e) {
         console.log('[FUN-MSG] Not initialized:', e.message);
+    }
+    
+    // Wait for auth check to complete before hiding loading screen
+    LoadingScreen.setProgress(98, 'Checking account...');
+    if (window._game && window._game._authReady) {
+        await window._game._authReady;
     }
     
     // Hide loading screen
