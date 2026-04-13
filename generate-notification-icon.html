@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Plummet Notification Icon Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #1a1a2e;
+            color: #e2d8a6;
+            padding: 40px;
+            text-align: center;
+        }
+        h1 { margin-bottom: 10px; }
+        p { color: #888; margin-bottom: 30px; }
+        .icons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+        .icon-card {
+            background: #2a2a4e;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .icon-card canvas {
+            background: #333;
+            border-radius: 4px;
+        }
+        .icon-card .label {
+            font-size: 12px;
+            color: #888;
+        }
+        .icon-card .size {
+            font-size: 14px;
+            font-weight: bold;
+        }
+        button {
+            background: #e2d8a6;
+            color: #1a1a2e;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #f5edc6; }
+        .instructions {
+            max-width: 600px;
+            margin: 40px auto;
+            text-align: left;
+            background: #2a2a4e;
+            padding: 20px;
+            border-radius: 12px;
+        }
+        .instructions h3 { margin-top: 0; }
+        .instructions code {
+            background: #1a1a2e;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .instructions li { margin: 8px 0; }
+    </style>
+</head>
+<body>
+    <h1>📖 Plummet Notification Icon</h1>
+    <p>Word of the Day notification icon for Android</p>
+    
+    <div class="icons" id="icons"></div>
+    
+    <div>
+        <button onclick="downloadAll()">⬇ Download All Icons</button>
+        <button onclick="downloadZip()">📦 Download as ZIP</button>
+    </div>
+    
+    <div class="instructions">
+        <h3>Installation Instructions</h3>
+        <ol>
+            <li>Click "Download All Icons" or download individually</li>
+            <li>Place icons in the Android project:
+                <ul>
+                    <li><code>android/app/src/main/res/drawable-mdpi/ic_notification.png</code> (24px)</li>
+                    <li><code>android/app/src/main/res/drawable-hdpi/ic_notification.png</code> (36px)</li>
+                    <li><code>android/app/src/main/res/drawable-xhdpi/ic_notification.png</code> (48px)</li>
+                    <li><code>android/app/src/main/res/drawable-xxhdpi/ic_notification.png</code> (72px)</li>
+                    <li><code>android/app/src/main/res/drawable-xxxhdpi/ic_notification.png</code> (96px)</li>
+                </ul>
+            </li>
+            <li>Run <code>npx cap sync android</code></li>
+        </ol>
+        <p style="color: #888; font-size: 13px;">
+            Note: Android notification icons must be white silhouettes with transparency. 
+            The system applies color tinting automatically.
+        </p>
+    </div>
+
+    <script>
+        // Icon sizes for different Android densities
+        const SIZES = [
+            { name: 'mdpi', size: 24, folder: 'drawable-mdpi' },
+            { name: 'hdpi', size: 36, folder: 'drawable-hdpi' },
+            { name: 'xhdpi', size: 48, folder: 'drawable-xhdpi' },
+            { name: 'xxhdpi', size: 72, folder: 'drawable-xxhdpi' },
+            { name: 'xxxhdpi', size: 96, folder: 'drawable-xxxhdpi' },
+        ];
+
+        const canvases = {};
+
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            canvas.width = size;
+            canvas.height = size;
+            
+            // Clear with transparency
+            ctx.clearRect(0, 0, size, size);
+            
+            // Scale factor
+            const s = size / 24;
+            
+            // Draw a minimalist book/page icon with "P" - representing Word of the Day
+            ctx.fillStyle = '#FFFFFF';
+            
+            // Book outline (rounded rectangle)
+            const bookX = 4 * s;
+            const bookY = 3 * s;
+            const bookW = 16 * s;
+            const bookH = 18 * s;
+            const radius = 2 * s;
+            
+            ctx.beginPath();
+            ctx.moveTo(bookX + radius, bookY);
+            ctx.lineTo(bookX + bookW - radius, bookY);
+            ctx.arcTo(bookX + bookW, bookY, bookX + bookW, bookY + radius, radius);
+            ctx.lineTo(bookX + bookW, bookY + bookH - radius);
+            ctx.arcTo(bookX + bookW, bookY + bookH, bookX + bookW - radius, bookY + bookH, radius);
+            ctx.lineTo(bookX + radius, bookY + bookH);
+            ctx.arcTo(bookX, bookY + bookH, bookX, bookY + bookH - radius, radius);
+            ctx.lineTo(bookX, bookY + radius);
+            ctx.arcTo(bookX, bookY, bookX + radius, bookY, radius);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Book spine line
+            ctx.fillStyle = '#1a1a2e'; // This will be transparent in final
+            ctx.fillRect(bookX + 3 * s, bookY, 1 * s, bookH);
+            
+            // Clear inside for the "P" letter
+            ctx.globalCompositeOperation = 'destination-out';
+            
+            // Draw "P" letter (cutout)
+            ctx.font = `bold ${11 * s}px Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('P', bookX + bookW / 2 + 1 * s, bookY + bookH / 2);
+            
+            // Reset composite operation
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        function init() {
+            const container = document.getElementById('icons');
+            
+            SIZES.forEach(({ name, size, folder }) => {
+                const card = document.createElement('div');
+                card.className = 'icon-card';
+                
+                const canvas = document.createElement('canvas');
+                canvas.id = `canvas-${name}`;
+                canvases[name] = { canvas, size, folder };
+                
+                drawIcon(canvas, size);
+                
+                const sizeLabel = document.createElement('div');
+                sizeLabel.className = 'size';
+                sizeLabel.textContent = `${size}×${size}px`;
+                
+                const nameLabel = document.createElement('div');
+                nameLabel.className = 'label';
+                nameLabel.textContent = name;
+                
+                const downloadBtn = document.createElement('button');
+                downloadBtn.textContent = '⬇';
+                downloadBtn.style.padding = '6px 12px';
+                downloadBtn.style.fontSize = '12px';
+                downloadBtn.onclick = () => downloadSingle(name);
+                
+                card.appendChild(canvas);
+                card.appendChild(sizeLabel);
+                card.appendChild(nameLabel);
+                card.appendChild(downloadBtn);
+                container.appendChild(card);
+            });
+        }
+
+        function downloadSingle(name) {
+            const { canvas } = canvases[name];
+            const link = document.createElement('a');
+            link.download = `ic_notification_${name}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function downloadAll() {
+            Object.keys(canvases).forEach((name, i) => {
+                setTimeout(() => downloadSingle(name), i * 200);
+            });
+        }
+
+        async function downloadZip() {
+            // Simple approach: download all with folder info in filename
+            alert('Downloading all icons. Place each in the corresponding folder:\n\n' +
+                SIZES.map(s => `${s.folder}/ic_notification.png`).join('\n'));
+            downloadAll();
+        }
+
+        init();
+    </script>
+</body>
+</html>

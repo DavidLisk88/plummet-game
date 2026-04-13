@@ -4400,8 +4400,10 @@ class Game {
             menuPrevBtn:      document.getElementById("menu-prev-btn"),
             menuNextBtn:      document.getElementById("menu-next-btn"),
             milestonesGrid:   document.getElementById("milestones-grid"),
+            milestonesFilterRow: document.getElementById("milestones-filter-row"),
             milestonesProgressFill: document.getElementById("milestones-progress-fill"),
             milestonesProgressText: document.getElementById("milestones-progress-text"),
+            wotdToggle: document.getElementById("wotd-toggle"),
             bonusWordsCount:  document.getElementById("bonus-words-count"),
             bonusWordsList:   document.getElementById("bonus-words-list"),
             gameModeSelector: document.getElementById("game-mode-selector"),
@@ -4615,12 +4617,22 @@ class Game {
             dictAlphaBar: document.getElementById("dict-alpha-bar"),
             dictListWrap: document.getElementById("dict-list-wrap"),
             dictList: document.getElementById("dict-list"),
+            dictTabSearch: document.getElementById("dict-tab-search"),
+            dictTabSearchClear: document.getElementById("dict-tab-search-clear"),
+            dictTabResultCount: document.getElementById("dict-tab-result-count"),
+            dictTabFilterRow: document.getElementById("dict-tab-filter-row"),
+            dictTabAlphaBar: document.getElementById("dict-tab-alpha-bar"),
+            dictTabListWrap: document.getElementById("dict-tab-list-wrap"),
+            dictTabList: document.getElementById("dict-tab-list"),
             dictBtnMenu: document.getElementById("dict-btn-menu"),
             dictBtnGameover: document.getElementById("dict-btn-gameover"),
             dictBtnChallenges: document.getElementById("dict-btn-challenges"),
             dictBtnChallengeSetup: document.getElementById("dict-btn-challengesetup"),
             dictBtnShop: document.getElementById("dict-btn-shop"),
             dictBtnRankings: document.getElementById("dict-btn-rankings"),
+            dictBtnChallengesTab: document.getElementById("dict-btn-challenges-tab"),
+            connectMainMenuBtn: document.getElementById("connect-main-menu-btn"),
+            rankingsMainMenuBtn: document.getElementById("rankings-main-menu-btn"),
             pauseDictBtn: document.getElementById("pause-dict-btn"),
             wsDictBtn: document.getElementById("ws-dict-btn"),
             wrDictBtn: document.getElementById("wr-dict-btn"),
@@ -4738,7 +4750,7 @@ class Game {
         this._bindWordSearch();
         this._bindWordRunner();
         this._initMutePref();
-        this._menuPage = 2;
+        this._menuPage = 3;
         this._activeScreen = "menu";
         this._guidedTour = {
             active: false,
@@ -4754,7 +4766,7 @@ class Game {
             resizeHandler: null,
         };
         this._bindMenuSwipe();
-        this._goToMenuPage(2);
+        this._goToMenuPage(3);
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
         this._updateHintsBtn();
 
@@ -4986,27 +4998,17 @@ class Game {
         this._bindShopSwipe();
 
         // Challenges
-        this.els.challengesBtn.addEventListener("click", () => {
-            this._showScreen("challenges");
-        });
-        this.els.challengesBackBtn.addEventListener("click", () => {
-            this._stopChallengePreviewAnimations();
-            this._showScreen("menu");
-        });
         this.els.challengeStartBtn.addEventListener("click", () => this._startChallengeGame());
         this.els.challengeResumeBtn.addEventListener("click", () => this._resumeChallengeGame());
         this.els.challengeBackToSelectBtn.addEventListener("click", () => {
-            this._showScreen("challenges");
+            this._stopChallengePreviewAnimations();
+            this._showScreen("menu");
+            this._goToMenuPage(4);
         });
         this.els.challengeMainMenuBtn.addEventListener("click", () => {
             this._showScreen("menu");
-        });
-        this.els.challengesMusicBtn.addEventListener("click", () => {
-            this._musicBackTarget = "challenges";
-            this._showScreen("music");
-            this._renderMusicScreen();
-        });
-        this.els.challengeSetupMusicBtn.addEventListener("click", () => {
+            this._goToMenuPage(3);
+        });        this.els.challengeSetupMusicBtn.addEventListener("click", () => {
             this._musicBackTarget = "challenge-setup";
             this._showScreen("music");
             this._renderMusicScreen();
@@ -5026,6 +5028,15 @@ class Game {
         this._dictRenderedCount = 0;
         this._dictChunkSize = 80;
         this._dictJumpRenderInProgress = false;
+        this._dictTabActiveFilter = "all";
+        this._dictTabSearchTerm = "";
+        this._dictTabFilteredWords = [];
+        this._dictTabLetterCounts = new Map();
+        this._dictTabLetterFirstIndex = new Map();
+        this._dictTabRenderStartIndex = 0;
+        this._dictTabRenderedCount = 0;
+        this._dictTabChunkSize = 80;
+        this._dictTabReady = false;
 
         // Dict FAB buttons (open dictionary from various screens)
         const dictFabs = [
@@ -5035,6 +5046,7 @@ class Game {
             [this.els.dictBtnChallengeSetup, "challengesetup"],
             [this.els.dictBtnShop, "shop"],
             [this.els.dictBtnRankings, "menu"],
+            [this.els.dictBtnChallengesTab, "menu"],
         ];
         for (const [btn, screen] of dictFabs) {
             if (btn) btn.addEventListener("click", () => this._openDict(screen));
@@ -5095,8 +5107,36 @@ class Game {
             });
         }
 
+        // Dict tab search
+        if (this.els.dictTabSearch) {
+            this.els.dictTabSearch.addEventListener("input", () => this._dictTabOnSearch());
+            this.els.dictTabSearchClear?.addEventListener("click", () => {
+                this.els.dictTabSearch.value = "";
+                this._dictTabOnSearch();
+                this.els.dictTabSearch.focus();
+            });
+        }
+
+        // Dict tab filter chips
+        if (this.els.dictTabFilterRow) {
+            this.els.dictTabFilterRow.addEventListener("click", (e) => {
+                const chip = e.target.closest(".dict-chip");
+                if (!chip) return;
+                const filter = chip.dataset.filter;
+                if (filter === this._dictTabActiveFilter) {
+                    if (filter !== "all") this._dictTabActiveFilter = "all";
+                } else {
+                    this._dictTabActiveFilter = filter;
+                }
+                this.els.dictTabFilterRow.querySelectorAll(".dict-chip").forEach(c =>
+                    c.classList.toggle("active", c.dataset.filter === this._dictTabActiveFilter));
+                this._dictTabApplyFilters();
+            });
+        }
+
         // Dict alpha bar
         this._dictBuildAlphaBar();
+        this._dictTabBuildAlphaBar();
 
         // Dict lazy-load on scroll
         if (this.els.dictListWrap) {
@@ -5106,6 +5146,72 @@ class Game {
                     this._dictRenderNextChunk();
                 }
             });
+        }
+
+        // Dict tab lazy-load on scroll
+        if (this.els.dictTabListWrap) {
+            this.els.dictTabListWrap.addEventListener("scroll", () => {
+                const el = this.els.dictTabListWrap;
+                if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+                    this._dictTabRenderNextChunk();
+                }
+            });
+        }
+
+        // Milestones filter chips
+        if (this.els.milestonesFilterRow) {
+            this._milestonesActiveFilter = "all";
+            this.els.milestonesFilterRow.addEventListener("click", (e) => {
+                const chip = e.target.closest(".ms-chip");
+                if (!chip) return;
+                const filter = chip.dataset.filter;
+                if (filter === this._milestonesActiveFilter) {
+                    if (filter !== "all") {
+                        this._milestonesActiveFilter = "all";
+                    }
+                } else {
+                    this._milestonesActiveFilter = filter;
+                }
+                this.els.milestonesFilterRow.querySelectorAll(".ms-chip").forEach(c =>
+                    c.classList.toggle("active", c.dataset.filter === this._milestonesActiveFilter));
+                this._renderMilestonesPage();
+            });
+        }
+
+        // Word of the Day toggle
+        if (this.els.wotdToggle) {
+            // Set initial state
+            import('./src/lib/word-of-day.js').then(({ isWordOfDayEnabled }) => {
+                this.els.wotdToggle.checked = isWordOfDayEnabled();
+            }).catch(() => {});
+            
+            this.els.wotdToggle.addEventListener("change", async () => {
+                try {
+                    const { enableWordOfDay, disableWordOfDay } = await import('./src/lib/word-of-day.js');
+                    if (this.els.wotdToggle.checked) {
+                        const result = await enableWordOfDay(ENRICHED_DICT);
+                        if (!result.success) {
+                            this.els.wotdToggle.checked = false;
+                            if (result.reason === 'permission_denied') {
+                                alert('Please enable notifications in your device settings to receive Word of the Day.');
+                            }
+                        }
+                    } else {
+                        await disableWordOfDay();
+                    }
+                } catch (e) {
+                    console.warn('[WOTD] Toggle error:', e);
+                    this.els.wotdToggle.checked = false;
+                }
+            });
+        }
+
+        // Main Menu buttons on Connect and Rankings pages
+        if (this.els.connectMainMenuBtn) {
+            this.els.connectMainMenuBtn.addEventListener("click", () => this._goToMenuPage(3));
+        }
+        if (this.els.rankingsMainMenuBtn) {
+            this.els.rankingsMainMenuBtn.addEventListener("click", () => this._goToMenuPage(3));
         }
 
         // Challenge grid size buttons
@@ -5156,7 +5262,8 @@ class Game {
                 this._wrResumePause();
             } else if (this._musicBackTarget === "challenges") {
                 this._musicBackTarget = null;
-                this._showScreen("challenges");
+                this._showScreen("menu");
+                this._goToMenuPage(4);
             } else if (this._musicBackTarget === "challenge-setup") {
                 this._musicBackTarget = null;
                 this._showScreen("challenge-setup");
@@ -5962,7 +6069,7 @@ class Game {
         this.els.gameoverScreen.classList.toggle("active", name === "gameover");
         this.els.musicScreen.classList.toggle("active", name === "music");
         this.els.wordsFoundScreen.classList.toggle("active", name === "wordsfound");
-        this.els.challengesScreen.classList.toggle("active", name === "challenges");
+        if (this.els.challengesScreen) this.els.challengesScreen.classList.toggle("active", name === "challenges");
         this.els.challengeSetupScreen.classList.toggle("active", name === "challengesetup");
         this.els.shopScreen.classList.toggle("active", name === "shop");
         if (this.els.leaderboardScreen) this.els.leaderboardScreen.classList.toggle("active", name === "leaderboard");
@@ -5977,11 +6084,10 @@ class Game {
             this._updateLevelDisplay();
             this._refreshMyRankOnMenu();
             this._renderMilestonesPage();
+            this._renderChallengesGrid();
+            this._ensureDictTabReady();
             const hasSaved = this._hasSavedGame(null);
             this.els.resumeGameBtn.classList.toggle("hidden", !hasSaved);
-        }
-        if (name === "challenges") {
-            this._renderChallengesGrid();
         }
         if (name === "challengesetup") {
             const hasSaved = this.activeChallenge && this._hasSavedGame(this.activeChallenge);
@@ -6107,6 +6213,15 @@ class Game {
         }
     }
 
+    _ensureDictTabReady() {
+        if (!this.els.dictTabList) return;
+        if (!this._dictSortedWords.length) this._dictBuildWordList();
+        if (!this._dictTabReady) {
+            this._dictTabApplyFilters();
+            this._dictTabReady = true;
+        }
+    }
+
     _dictBuildWordList() {
         // Build sorted array from the full game dictionary, enriching with definitions where available
         const arr = [];
@@ -6143,6 +6258,21 @@ class Game {
         }
     }
 
+    _dictTabBuildAlphaBar() {
+        if (!this.els.dictTabAlphaBar) return;
+        const bar = this.els.dictTabAlphaBar;
+        bar.innerHTML = "";
+        for (let i = 65; i <= 90; i++) {
+            const letter = String.fromCharCode(i);
+            const btn = document.createElement("button");
+            btn.className = "dict-alpha-btn";
+            btn.textContent = letter;
+            btn.dataset.letter = letter;
+            btn.addEventListener("click", () => this._dictTabJumpToLetter(letter));
+            bar.appendChild(btn);
+        }
+    }
+
     _dictJumpToLetter(letter) {
         const words = this._dictFilteredWords;
         if (!words || words.length === 0) return;
@@ -6169,11 +6299,42 @@ class Game {
         }, 1200);
     }
 
+    _dictTabJumpToLetter(letter) {
+        const words = this._dictTabFilteredWords;
+        if (!words || words.length === 0) return;
+
+        const targetIdx = this._dictTabLetterFirstIndex.get(letter);
+        if (targetIdx === undefined) return;
+
+        this._dictTabRenderStartIndex = targetIdx;
+        this._dictTabRenderedCount = targetIdx;
+        this._dictTabRenderList();
+
+        if (this.els.dictTabListWrap) this.els.dictTabListWrap.scrollTop = 0;
+        const header = this.els.dictTabList?.querySelector(`[data-letter-header="${letter}"]`);
+        if (header) header.scrollIntoView({ behavior: "smooth", block: "start" });
+
+        this.els.dictTabAlphaBar?.querySelectorAll(".dict-alpha-btn").forEach(b =>
+            b.classList.toggle("active", b.dataset.letter === letter));
+        setTimeout(() => {
+            this.els.dictTabAlphaBar?.querySelectorAll(".dict-alpha-btn").forEach(b =>
+                b.classList.remove("active"));
+        }, 1200);
+    }
+
     _dictOnSearch() {
         const val = this.els.dictSearch.value.trim();
         this._dictSearchTerm = val.toUpperCase();
         this.els.dictSearchClear.classList.toggle("hidden", val.length === 0);
         this._dictApplyFilters();
+    }
+
+    _dictTabOnSearch() {
+        if (!this.els.dictTabSearch) return;
+        const val = this.els.dictTabSearch.value.trim();
+        this._dictTabSearchTerm = val.toUpperCase();
+        this.els.dictTabSearchClear?.classList.toggle("hidden", val.length === 0);
+        this._dictTabApplyFilters();
     }
 
     _dictApplyFilters() {
@@ -6249,6 +6410,76 @@ class Game {
         });
     }
 
+    _dictTabApplyFilters() {
+        const search = this._dictTabSearchTerm;
+        const filter = (typeof this._dictTabActiveFilter === "string" && this._dictTabActiveFilter)
+            ? this._dictTabActiveFilter
+            : "all";
+        const source = this._dictSortedWords || [];
+
+        let minLen = 0;
+        let maxLen = Infinity;
+        if (filter === "len-2-3") { minLen = 2; maxLen = 3; }
+        else if (filter === "len-4-5") { minLen = 4; maxLen = 5; }
+        else if (filter === "len-6-7") { minLen = 6; maxLen = 7; }
+        else if (filter === "len-8+") { minLen = 8; }
+
+        let posTag = null;
+        let topicSet = null;
+        if (filter.startsWith("cat-")) {
+            const catKey = filter.slice(4);
+            const POS_FILTER_MAP = {
+                nouns: "noun",
+                verbs: "verb",
+                adjectives: "adjective",
+                adverbs: "adverb",
+            };
+            posTag = POS_FILTER_MAP[catKey] || null;
+            if (!posTag) {
+                const catData = WORD_CATEGORIES[catKey];
+                topicSet = catData ? catData.words : null;
+            }
+        }
+
+        const filtered = [];
+        const letterCounts = new Map();
+        const letterFirstIndex = new Map();
+
+        for (const w of source) {
+            if (search && !w.upper.startsWith(search)) continue;
+            if (w.len < minLen || w.len > maxLen) continue;
+
+            if (posTag) {
+                const parts = Array.isArray(w.partsOfSpeech) ? w.partsOfSpeech : [];
+                const hasPos = parts.some(p => p === posTag || (posTag === "adjective" && p === "adjective satellite"));
+                if (!hasPos) continue;
+            } else if (topicSet && !topicSet.has(w.upper)) {
+                continue;
+            }
+
+            filtered.push(w);
+            const first = w.upper[0];
+            if (!letterFirstIndex.has(first)) letterFirstIndex.set(first, filtered.length - 1);
+            letterCounts.set(first, (letterCounts.get(first) || 0) + 1);
+        }
+
+        this._dictTabFilteredWords = filtered;
+        this._dictTabLetterCounts = letterCounts;
+        this._dictTabLetterFirstIndex = letterFirstIndex;
+        this._dictTabRenderStartIndex = 0;
+        this._dictTabRenderedCount = 0;
+        this._dictTabRenderList();
+
+        if (this.els.dictTabResultCount) {
+            this.els.dictTabResultCount.textContent = `${filtered.length} word${filtered.length !== 1 ? "s" : ""}`;
+        }
+
+        const availLetters = new Set(this._dictTabLetterCounts.keys());
+        this.els.dictTabAlphaBar?.querySelectorAll(".dict-alpha-btn").forEach(b => {
+            b.classList.toggle("disabled", !availLetters.has(b.dataset.letter));
+        });
+    }
+
     _dictRenderList() {
         const list = this.els.dictList;
         list.innerHTML = "";
@@ -6265,6 +6496,25 @@ class Game {
         const start = Math.max(0, Math.min(this._dictRenderStartIndex || 0, Math.max(0, wordsLen - 1)));
         this._dictRenderedCount = start;
         this._dictRenderNextChunk();
+    }
+
+    _dictTabRenderList() {
+        const list = this.els.dictTabList;
+        if (!list) return;
+        list.innerHTML = "";
+        if (!this._dictTabFilteredWords.length) {
+            list.innerHTML = `
+                <div class="dict-empty-state">
+                    <div class="dict-empty-icon">📖</div>
+                    <div class="dict-empty-text">No words match your search</div>
+                    <div class="dict-empty-hint">Try a different search or filter</div>
+                </div>`;
+            return;
+        }
+        const wordsLen = this._dictTabFilteredWords.length;
+        const start = Math.max(0, Math.min(this._dictTabRenderStartIndex || 0, Math.max(0, wordsLen - 1)));
+        this._dictTabRenderedCount = start;
+        this._dictTabRenderNextChunk();
     }
 
     _dictRenderNextChunk() {
@@ -6301,7 +6551,58 @@ class Game {
         this._dictRenderedCount = end;
     }
 
+    _dictTabRenderNextChunk() {
+        const words = this._dictTabFilteredWords;
+        if (!words || this._dictTabRenderedCount >= words.length) return;
+        const list = this.els.dictTabList;
+        if (!list) return;
+        const end = Math.min(this._dictTabRenderedCount + this._dictTabChunkSize, words.length);
+        let lastLetter = "";
+
+        if (this._dictTabRenderedCount > 0 && this._dictTabRenderedCount <= words.length) {
+            lastLetter = words[this._dictTabRenderedCount - 1].upper[0];
+        }
+
+        for (let i = this._dictTabRenderedCount; i < end; i++) {
+            const w = words[i];
+            const firstLetter = w.upper[0];
+
+            if (firstLetter !== lastLetter) {
+                lastLetter = firstLetter;
+                const hdr = document.createElement("div");
+                hdr.className = "dict-letter-header";
+                hdr.dataset.letterHeader = firstLetter;
+                hdr.innerHTML = `
+                    <span class="dict-letter-char">${firstLetter}</span>
+                    <span class="dict-letter-line"></span>
+                    <span class="dict-letter-count">${this._dictTabLetterCounts.get(firstLetter) || 0}</span>`;
+                list.appendChild(hdr);
+            }
+
+            list.appendChild(this._dictTabBuildCard(w));
+        }
+        this._dictTabRenderedCount = end;
+    }
+
     _dictBuildCard(w) {
+        return this._dictBuildCardForContext(w, (syn) => {
+            if (syn && ENRICHED_DICT && ENRICHED_DICT[syn.toLowerCase()] && this.els.dictSearch) {
+                this.els.dictSearch.value = syn.toUpperCase();
+                this._dictOnSearch();
+            }
+        });
+    }
+
+    _dictTabBuildCard(w) {
+        return this._dictBuildCardForContext(w, (syn) => {
+            if (syn && ENRICHED_DICT && ENRICHED_DICT[syn.toLowerCase()] && this.els.dictTabSearch) {
+                this.els.dictTabSearch.value = syn.toUpperCase();
+                this._dictTabOnSearch();
+            }
+        });
+    }
+
+    _dictBuildCardForContext(w, onSynonymJump) {
         const card = document.createElement("div");
         card.className = "dict-word-card";
 
@@ -6334,10 +6635,7 @@ class Game {
             // Clicking synonym chip → jump to that word
             if (e.target.classList.contains("dict-syn-chip")) {
                 const syn = e.target.dataset.syn;
-                if (syn && ENRICHED_DICT && ENRICHED_DICT[syn.toLowerCase()]) {
-                    this.els.dictSearch.value = syn.toUpperCase();
-                    this._dictOnSearch();
-                }
+                if (onSynonymJump) onSynonymJump(syn);
                 return;
             }
             const willOpen = !card.classList.contains("open");
@@ -6527,13 +6825,22 @@ class Game {
 
     _goToMenuPage(index) {
         const total = this._getMenuPageCount();
-        this._menuPage = Math.max(0, Math.min(index, total - 1));
+        // Wrap around for looping
+        if (index < 0) index = total - 1;
+        else if (index >= total) index = 0;
+        this._menuPage = index;
         this.els.menuSlideStrip.classList.remove("swiping");
         this.els.menuSlideStrip.style.transform = `translateX(-${this._menuPage * 100}%)`;
         this.els.menuDots.querySelectorAll(".menu-dot").forEach((d, i) =>
             d.classList.toggle("active", i === this._menuPage));
-        this.els.menuPrevBtn.disabled = this._menuPage === 0;
-        this.els.menuNextBtn.disabled = this._menuPage === total - 1;
+        // Never disable arrows — looping is always possible
+        this.els.menuPrevBtn.disabled = false;
+        this.els.menuNextBtn.disabled = false;
+
+        // Page 2 is the inline dictionary tab.
+        if (this._menuPage === 2) {
+            this._ensureDictTabReady();
+        }
     }
 
     _bindMenuSwipe() {
@@ -6541,7 +6848,26 @@ class Game {
         const strip = this.els.menuSlideStrip;
         let startX = 0, startY = 0, dragging = false, moved = false;
 
+        // Check if target is inside a horizontally scrollable element
+        const isInHScrollable = (el) => {
+            while (el && el !== view) {
+                const style = getComputedStyle(el);
+                const overflowX = style.overflowX;
+                if ((overflowX === 'auto' || overflowX === 'scroll') && el.scrollWidth > el.clientWidth) {
+                    return true;
+                }
+                el = el.parentElement;
+            }
+            return false;
+        };
+
         this._menuPointerDown = (e) => {
+            // Skip page swipe if touch started inside a horizontally scrollable element (e.g., filter chips)
+            const target = e.touches ? e.target : e.target;
+            if (isInHScrollable(target)) {
+                dragging = false;
+                return;
+            }
             dragging = true; moved = false;
             startX = e.touches ? e.touches[0].clientX : e.clientX;
             startY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -6561,13 +6887,9 @@ class Game {
             if (!moved && Math.abs(dx) > 10) moved = true;
             if (moved && e.cancelable) e.preventDefault();
             if (moved) {
-                const total = this._getMenuPageCount();
                 const viewW = view.offsetWidth || 300;
                 const base = -this._menuPage * viewW;
-                const atStart = this._menuPage === 0 && dx > 0;
-                const atEnd = this._menuPage === total - 1 && dx < 0;
-                const dampened = (atStart || atEnd) ? dx * 0.25 : dx;
-                strip.style.transform = `translateX(${base + dampened}px)`;
+                strip.style.transform = `translateX(${base + dx}px)`;
             }
         };
         this._menuPointerUp = (e) => {
@@ -6576,12 +6898,11 @@ class Game {
             strip.classList.remove("swiping");
             const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
             const dx = x - startX;
-            const total = this._getMenuPageCount();
             const viewW = view.offsetWidth || 300;
             const threshold = viewW * 0.15;
             if (Math.abs(dx) > threshold) {
-                if (dx < 0 && this._menuPage < total - 1) this._menuPage++;
-                else if (dx > 0 && this._menuPage > 0) this._menuPage--;
+                if (dx < 0) this._menuPage++;
+                else if (dx > 0) this._menuPage--;
             }
             this._goToMenuPage(this._menuPage);
         };
@@ -6599,7 +6920,7 @@ class Game {
             d.addEventListener("click", () => this._goToMenuPage(parseInt(d.dataset.page)));
         });
 
-        // Arrow clicks
+        // Arrow clicks (loop)
         this.els.menuPrevBtn.addEventListener("click", () => this._goToMenuPage(this._menuPage - 1));
         this.els.menuNextBtn.addEventListener("click", () => this._goToMenuPage(this._menuPage + 1));
     }
@@ -6624,6 +6945,7 @@ class Game {
         const p = this.profileMgr.getActive();
         const claimed = p ? (p.claimedMilestones || []) : [];
         const earnedDates = (p && p._milestoneTimestamps) || {};
+        const activeFilter = this._milestonesActiveFilter || 'all';
 
         // Category display config — order matters
         const CAT_CONFIG = [
@@ -6657,9 +6979,13 @@ class Game {
             grouped[m.cat].push(m);
         }
 
-        let earnedCount = 0;
+        // Calculate total earned count for progress bar (across ALL milestones)
+        const totalEarnedCount = MILESTONES.filter(m => claimed.includes(m.id)).length;
 
         for (const cat of CAT_CONFIG) {
+            // Skip if filtering and this isn't the selected category
+            if (activeFilter !== 'all' && cat.key !== activeFilter) continue;
+            
             const items = grouped[cat.key];
             if (!items || items.length === 0) continue;
 
@@ -6675,9 +7001,8 @@ class Game {
 
             for (const m of items) {
                 const isEarned = claimed.includes(m.id);
-                if (isEarned) earnedCount++;
 
-                const card = document.createElement('div');
+                const card = document.createElement('div');;
                 card.className = `ms-card ${isEarned ? 'earned' : 'locked'}`;
 
                 const icon = document.createElement('div');
@@ -6723,10 +7048,10 @@ class Game {
         // Progress bar
         const total = MILESTONES.length;
         if (this.els.milestonesProgressFill) {
-            this.els.milestonesProgressFill.style.width = `${(earnedCount / total) * 100}%`;
+            this.els.milestonesProgressFill.style.width = `${(totalEarnedCount / total) * 100}%`;
         }
         if (this.els.milestonesProgressText) {
-            this.els.milestonesProgressText.textContent = `${earnedCount} / ${total}`;
+            this.els.milestonesProgressText.textContent = `${totalEarnedCount} / ${total}`;
         }
     }
 
@@ -11611,123 +11936,122 @@ class Game {
                         }
                     },
                     {
-                        title: 'In-Game Controls',
-                        desc: 'A mini player bar appears at the bottom during gameplay. Use ◁ ▶ ▷ to skip or pause tracks without leaving the game. Music auto-advances when a song finishes.',
+                        title: 'Background Music',
+                        desc: 'Music plays continuously in the background during gameplay. To change tracks or adjust settings, pause the game and tap the Music button, or use the ♪ dropdown in the top-right corner.',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs, -30);
                             gBg(ctx, ox, oy, cs, gs);
-                            for (let r = 3; r < gs; r++) for (let c = 0; c < gs; c++)
+                            for (let r = 2; r < gs; r++) for (let c = 0; c < gs; c++)
                                 gC(ctx, ox, oy, cs, r, c, String.fromCharCode(65 + (r * gs + c) % 26), '#3a3933');
                             const fallRow = ((t * 0.5) % 4) - 1;
                             gF(ctx, ox, oy, cs, clamp(fallRow, -0.5, 2), 2, 'M');
                             gT(ctx, w / 2, oy - cs * 0.7, 'Score: 1250', '#fff', Math.floor(cs * 0.3));
-                            const barH = 48, barY = h - barH - 10;
-                            ctx.fillStyle = '#1a1a2e';
-                            ctx.fillRect(10, barY, w - 20, barH);
-                            ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
-                            ctx.strokeRect(10, barY, w - 20, barH);
-                            const songNames = ['♪ Sunset Vibes – ChillBeats', '♪ Focus Flow – LofiLab'];
-                            const si = Math.floor(t * 0.15) % songNames.length;
-                            ctx.fillStyle = '#b0a878'; ctx.font = '10px sans-serif';
-                            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-                            ctx.fillText(songNames[si], 22, barY + 18);
-                            const btnY = barY + 34;
-                            const btns = ['◁', '▶', '▷'];
-                            const btnSpace = 40;
-                            const btnStartX = w / 2 - btnSpace;
+                            // Music notes floating
+                            const notes = ['♪', '♫', '♬'];
                             for (let i = 0; i < 3; i++) {
-                                const bx = btnStartX + i * btnSpace;
-                                ctx.beginPath(); ctx.arc(bx, btnY, 12, 0, Math.PI * 2);
-                                ctx.fillStyle = i === 1 ? '#e2d8a6' : '#4a493e'; ctx.fill();
-                                ctx.fillStyle = i === 1 ? '#111' : '#b0a878';
-                                ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                                ctx.fillText(btns[i], bx, btnY);
+                                const nx = w * 0.2 + i * w * 0.3;
+                                const ny = h * 0.3 + Math.sin(t * 1.5 + i * 2) * 15;
+                                const alpha = 0.4 + Math.sin(t * 2 + i) * 0.2;
+                                ctx.fillStyle = `rgba(226, 216, 166, ${alpha})`;
+                                ctx.font = '18px sans-serif';
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText(notes[i], nx, ny);
                             }
-                            const progW = w - 60, progY = barY + 6;
-                            ctx.fillStyle = '#4a493e'; ctx.fillRect(22, progY + 16, progW, 3);
-                            const prog = (t * 0.04) % 1;
-                            ctx.fillStyle = '#e2d8a6'; ctx.fillRect(22, progY + 16, progW * prog, 3);
-                            const cyc = t % 5;
-                            if (cyc > 2 && cyc < 3.5) {
-                                const nextX = btnStartX + 2 * btnSpace;
-                                gTap(ctx, nextX, btnY, t);
-                                gT(ctx, w / 2, barY - 14, 'Skip to next ▷', '#e2d8a6', 12);
-                            }
+                            // Pause button hint
+                            const flash = Math.sin(t * 3) > 0;
+                            gT(ctx, w / 2, h - 50, 'Pause → Music button', flash ? '#e2d8a6' : '#8cb860', 13);
                         }
                     },
                     {
-                        title: 'Mute & Unmute',
-                        desc: 'The ♪ button in the top-right corner mutes or unmutes all music. It\'s on every screen. Your preference is saved across sessions.',
+                        title: 'Quick Music Controls',
+                        desc: 'Tap the ♪ button in the top-right corner to open a dropdown music player. It shows the current track, a progress bar, play/pause, skip, mute, and volume controls — all without leaving the screen you\'re on.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#1a1a2e';
                             ctx.fillRect(20, 30, w - 40, h - 60);
                             ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
                             ctx.strokeRect(20, 30, w - 40, h - 60);
-                            const cyc = t % 6;
-                            const muted = cyc > 3;
-                            const btnX = w - 55, btnY = 55;
-                            const btnSz = 36;
+
+                            // ♪ button in corner
+                            const btnX = w - 55, btnY = 55, btnSz = 32;
+                            const cyc = t % 8;
+                            const open = cyc > 1.5;
+
                             ctx.save();
-                            const pulse = 1 + Math.sin(t * 4) * 0.08;
+                            const pulse = 1 + Math.sin(t * 4) * 0.06;
                             ctx.translate(btnX, btnY); ctx.scale(pulse, pulse); ctx.translate(-btnX, -btnY);
-                            ctx.fillStyle = muted ? '#4a493e' : 'rgba(226,216,166,0.2)';
+                            ctx.fillStyle = open ? '#e2d8a6' : 'rgba(226,216,166,0.2)';
                             ctx.beginPath(); ctx.arc(btnX, btnY, btnSz / 2, 0, Math.PI * 2); ctx.fill();
-                            ctx.strokeStyle = muted ? '#706c58' : '#e2d8a6'; ctx.lineWidth = 1.5;
-                            ctx.stroke();
-                            ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(btnSz * 0.5)}px sans-serif`;
+                            ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 1.5; ctx.stroke();
+                            ctx.fillStyle = open ? '#111' : '#fff'; ctx.font = `${Math.floor(btnSz * 0.5)}px sans-serif`;
                             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                            ctx.fillText(muted ? '♭' : '♪', btnX, btnY);
+                            ctx.fillText('♪', btnX, btnY);
                             ctx.restore();
-                            if (!muted) {
-                                const waves = 3;
-                                for (let i = 0; i < waves; i++) {
-                                    const r = btnSz / 2 + 8 + i * 10;
-                                    const alpha = 0.3 - i * 0.08 + Math.sin(t * 3 + i) * 0.1;
-                                    ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
-                                    ctx.beginPath();
-                                    ctx.arc(btnX, btnY, r, -Math.PI * 0.35, Math.PI * 0.35);
-                                    ctx.strokeStyle = '#e2d8a6'; ctx.lineWidth = 2; ctx.stroke();
-                                    ctx.restore();
-                                }
-                            }
-                            const barMid = h / 2 + 10;
-                            if (!muted) {
-                                const barCount = 7;
-                                const barW = 12, barGap = 8;
-                                const totalW = barCount * barW + (barCount - 1) * barGap;
-                                const startX = (w - totalW) / 2;
-                                for (let i = 0; i < barCount; i++) {
-                                    const bh = 20 + Math.sin(t * 3 + i * 0.8) * 18 + Math.cos(t * 5 + i) * 10;
-                                    const x = startX + i * (barW + barGap);
-                                    const grad = ctx.createLinearGradient(0, barMid - bh / 2, 0, barMid + bh / 2);
-                                    grad.addColorStop(0, '#e2d8a6'); grad.addColorStop(1, '#b0a878');
-                                    ctx.fillStyle = grad;
-                                    ctx.fillRect(x, barMid - bh / 2, barW, bh);
-                                }
-                                gT(ctx, w / 2, barMid + 50, '♪ Now Playing...', '#e2d8a6', 14);
-                            } else {
-                                const barCount = 7;
-                                const barW = 12, barGap = 8;
-                                const totalW = barCount * barW + (barCount - 1) * barGap;
-                                const startX = (w - totalW) / 2;
-                                for (let i = 0; i < barCount; i++) {
-                                    const x = startX + i * (barW + barGap);
-                                    ctx.fillStyle = '#4a493e';
-                                    ctx.fillRect(x, barMid - 3, barW, 6);
-                                }
-                                gT(ctx, w / 2, barMid + 50, 'Music Muted', '#706c58', 14);
-                                ctx.save(); ctx.strokeStyle = '#c45c4a'; ctx.lineWidth = 3;
-                                ctx.beginPath();
-                                ctx.moveTo(w / 2 - 30, barMid - 20);
-                                ctx.lineTo(w / 2 + 30, barMid + 20);
-                                ctx.stroke(); ctx.restore();
-                            }
-                            if (cyc > 2.5 && cyc < 3.5) {
+
+                            if (cyc < 1.5) {
                                 gTap(ctx, btnX, btnY, t);
-                                gT(ctx, w / 2, h - 50, 'Tap to mute', '#e2d8a6', 13);
-                            } else if (cyc > 5 && cyc < 6) {
-                                gTap(ctx, btnX, btnY, t);
-                                gT(ctx, w / 2, h - 50, 'Tap to unmute', '#8cb860', 13);
+                                gT(ctx, w / 2, h / 2, 'Tap ♪ to open', '#e2d8a6', 14);
+                            }
+
+                            if (open) {
+                                // Dropdown panel
+                                const panelX = 30, panelY = 78, panelW = w - 60, panelH = h - 130;
+                                ctx.fillStyle = '#111'; ctx.fillRect(panelX, panelY, panelW, panelH);
+                                ctx.strokeStyle = '#4a493e'; ctx.lineWidth = 1;
+                                ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+                                // Track name
+                                const trackNames = ['Sunset Vibes', 'Focus Flow'];
+                                const ti = Math.floor(t * 0.15) % trackNames.length;
+                                ctx.fillStyle = '#e2d8a6'; ctx.font = 'bold 12px sans-serif';
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText('♪ ' + trackNames[ti], w / 2, panelY + 22);
+
+                                // Progress bar
+                                const progY = panelY + 38, progW = panelW - 40;
+                                ctx.fillStyle = '#888'; ctx.font = '9px sans-serif';
+                                ctx.textAlign = 'left'; ctx.fillText('1:23', panelX + 10, progY + 2);
+                                ctx.textAlign = 'right'; ctx.fillText('3:45', panelX + panelW - 10, progY + 2);
+                                ctx.fillStyle = '#4a493e'; ctx.fillRect(panelX + 34, progY - 2, progW - 28, 4);
+                                const prog = (t * 0.04) % 1;
+                                ctx.fillStyle = '#e2d8a6'; ctx.fillRect(panelX + 34, progY - 2, (progW - 28) * prog, 4);
+                                // Thumb
+                                const thumbX = panelX + 34 + (progW - 28) * prog;
+                                ctx.beginPath(); ctx.arc(thumbX, progY, 5, 0, Math.PI * 2);
+                                ctx.fillStyle = '#e2d8a6'; ctx.fill();
+
+                                // Playback controls: prev, play/pause, next
+                                const ctrlY = panelY + 62;
+                                const ctrlBtns = ['◁', '▶', '▷'];
+                                const ctrlSpace = 40;
+                                const ctrlStartX = w / 2 - ctrlSpace;
+                                for (let i = 0; i < 3; i++) {
+                                    const cx = ctrlStartX + i * ctrlSpace;
+                                    ctx.beginPath(); ctx.arc(cx, ctrlY, 13, 0, Math.PI * 2);
+                                    ctx.fillStyle = i === 1 ? '#e2d8a6' : '#4a493e'; ctx.fill();
+                                    ctx.fillStyle = i === 1 ? '#111' : '#b0a878';
+                                    ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                    ctx.fillText(ctrlBtns[i], cx, ctrlY);
+                                }
+
+                                // Volume row: mute btn + slider
+                                const volY = panelY + 92;
+                                ctx.beginPath(); ctx.arc(panelX + 26, volY, 10, 0, Math.PI * 2);
+                                ctx.fillStyle = '#4a493e'; ctx.fill();
+                                ctx.fillStyle = '#b0a878'; ctx.font = '10px sans-serif';
+                                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText('🔊', panelX + 26, volY);
+                                // Volume slider track
+                                const sliderX = panelX + 46, sliderW = panelW - 60;
+                                ctx.fillStyle = '#4a493e'; ctx.fillRect(sliderX, volY - 2, sliderW, 4);
+                                const vol = 0.75 + Math.sin(t * 0.5) * 0.15;
+                                ctx.fillStyle = '#e2d8a6'; ctx.fillRect(sliderX, volY - 2, sliderW * vol, 4);
+                                ctx.beginPath(); ctx.arc(sliderX + sliderW * vol, volY, 5, 0, Math.PI * 2);
+                                ctx.fillStyle = '#e2d8a6'; ctx.fill();
+
+                                // Hint at bottom
+                                if (cyc > 4 && cyc < 6) {
+                                    gT(ctx, w / 2, h - 48, 'All controls in one place', '#8cb860', 12);
+                                }
                             }
                         }
                     }
@@ -16701,7 +17025,7 @@ class Game {
         // Back button
         this.els.lbBackBtn?.addEventListener("click", () => {
             this._showScreen("menu");
-            this._goToMenuPage(2); // Return to the rankings page
+            this._goToMenuPage(5); // Return to the rankings page
         });
 
         // Refresh button
@@ -16953,16 +17277,21 @@ class Game {
         row.addEventListener("click", async () => {
             const wasExpanded = div.classList.contains("expanded");
 
-            // Helper: collapse a single entry's analysis
-            const collapseEntry = (entry) => {
-                const el = entry.querySelector(".lb-analysis");
+            // Helper: collapse a single entry's analysis and destroy its chart
+            const collapseEntry = (entryEl) => {
+                const el = entryEl.querySelector(".lb-analysis");
                 el.classList.remove("fully-open");
                 // Snap to current height so transition has a start value
                 el.style.maxHeight = el.scrollHeight + "px";
                 // Force reflow then animate to 0
                 el.offsetHeight; // eslint-disable-line no-unused-expressions
                 el.style.maxHeight = "0";
-                entry.classList.remove("expanded");
+                entryEl.classList.remove("expanded");
+                // Destroy chart to free memory
+                const canvas = el.querySelector('canvas');
+                if (canvas?.id) {
+                    import('./src/lib/chart-helpers.js').then(m => m.destroyChart(canvas.id)).catch(() => {});
+                }
             };
 
             // Collapse all others
@@ -16985,7 +17314,61 @@ class Game {
                         const currentTab = this._lbCurrentTab || "main";
                         const challengeType = currentTab !== "main" ? currentTab : null;
                         const html = await fetchPlayerAnalysis(entry, challengeType);
-                        inner.innerHTML = html || '<div class="lb-analysis-loading">No analysis available.</div>';
+                        inner.innerHTML = '';
+
+                        // Radar chart for main leaderboard entries
+                        if (!challengeType && entry.raw_score_component != null) {
+                            const chartWrap = document.createElement('div');
+                            chartWrap.className = 'lb-entry-chart-wrap';
+                            inner.appendChild(chartWrap);
+                            try {
+                                const { renderRadarInto } = await import('./src/lib/chart-helpers.js');
+                                renderRadarInto(chartWrap, entry, {
+                                    chartKey: `entry_radar_${entry.profile_id}`,
+                                    skillClass: entry.skill_class,
+                                    size: 180,
+                                });
+                            } catch { /* chart is optional enhancement */ }
+                        }
+
+                        // Challenge bar chart + score trend for challenge tabs
+                        if (challengeType) {
+                            try {
+                                const { extractChallengeChartData, extractRecentScores } = await import('./src/lib/player-analysis.js');
+                                const { renderBarInto, renderTrendInto } = await import('./src/lib/chart-helpers.js');
+                                // Fetch full analysis data for charts
+                                const { getChallengeAnalysisData } = await import('./src/lib/supabase.js');
+                                const analysisData = await getChallengeAnalysisData(entry.profile_id, challengeType);
+                                if (analysisData) {
+                                    const chartData = extractChallengeChartData(analysisData);
+                                    if (chartData) {
+                                        const barWrap = document.createElement('div');
+                                        barWrap.className = 'lb-entry-chart-wrap';
+                                        inner.appendChild(barWrap);
+                                        renderBarInto(barWrap, {
+                                            ...chartData,
+                                            chartKey: `entry_bar_${entry.profile_id}_${challengeType}`,
+                                        });
+                                    }
+                                    const trendData = extractRecentScores(analysisData);
+                                    if (trendData) {
+                                        const trendWrap = document.createElement('div');
+                                        trendWrap.className = 'lb-entry-trend-wrap';
+                                        inner.appendChild(trendWrap);
+                                        renderTrendInto(trendWrap, {
+                                            ...trendData,
+                                            chartKey: `entry_trend_${entry.profile_id}_${challengeType}`,
+                                        });
+                                    }
+                                }
+                            } catch { /* charts are optional */ }
+                        }
+
+                        // Analysis text
+                        const textDiv = document.createElement('div');
+                        textDiv.className = 'lb-entry-analysis-text';
+                        textDiv.innerHTML = html || '<div class="lb-analysis-loading">No analysis available.</div>';
+                        inner.appendChild(textDiv);
                     } catch {
                         inner.innerHTML = '<div class="lb-analysis-loading">Could not load analysis.</div>';
                     }
@@ -17038,7 +17421,7 @@ class Game {
         }
     }
 
-    _populateMyStats(myRank) {
+    async _populateMyStats(myRank) {
         const p = this.profileMgr.getActive();
         if (!p) return;
 
@@ -17061,48 +17444,35 @@ class Game {
         if (this.els.mrsLevel) this.els.mrsLevel.textContent = p.level || 1;
         if (this.els.mrsStreak) this.els.mrsStreak.textContent = `${p.playStreak || 0}d`;
 
-        // Component bars
-        const components = [
-            { key: 'raw_score_component', label: 'Score' },
-            { key: 'grid_mastery_component', label: 'Grids' },
-            { key: 'difficulty_component', label: 'Difficulty' },
-            { key: 'time_pressure_component', label: 'Speed' },
-            { key: 'challenge_component', label: 'Challenge' },
-            { key: 'consistency_component', label: 'Consistency' },
-            { key: 'versatility_component', label: 'Versatility' },
-            { key: 'progression_component', label: 'Growth' },
-        ];
-
+        // Component radar charts (replaces old horizontal bars)
         const container = this.els.lbsComponents;
         if (container) {
-            container.innerHTML = '';
-            for (const c of components) {
-                const val = Math.round(myRank[c.key] || 0);
-                const row = document.createElement('div');
-                row.className = 'lb-stat-bar-row';
-                row.innerHTML = `
-                    <span class="lb-stat-bar-label">${c.label}</span>
-                    <div class="lb-stat-bar-track"><div class="lb-stat-bar-fill" style="width:${val}%"></div></div>
-                    <span class="lb-stat-bar-val">${val}</span>
-                `;
-                container.appendChild(row);
+            try {
+                const { renderRadarInto } = await import('./src/lib/chart-helpers.js');
+                this._lbsRadarKey = renderRadarInto(container, myRank, {
+                    chartKey: 'lbs_radar',
+                    skillClass: myRank.skill_class,
+                    size: 210,
+                });
+            } catch (e) {
+                console.warn('[chart] radar render failed:', e);
+                this._renderFallbackBars(container, myRank);
             }
         }
 
-        // Populate menu rank card component bars (same data)
+        // Menu rank card radar chart (same data)
         const mrsContainer = this.els.mrsComponents;
         if (mrsContainer) {
-            mrsContainer.innerHTML = '';
-            for (const c of components) {
-                const val = Math.round(myRank[c.key] || 0);
-                const row = document.createElement('div');
-                row.className = 'lb-stat-bar-row';
-                row.innerHTML = `
-                    <span class="lb-stat-bar-label">${c.label}</span>
-                    <div class="lb-stat-bar-track"><div class="lb-stat-bar-fill" style="width:${val}%"></div></div>
-                    <span class="lb-stat-bar-val">${val}</span>
-                `;
-                mrsContainer.appendChild(row);
+            try {
+                const { renderRadarInto } = await import('./src/lib/chart-helpers.js');
+                this._mrsRadarKey = renderRadarInto(mrsContainer, myRank, {
+                    chartKey: 'mrs_radar',
+                    skillClass: myRank.skill_class,
+                    size: 190,
+                });
+            } catch (e) {
+                console.warn('[chart] radar render failed:', e);
+                this._renderFallbackBars(mrsContainer, myRank);
             }
         }
 
@@ -17125,15 +17495,82 @@ class Game {
             const currentTab = this._lbCurrentTab || 'main';
             const challengeType = currentTab !== 'main' ? currentTab : null;
             const html = await fetchPlayerAnalysis(myRank, challengeType);
+
             for (const el of targets) {
                 const inner = el.querySelector('.lb-analysis-inner');
-                if (inner) inner.innerHTML = html || '<div class="lb-analysis-loading">No analysis available.</div>';
+                if (!inner) continue;
+                inner.innerHTML = '';
+
+                // For challenge tabs, render charts above the analysis text
+                if (challengeType) {
+                    try {
+                        const { extractChallengeChartData, extractRecentScores } = await import('./src/lib/player-analysis.js');
+                        const { renderBarInto, renderTrendInto } = await import('./src/lib/chart-helpers.js');
+                        const { getChallengeAnalysisData } = await import('./src/lib/supabase.js');
+                        const analysisData = await getChallengeAnalysisData(myRank.profile_id, challengeType);
+                        if (analysisData) {
+                            const chartData = extractChallengeChartData(analysisData);
+                            if (chartData) {
+                                const barWrap = document.createElement('div');
+                                barWrap.className = 'lb-entry-chart-wrap';
+                                inner.appendChild(barWrap);
+                                const elId = el === this.els.lbsAnalysis ? 'lbs' : 'mrs';
+                                renderBarInto(barWrap, {
+                                    ...chartData,
+                                    chartKey: `my_bar_${elId}_${challengeType}`,
+                                });
+                            }
+                            const trendData = extractRecentScores(analysisData);
+                            if (trendData) {
+                                const trendWrap = document.createElement('div');
+                                trendWrap.className = 'lb-entry-trend-wrap';
+                                inner.appendChild(trendWrap);
+                                const elId = el === this.els.lbsAnalysis ? 'lbs' : 'mrs';
+                                renderTrendInto(trendWrap, {
+                                    ...trendData,
+                                    chartKey: `my_trend_${elId}_${challengeType}`,
+                                });
+                            }
+                        }
+                    } catch { /* charts are optional */ }
+                }
+
+                // Analysis text
+                const textDiv = document.createElement('div');
+                textDiv.className = 'lb-entry-analysis-text';
+                textDiv.innerHTML = html || '<div class="lb-analysis-loading">No analysis available.</div>';
+                inner.appendChild(textDiv);
             }
         } catch {
             for (const el of targets) {
                 const inner = el.querySelector('.lb-analysis-inner');
                 if (inner) inner.innerHTML = '<div class="lb-analysis-loading">Could not load analysis.</div>';
             }
+        }
+    }
+
+    _renderFallbackBars(container, myRank) {
+        const components = [
+            { key: 'raw_score_component', label: 'Score' },
+            { key: 'grid_mastery_component', label: 'Grids' },
+            { key: 'difficulty_component', label: 'Difficulty' },
+            { key: 'time_pressure_component', label: 'Speed' },
+            { key: 'challenge_component', label: 'Challenge' },
+            { key: 'consistency_component', label: 'Consistency' },
+            { key: 'versatility_component', label: 'Versatility' },
+            { key: 'progression_component', label: 'Growth' },
+        ];
+        container.innerHTML = '';
+        for (const c of components) {
+            const val = Math.round(myRank[c.key] || 0);
+            const row = document.createElement('div');
+            row.className = 'lb-stat-bar-row';
+            row.innerHTML = `
+                <span class="lb-stat-bar-label">${c.label}</span>
+                <div class="lb-stat-bar-track"><div class="lb-stat-bar-fill" style="width:${val}%"></div></div>
+                <span class="lb-stat-bar-val">${val}</span>
+            `;
+            container.appendChild(row);
         }
     }
 
@@ -18851,11 +19288,32 @@ Promise.all([
         _buildHintSets();
     }),
     loadEnrichedDict()
-]).then(() => {
+]).then(async () => {
     // Clean up previous instance (HMR reload) to prevent double audio / double game loops
     const prev = window._game;
     if (prev && prev.destroy) prev.destroy();
     window._game = new Game();
     // Mount Preact UI layer after game initializes
     mountPreactUI();
+    
+    // Word of the Day notifications - initialize on first launch or reschedule if enabled
+    try {
+        const { initializeOnFirstLaunch, rescheduleIfNeeded, setupNotificationListeners } = await import('./src/lib/word-of-day.js');
+        
+        // For new users, auto-enable (will prompt for permission)
+        await initializeOnFirstLaunch(ENRICHED_DICT);
+        
+        // For returning users, reschedule if still enabled
+        await rescheduleIfNeeded(ENRICHED_DICT);
+        
+        setupNotificationListeners((word) => {
+            // User tapped notification - show dictionary with this word
+            if (window._game && window._game._showDictionaryWord) {
+                window._game._showDictionaryWord(word);
+            }
+        });
+    } catch (e) {
+        // Word of Day module not available or not on native platform
+        console.log('[WOTD] Not initialized:', e.message);
+    }
 });

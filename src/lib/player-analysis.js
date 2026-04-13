@@ -445,10 +445,9 @@ export function generateShortSummary(components) {
 }
 
 function getScoreBar(value) {
-    const filled = Math.round(value / 10);
-    const empty = 10 - filled;
-    const color = value >= 60 ? '#4ade80' : value >= 35 ? '#fbbf24' : '#f87171';
-    return `<span class="analysis-bar" style="color:${color}">${'█'.repeat(filled)}${'░'.repeat(empty)}</span> <span class="analysis-score">${Math.round(value)}</span>`;
+    const v = Math.round(value);
+    const color = v >= 60 ? '#4ade80' : v >= 35 ? '#fbbf24' : '#f87171';
+    return `<span class="analysis-bar-wrap"><span class="analysis-bar-track"><span class="analysis-bar-fill" style="width:${v}%;background:${color}"></span></span><span class="analysis-score">${v}</span></span>`;
 }
 
 function hashCode(str) {
@@ -718,3 +717,121 @@ function _getChallengeSpecificHtml(data, seed) {
 
 // Placeholder kept as no-op — specific logic lives in _getChallengeSpecificHtml
 function _appendChallengeSpecific() {}
+
+/**
+ * Extract chart-ready stats from challenge analysis data.
+ * Returns { labels: string[], values: number[], color: string } for bar chart rendering.
+ */
+export function extractChallengeChartData(data) {
+    if (!data || !data.challenge_type) return null;
+
+    const ct = data.challenge_type;
+    const labels = [];
+    const values = [];
+
+    // Base stats always present
+    if (data.high_score != null && data.high_score > 0) {
+        labels.push('High Score');
+        values.push(data.high_score);
+    }
+    if (data.avg_score != null && data.avg_score > 0) {
+        labels.push('Avg Score');
+        values.push(Math.round(data.avg_score));
+    }
+    if (data.games_played != null && data.games_played > 0) {
+        labels.push('Games');
+        values.push(data.games_played);
+    }
+    if (data.best_combo != null && data.best_combo > 0) {
+        labels.push('Best Combo');
+        values.push(data.best_combo);
+    }
+
+    // Challenge-specific
+    if (ct === 'target-word') {
+        if (data.target_word_level != null) {
+            labels.push('TW Level');
+            values.push(data.target_word_level);
+        }
+        if (data.avg_targets_per_game != null) {
+            labels.push('Avg Targets');
+            values.push(Number(data.avg_targets_per_game));
+        }
+    }
+    if (ct === 'speed-round') {
+        if (data.avg_words_per_minute != null) {
+            labels.push('Words/Min');
+            values.push(Number(data.avg_words_per_minute));
+        }
+        if (data.best_words_in_game != null) {
+            labels.push('Best Words');
+            values.push(data.best_words_in_game);
+        }
+    }
+    if (ct === 'word-category') {
+        if (data.avg_category_words != null) {
+            labels.push('Avg Cat Words');
+            values.push(Number(data.avg_category_words));
+        }
+        if (data.best_category_words != null) {
+            labels.push('Best Cat Words');
+            values.push(data.best_category_words);
+        }
+    }
+    if (ct === 'word-search') {
+        const ws = data.word_search;
+        if (ws) {
+            if (ws.avg_completion_rate != null) {
+                labels.push('Completion %');
+                values.push(Math.round((ws.avg_completion_rate || 0) * 100));
+            }
+            if (ws.perfect_clear_rate != null) {
+                labels.push('Perfect %');
+                values.push(Math.round((ws.perfect_clear_rate || 0) * 100));
+            }
+            if (ws.highest_level) {
+                labels.push('Highest Level');
+                values.push(ws.highest_level);
+            }
+        }
+    }
+    if (ct === 'word-runner') {
+        if (data.avg_words != null) {
+            labels.push('Avg Words/Run');
+            values.push(Number(data.avg_words.toFixed ? data.avg_words.toFixed(1) : data.avg_words));
+        }
+    }
+
+    if (labels.length < 2) return null;
+
+    const colorMap = {
+        'target-word': '#f472b6',
+        'speed-round': '#fbbf24',
+        'word-category': '#34d399',
+        'word-search': '#60a5fa',
+        'word-runner': '#a78bfa',
+    };
+
+    return { labels, values, color: colorMap[ct] || '#60a5fa' };
+}
+
+/**
+ * Extract recent scores array from challenge data for trend mini-chart.
+ * Returns { scores: number[], color: string } or null.
+ */
+export function extractRecentScores(data) {
+    if (!data?.recent_scores || !Array.isArray(data.recent_scores) || data.recent_scores.length < 3) return null;
+
+    const scores = data.recent_scores.slice(0, 15).reverse(); // oldest → newest
+
+    const colorMap = {
+        'target-word': '#f472b6',
+        'speed-round': '#fbbf24',
+        'word-category': '#34d399',
+        'word-search': '#60a5fa',
+        'word-runner': '#a78bfa',
+    };
+
+    return { scores, color: colorMap[data.challenge_type] || '#60a5fa' };
+}
+
