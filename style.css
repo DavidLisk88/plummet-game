@@ -400,6 +400,12 @@ html, body {
     text-align: center;
     padding: 0 2px;
     letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+.gmp-track-name:hover {
+    color: var(--accent);
+    text-decoration: underline;
 }
 
 /* Progress bar row */

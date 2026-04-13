@@ -519,67 +519,68 @@ const WS_DIRECTIONS = [
 function _wsLevelParams(level) {
     let gridSize, minWords, maxWords, minWordLen, maxWordLen, allowedDirs;
 
+    // Word count always stays between 2-6
     if (level <= 10) {
         // Beginner: tiny grid, 3-4 letter words, all 8 directions
         gridSize = 8;
-        minWords = 5; maxWords = 5;
+        minWords = 3; maxWords = 4;
         minWordLen = 3; maxWordLen = 4;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 25) {
         // Easing in: still small, introduce 4-letter words
         gridSize = 8;
-        minWords = 5; maxWords = 6;
+        minWords = 3; maxWords = 5;
         minWordLen = 3; maxWordLen = 4;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 50) {
         // Comfortable: more words
         gridSize = 8;
-        minWords = 5; maxWords = 6;
+        minWords = 4; maxWords = 5;
         minWordLen = 3; maxWordLen = 4;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 80) {
         // Slightly bigger grid, still easy words
         gridSize = 9;
-        minWords = 5; maxWords = 6;
+        minWords = 4; maxWords = 6;
         minWordLen = 3; maxWordLen = 4;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 120) {
         // Introduce 5-letter words
         gridSize = 9;
-        minWords = 5; maxWords = 7;
+        minWords = 4; maxWords = 6;
         minWordLen = 3; maxWordLen = 5;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 180) {
         gridSize = 10;
-        minWords = 5; maxWords = 7;
+        minWords = 5; maxWords = 6;
         minWordLen = 3; maxWordLen = 5;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 260) {
         gridSize = 10;
-        minWords = 6; maxWords = 8;
+        minWords = 5; maxWords = 6;
         minWordLen = 3; maxWordLen = 5;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 380) {
         // Introduce 6-letter words
         gridSize = 11;
-        minWords = 6; maxWords = 9;
+        minWords = 5; maxWords = 6;
         minWordLen = 4; maxWordLen = 6;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 550) {
         gridSize = 12;
-        minWords = 7; maxWords = 10;
+        minWords = 5; maxWords = 6;
         minWordLen = 4; maxWordLen = 6;
         allowedDirs = WS_DIRECTIONS;
     } else if (level <= 800) {
         // Introduce 7-letter words
         gridSize = 13;
-        minWords = 8; maxWords = 12;
+        minWords = 5; maxWords = 6;
         minWordLen = 4; maxWordLen = 7;
         allowedDirs = WS_DIRECTIONS;
     } else {
-        // Level 801+: gradual scaling
+        // Level 801+: gradual scaling (grid only, words stay at 6 max)
         gridSize = Math.min(16, 13 + Math.floor((level - 800) / 500));
-        minWords = 8; maxWords = 14;
+        minWords = 5; maxWords = 6;
         minWordLen = 5; maxWordLen = 7;
         allowedDirs = WS_DIRECTIONS;
     }
@@ -596,7 +597,7 @@ function _wsLevelParams(level) {
  * Stores last N words per profile in localStorage.
  */
 const WS_WORD_HISTORY_KEY = 'plummet_ws_word_history';
-const WS_WORD_HISTORY_MAX = 500;
+const WS_WORD_HISTORY_MAX = 2000; // ~200 levels at ~10 words/level
 
 function _wsGetWordHistory() {
     try {
@@ -652,20 +653,44 @@ function _wsSelectWords(params) {
     const windowEnd = Math.min(total, Math.floor(total * Math.min(1, center + halfWidth)));
     const pool = candidates.slice(windowStart, Math.max(windowEnd, windowStart + 20));
 
-    // Pick random unique words, strongly avoiding recently used words
+    // Helper: check if two words are related (substring, plural, etc.)
+    // Returns true if they should NOT appear together in the same puzzle
+    const areWordsRelated = (w1, w2) => {
+        if (w1 === w2) return true;
+        // Substring check (covers most S/ES plurals)
+        if (w1.includes(w2) || w2.includes(w1)) return true;
+        // Check for Y→IES plural (PARTY→PARTIES)
+        if (w1.endsWith('IES') && w2.endsWith('Y') && w1.slice(0, -3) === w2.slice(0, -1)) return true;
+        if (w2.endsWith('IES') && w1.endsWith('Y') && w2.slice(0, -3) === w1.slice(0, -1)) return true;
+        // Check for common verb forms (RUN→RUNS, RUNNING)
+        const shorter = w1.length < w2.length ? w1 : w2;
+        const longer = w1.length < w2.length ? w2 : w1;
+        // ING forms: RUN→RUNNING, MAKE→MAKING
+        if (longer.endsWith('ING') && (longer.startsWith(shorter) || longer.slice(0, -3) === shorter || longer.slice(0, -4) === shorter)) return true;
+        // ED forms: WALK→WALKED, MOVE→MOVED
+        if (longer.endsWith('ED') && (longer.startsWith(shorter) || longer.slice(0, -2) === shorter || longer.slice(0, -3) === shorter)) return true;
+        // ER/EST comparatives: FAST→FASTER→FASTEST
+        if ((longer.endsWith('ER') || longer.endsWith('EST')) && longer.startsWith(shorter)) return true;
+        return false;
+    };
+
+    // Pick random unique words, strongly avoiding recently used words and related forms
     const selected = new Set();
     const result = [];
     let attempts = 0;
-    // First pass: try to pick words NOT in recent history
-    while (result.length < count && attempts < count * 30) {
+    // First pass: try to pick words NOT in recent history and not related to selected words
+    while (result.length < count && attempts < count * 50) {
         const word = pool[Math.floor(Math.random() * pool.length)];
         attempts++;
         if (selected.has(word)) continue;
         if (recentWords.has(word)) continue; // Skip recently used
+        // Check if this word is related to any already-selected word
+        const hasRelated = result.some(existing => areWordsRelated(word, existing));
+        if (hasRelated) continue;
         selected.add(word);
         result.push(word);
     }
-    // Fallback: if we couldn't fill from non-recent pool, allow recent words
+    // Fallback: if we couldn't fill from non-recent pool, allow recent words (but still avoid related)
     // Shuffle the pool first to avoid always picking the same recent words
     if (result.length < count) {
         const remaining = pool.filter(w => !selected.has(w));
@@ -675,6 +700,8 @@ function _wsSelectWords(params) {
         }
         for (const word of remaining) {
             if (result.length >= count) break;
+            const hasRelated = result.some(existing => areWordsRelated(word, existing));
+            if (hasRelated) continue;
             selected.add(word);
             result.push(word);
         }
@@ -1623,7 +1650,7 @@ const BONUS_METADATA = Object.freeze({
         buttonLabel: "Bonus: Bomb",
         buttonTitle: "Replace the current falling letter with a bomb",
         modalTitle: "Bomb Bonus",
-        modalText: "Accept to swap the current falling letter for a bomb. When it lands, every occupied cell in its row and column will explode and clear.",
+        modalText: "Accept to swap the current falling letter for a bomb. When it lands, every occupied cell in its row, column, and both diagonals will explode and clear.",
         acceptLabel: "Accept",
         previewSymbol: BOMB_SYMBOL,
     },
@@ -5284,6 +5311,10 @@ class Game {
                 this._musicBackTarget = null;
                 this._showScreen("play");
                 this.els.pauseOverlay.classList.add("active");
+            } else if (this._musicBackTarget === "ws-pause") {
+                this._musicBackTarget = null;
+                this._showScreen("ws");
+                if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.add("active");
             } else if (this._musicBackTarget === "wr-pause") {
                 this._musicBackTarget = null;
                 this._wrResumePause();
@@ -5293,10 +5324,25 @@ class Game {
                 this._goToMenuPage(4);
             } else if (this._musicBackTarget === "challenge-setup") {
                 this._musicBackTarget = null;
-                this._showScreen("challenge-setup");
-            } else if (this._wsReturnScreen === "ws") {
-                this._wsReturnScreen = null;
-                this._showScreen("ws");
+                this._showScreen("challengesetup");
+            } else if (this._musicBackTarget === "shop") {
+                this._musicBackTarget = null;
+                this._showScreen("shop");
+            } else if (this._musicBackTarget === "dict") {
+                this._musicBackTarget = null;
+                this._showScreen("dict");
+            } else if (this._musicBackTarget === "leaderboard") {
+                this._musicBackTarget = null;
+                this._showScreen("leaderboard");
+            } else if (this._musicBackTarget === "wordsfound") {
+                this._musicBackTarget = null;
+                this._showScreen("wordsfound");
+            } else if (this._musicBackTarget === "gameover") {
+                this._musicBackTarget = null;
+                this._showScreen("gameover");
+            } else if (this._musicBackTarget === "profiles") {
+                this._musicBackTarget = null;
+                this._showScreen("profiles");
             } else {
                 this._showScreen("menu");
             }
@@ -5373,6 +5419,22 @@ class Game {
             document.addEventListener("touchmove", (e) => { if (seeking) seek(e); }, { passive: false });
             document.addEventListener("mouseup", () => { seeking = false; });
             document.addEventListener("touchend", () => { seeking = false; });
+        }
+
+        // Track name click → go to full music page
+        if (this.els.gmpTrackName) {
+            this.els.gmpTrackName.style.cursor = "pointer";
+            this.els.gmpTrackName.addEventListener("click", (e) => {
+                e.stopPropagation();
+                // Close the dropdown
+                this.els.globalMusicDropdown.classList.remove("open");
+                this._resumeFromMusicDropdown();
+                // Set back target based on current screen/state
+                this._musicBackTarget = this._getMusicBackTarget();
+                // Navigate to music
+                this._showScreen("music");
+                this._renderMusicScreen();
+            });
         }
 
         // Freeze indicator tap → early unfreeze with time bonus
@@ -5489,6 +5551,53 @@ class Game {
         this.els.globalMuteBtn.classList.toggle("muted", muted);
         this._updateVolumeIcon();
         this._syncGlobalMusicPanel();
+    }
+
+    // Determine where music back button should return based on current screen/state
+    _getMusicBackTarget() {
+        const screen = this._activeScreen;
+        // If in main game play screen with pause overlay
+        if (screen === "play" && this.els.pauseOverlay.classList.contains("active")) {
+            return "pause";
+        }
+        // Word Search with pause overlay
+        if (screen === "ws" && this.els.wsPauseOverlay?.classList.contains("active")) {
+            return "ws-pause";
+        }
+        // Word Runner with pause overlay
+        if (screen === "wr" && this.els.wrPauseOverlay?.classList.contains("active")) {
+            return "wr-pause";
+        }
+        // Challenge setup screen
+        if (screen === "challengesetup") {
+            return "challenge-setup";
+        }
+        // Shop screen
+        if (screen === "shop") {
+            return "shop";
+        }
+        // Dictionary screen
+        if (screen === "dict") {
+            return "dict";
+        }
+        // Leaderboard screen
+        if (screen === "leaderboard") {
+            return "leaderboard";
+        }
+        // Words found screen
+        if (screen === "wordsfound") {
+            return "wordsfound";
+        }
+        // Game over screen
+        if (screen === "gameover") {
+            return "gameover";
+        }
+        // Profiles screen
+        if (screen === "profiles") {
+            return "profiles";
+        }
+        // Default: return to menu
+        return "menu";
     }
 
     _syncGlobalMusicPanel() {
@@ -8474,15 +8583,39 @@ class Game {
     _triggerBombClear(row, col) {
         const cellsToClear = new Set();
 
+        // Clear entire row (horizontal)
         for (let currentCol = 0; currentCol < this.grid.cols; currentCol++) {
             if (this.grid.get(row, currentCol) !== null) {
                 cellsToClear.add(`${row},${currentCol}`);
             }
         }
 
+        // Clear entire column (vertical)
         for (let currentRow = 0; currentRow < this.grid.rows; currentRow++) {
             if (this.grid.get(currentRow, col) !== null) {
                 cellsToClear.add(`${currentRow},${col}`);
+            }
+        }
+
+        // Clear diagonal (top-left to bottom-right)
+        for (let offset = -Math.max(this.grid.rows, this.grid.cols); offset <= Math.max(this.grid.rows, this.grid.cols); offset++) {
+            const diagRow = row + offset;
+            const diagCol = col + offset;
+            if (diagRow >= 0 && diagRow < this.grid.rows && diagCol >= 0 && diagCol < this.grid.cols) {
+                if (this.grid.get(diagRow, diagCol) !== null) {
+                    cellsToClear.add(`${diagRow},${diagCol}`);
+                }
+            }
+        }
+
+        // Clear diagonal (top-right to bottom-left)
+        for (let offset = -Math.max(this.grid.rows, this.grid.cols); offset <= Math.max(this.grid.rows, this.grid.cols); offset++) {
+            const diagRow = row + offset;
+            const diagCol = col - offset;
+            if (diagRow >= 0 && diagRow < this.grid.rows && diagCol >= 0 && diagCol < this.grid.cols) {
+                if (this.grid.get(diagRow, diagCol) !== null) {
+                    cellsToClear.add(`${diagRow},${diagCol}`);
+                }
             }
         }
 
@@ -10988,7 +11121,7 @@ class Game {
                     },
                     {
                         title: 'Bomb 💣',
-                        desc: 'Your next block becomes a 💣 bomb. When it lands, it explodes and clears the entire row and column (cross shape). You earn 15 points per letter cleared. Drop it in a crowded spot for maximum effect!',
+                        desc: 'Your next block becomes a 💣 bomb. When it lands, it explodes and clears the entire row, column, and both diagonals (X + cross shape). You earn 15 points per letter cleared. Drop it in a crowded spot for maximum effect!',
                         draw(ctx, w, h, t) {
                             const gs = 5, { cs, ox, oy } = gL(w, h, gs);
                             gBg(ctx, ox, oy, cs, gs);
@@ -17763,8 +17896,10 @@ class Game {
         this.els.wsPauseBtn?.addEventListener("click", () => this._wsTogglePause());
         this.els.wsResumeBtn?.addEventListener("click", () => this._wsTogglePause());
         this.els.wsMusicBtn?.addEventListener("click", () => {
-            this._wsReturnScreen = "ws";
+            if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.remove("active");
+            this._musicBackTarget = "ws-pause";
             this._showScreen("music");
+            this._renderMusicScreen();
         });
         this.els.wsQuitBtn?.addEventListener("click", () => {
             this._wsEndGame("save");
@@ -19486,6 +19621,39 @@ Promise.all([
     } catch (e) {
         // Word of Day module not available or not on native platform
         console.log('[WOTD] Not initialized:', e.message);
+    }
+    
+    // Fun Message notifications - random daily fun messages/jokes
+    try {
+        const { 
+            initializeFunMessagesOnFirstLaunch, 
+            rescheduleFunMessageIfNeeded,
+            scheduleFunMessage,
+            isFunMessagesEnabled
+        } = await import('./src/lib/fun-messages.js');
+        const { LocalNotifications } = await import('@capacitor/local-notifications');
+        const { Capacitor } = await import('@capacitor/core');
+        
+        // For new users, auto-enable
+        await initializeFunMessagesOnFirstLaunch();
+        
+        // For returning users, reschedule if still enabled
+        await rescheduleFunMessageIfNeeded();
+        
+        // Listen for fun message notifications to reschedule the next one
+        if (Capacitor.isNativePlatform()) {
+            LocalNotifications.addListener('localNotificationActionPerformed', async (action) => {
+                const { notification } = action;
+                if (notification.extra?.type === 'fun-message') {
+                    // User tapped fun message - schedule the next one
+                    if (isFunMessagesEnabled()) {
+                        await scheduleFunMessage();
+                    }
+                }
+            });
+        }
+    } catch (e) {
+        console.log('[FUN-MSG] Not initialized:', e.message);
     }
     
     // Hide loading screen
