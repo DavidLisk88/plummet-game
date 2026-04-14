@@ -188,6 +188,22 @@ export async function recordGameScore(scoreData) {
     return data;
 }
 
+/**
+ * Atomic server-authoritative write for one completed game.
+ * Persists game_scores + profile progression snapshot + challenge progression in one transaction.
+ */
+export async function recordGameAndSyncProfile({ profileId, scoreData, profileUpdates, challengeStats }) {
+    if (isLocalMode) return null;
+    const { data, error } = await supabase.rpc('record_game_and_sync_profile', {
+        p_profile_id: profileId,
+        p_score_data: scoreData || {},
+        p_profile_updates: profileUpdates || {},
+        p_challenge_stats: challengeStats || null,
+    });
+    if (error) throw error;
+    return data;
+}
+
 // ════════════════════════════════════════
 // INVENTORY
 // ════════════════════════════════════════

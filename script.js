@@ -9343,6 +9343,7 @@ class Game {
         const wordsCount = (this.wordsFound || []);
         if (this.activeChallenge) {
             this.profileMgr.recordChallengeGame(this.activeChallenge, this.score, wordsCount);
+            this._syncChallengeStatsToCloud(this.activeChallenge);
         } else {
             this.profileMgr.recordGame(this.score, wordsCount);
         }
@@ -10013,6 +10014,28 @@ class Game {
     }
 
     /**
+     * Push one challenge stat row immediately (used for critical progression events).
+     * This avoids losing levels if the app refreshes before a debounced full-profile sync.
+     */
+    async _syncChallengeStatsToCloud(challengeType) {
+        try {
+            const { isLocalMode, upsertChallengeStats } = await import('./src/lib/supabase.js');
+            if (isLocalMode) return;
+            if (!this._initialSyncComplete) return;
+
+            const p = this.profileMgr.getActive();
+            if (!p || !p.cloudId || !p.challengeStats) return;
+
+            const stats = p.challengeStats[challengeType];
+            if (!stats) return;
+
+            await upsertChallengeStats(p.cloudId, challengeType, stats);
+        } catch (err) {
+            console.warn(`[supabase] immediate challenge sync (${challengeType}) failed:`, err?.message || err);
+        }
+    }
+
+    /**
      * Debounced version of _syncProfileToCloud for rapid-fire preference changes.
      * Waits 1s of inactivity before syncing.
      */
@@ -10063,6 +10086,7 @@ class Game {
         ];
         keysToRemove.forEach(k => localStorage.removeItem(k));
         this._authUser = null;
+        this._unsubscribeProfileRealtime();
         this._showScreen("auth");
     }
 
@@ -10086,6 +10110,7 @@ class Game {
         this._updateHighScoreDisplay();
         this._updateMenuStats();
         this._updateLevelDisplay();
+        this._subscribeProfileRealtime();
     }
 
     _renderProfilesList() {
@@ -15587,8 +15612,8 @@ class Game {
                 // Advance level and pick next word from the new level's pool
                 this._targetWordLevel = this.profileMgr.advanceTargetWordLevel();
                 this._pickTargetWord();
-                // Immediately persist the new level to the cloud so a refresh never rolls back progress
-                this._debouncedSyncProfileToCloud();
+                // Immediately persist challenge progress so fast refresh/end-game cannot roll back levels.
+                this._syncChallengeStatsToCloud(CHALLENGE_TYPES.TARGET_WORD);
             }
 
             // Track category word matches
@@ -17153,6 +17178,7 @@ class Game {
             } catch (e) {
                 console.error('[auth] logout error:', e);
             }
+            this._unsubscribeProfileRealtime();
             this.profileMgr.profiles = [];
             this.profileMgr.activeId = null;
             this.profileMgr._save();
@@ -17447,6 +17473,7 @@ class Game {
             }
             this._syncCloudProfilesToLocal(cloudProfiles);
             this._initialSyncComplete = true; // Cloud data loaded, safe to push updates
+            this._subscribeProfileRealtime();
             // Refresh challenge cards to show updated levels after sync
             this._refreshChallengeCards();
             // Load milestone timestamps after profiles are synced
@@ -17888,6 +17915,109 @@ class Game {
         }
     }
 
+    async _subscribeProfileRealtime() {
+        try {
+            const profile = this.profileMgr.getActive();
+            if (!this._authUser || !profile?.cloudId) {
+                this._unsubscribeProfileRealtime();
+                return;
+            }
+
+            // Recreate subscription if the active profile changed.
+            if (this._profileRealtimeProfileId === profile.cloudId && this._profileRealtimeChannel) return;
+            this._unsubscribeProfileRealtime();
+
+            const { supabase, isLocalMode } = await import('./src/lib/supabase.js');
+            if (isLocalMode || !supabase) return;
+
+            this._profileRealtimeProfileId = profile.cloudId;
+            this._profileRealtimeChannel = supabase
+                .channel(`profile-live-${profile.cloudId}`)
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'profiles',
+                    filter: `id=eq.${profile.cloudId}`,
+                }, (payload) => this._handleProfileRealtimeUpdate(payload))
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'profile_challenge_stats',
+                    filter: `profile_id=eq.${profile.cloudId}`,
+                }, (payload) => this._handleChallengeRealtimeUpdate(payload))
+                .subscribe();
+        } catch (err) {
+            console.warn('[realtime] profile subscription failed:', err);
+        }
+    }
+
+    _unsubscribeProfileRealtime() {
+        this._profileRealtimeProfileId = null;
+        if (this._profileRealtimeChannel) {
+            import('./src/lib/supabase.js').then(({ supabase }) => {
+                supabase?.removeChannel(this._profileRealtimeChannel);
+                this._profileRealtimeChannel = null;
+            }).catch(() => { this._profileRealtimeChannel = null; });
+        }
+    }
+
+    _handleProfileRealtimeUpdate(payload) {
+        const row = payload?.new;
+        if (!row) return;
+        const p = this.profileMgr.getActive();
+        if (!p || p.cloudId !== row.id) return;
+
+        p.username = row.username;
+        p.level = row.level || 1;
+        p.xp = row.xp || 0;
+        p.totalXp = row.total_xp || 0;
+        p.highScore = row.high_score || 0;
+        p.gamesPlayed = row.games_played || 0;
+        p.totalWords = row.total_words || 0;
+        p.totalCoinsEarned = row.total_coins_earned || 0;
+        p.coins = row.coins ?? 0;
+        p.lastPlayDate = row.last_play_date || null;
+        p.playStreak = row.play_streak || 0;
+        p.claimedMilestones = row.claimed_milestones || [];
+        p.uniqueWordsFound = row.unique_words_found || [];
+
+        this.profileMgr._save();
+        this.highScore = p.highScore || 0;
+        this._updateHighScoreDisplay();
+        this._updateMenuStats();
+        this._updateLevelDisplay();
+    }
+
+    _handleChallengeRealtimeUpdate(payload) {
+        const row = payload?.new;
+        if (!row) return;
+        const p = this.profileMgr.getActive();
+        if (!p) return;
+
+        if (!p.challengeStats) p.challengeStats = {};
+        const type = row.challenge_type;
+        const existing = p.challengeStats[type] || { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], targetWordLevel: 1 };
+
+        existing.highScore = Math.max(existing.highScore || 0, row.high_score || 0);
+        existing.gamesPlayed = Math.max(existing.gamesPlayed || 0, row.games_played || 0);
+        existing.totalWords = Math.max(existing.totalWords || 0, row.total_words || 0);
+        existing.targetWordLevel = Math.max(existing.targetWordLevel || 1, row.target_word_level || 1);
+        existing.uniqueWordsFound = row.unique_words_found || existing.uniqueWordsFound || [];
+        if (type === CHALLENGE_TYPES.WORD_SEARCH) {
+            existing.wordSearchLevel = Math.max(existing.wordSearchLevel || 1, row.target_word_level || 1);
+        }
+
+        p.challengeStats[type] = existing;
+        this.profileMgr._save();
+        this._refreshChallengeCards();
+
+        // Keep target-word HUD level in sync if that challenge is currently active.
+        if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD && type === CHALLENGE_TYPES.TARGET_WORD) {
+            this._targetWordLevel = existing.targetWordLevel || 1;
+            this._updateTargetLevelDisplay();
+        }
+    }
+
     _createLeaderboardEntry(entry) {
         const div = document.createElement("div");
         div.className = "lb-entry";
@@ -18246,12 +18376,12 @@ class Game {
 
     async _recordGameToSupabase(scoreData) {
         try {
-            const { isLocalMode, recordGameScore, updateMyRanking } = await import('./src/lib/supabase.js');
+            const { isLocalMode, recordGameScore, recordGameAndSyncProfile, updateMyRanking } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
             const profile = this.profileMgr.getActive();
             if (!profile || !profile.cloudId) return;
 
-            await recordGameScore({
+            const scorePayload = {
                 profile_id: profile.cloudId,
                 game_mode: scoreData.gameMode,
                 is_challenge: scoreData.isChallenge || false,
@@ -18272,7 +18402,58 @@ class Game {
                 grid_factor: scoreData.gridFactor || null,
                 difficulty_multiplier: scoreData.difficultyMultiplier || null,
                 mode_multiplier: scoreData.modeMultiplier || null,
-            });
+            };
+
+            const profilePayload = {
+                username: profile.username,
+                level: profile.level,
+                xp: profile.xp,
+                total_xp: profile.totalXp,
+                high_score: profile.highScore,
+                games_played: profile.gamesPlayed,
+                total_words: profile.totalWords,
+                coins: profile.coins,
+                total_coins_earned: profile.totalCoinsEarned,
+                last_play_date: profile.lastPlayDate || null,
+                play_streak: profile.playStreak || 0,
+                claimed_milestones: profile.claimedMilestones || [],
+                unique_words_found: profile.uniqueWordsFound || [],
+            };
+
+            let challengePayload = null;
+            if (scoreData.isChallenge && scoreData.challengeType) {
+                const cs = profile.challengeStats?.[scoreData.challengeType];
+                if (cs) {
+                    const level = scoreData.challengeType === CHALLENGE_TYPES.WORD_SEARCH
+                        ? (cs.wordSearchLevel || cs.targetWordLevel || 1)
+                        : (cs.targetWordLevel || 1);
+                    challengePayload = {
+                        challenge_type: scoreData.challengeType,
+                        high_score: cs.highScore || 0,
+                        games_played: cs.gamesPlayed || 0,
+                        total_words: cs.totalWords || 0,
+                        target_word_level: level,
+                        unique_words_found: cs.uniqueWordsFound || [],
+                    };
+                }
+            }
+
+            let wroteAuthoritatively = false;
+            try {
+                await recordGameAndSyncProfile({
+                    profileId: profile.cloudId,
+                    scoreData: scorePayload,
+                    profileUpdates: profilePayload,
+                    challengeStats: challengePayload,
+                });
+                wroteAuthoritatively = true;
+            } catch (rpcErr) {
+                console.warn('[supabase] record_game_and_sync_profile RPC failed, falling back:', rpcErr?.message || rpcErr);
+            }
+
+            if (!wroteAuthoritatively) {
+                await recordGameScore(scorePayload);
+            }
 
             // Update this user's leaderboard ranking after recording the score
             try { await updateMyRanking(); } catch (e) {
