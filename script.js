@@ -3650,6 +3650,16 @@ class MusicManager {
         // even on browsers where audio.muted doesn't affect createMediaElementSource.
         this.audio.volume = muted ? 0 : 1;
         if (this._crossfadeAudio) this._crossfadeAudio.volume = muted ? 0 : 1;
+
+        // When unmuting, if the player thinks it's playing but audio actually
+        // stopped (e.g. a track ended while muted and next() silently failed),
+        // restart playback so the user hears music again.
+        if (!muted && this.playing && (this.audio.paused || this.audio.ended)) {
+            this.audio.play().catch(() => {
+                // Current audio truly dead — advance to next track
+                if (this.currentTrackId) this.next();
+            });
+        }
     }
 
     getCurrentTrack() {
@@ -18279,27 +18289,79 @@ class Game {
     }
 
     async _populateMyStats(myRank) {
-        const p = this.profileMgr.getActive();
-        if (!p) return;
+        if (!myRank) return;
 
         // Store rank data for analysis loading
         this._myRankData = myRank;
 
-        // Top stat cells (leaderboard screen)
-        if (this.els.lbsRating) this.els.lbsRating.textContent = (myRank.skill_rating || 0).toFixed(1);
-        if (this.els.lbsHighScore) this.els.lbsHighScore.textContent = (p.highScore || 0).toLocaleString();
-        if (this.els.lbsGames) this.els.lbsGames.textContent = (p.gamesPlayed || 0).toLocaleString();
-        if (this.els.lbsWords) this.els.lbsWords.textContent = (p.totalWords || 0).toLocaleString();
-        if (this.els.lbsLevel) this.els.lbsLevel.textContent = p.level || 1;
-        if (this.els.lbsStreak) this.els.lbsStreak.textContent = `${p.playStreak || 0}d`;
+        const currentTab = this._lbCurrentTab || 'main';
+        const isChallenge = currentTab !== 'main';
 
-        // Top stat cells (menu rank card dropdown)
+        // Fetch ALL stats from the database — never use local profile for display
+        let dbHighScore = 0;
+        let dbGamesPlayed = 0;
+        let dbTotalWords = 0;
+        let dbLevel = 0;
+        let dbStreak = 0;
+        let challengeAnalysisData = null;
+        let mainAnalysisData = null;
+
+        try {
+            if (isChallenge && myRank.profile_id) {
+                // Challenge tab: fetch challenge-specific stats from DB
+                const { getChallengeAnalysisData } = await import('./src/lib/supabase.js');
+                challengeAnalysisData = await getChallengeAnalysisData(myRank.profile_id, currentTab);
+                if (challengeAnalysisData) {
+                    dbHighScore = challengeAnalysisData.high_score || 0;
+                    dbGamesPlayed = challengeAnalysisData.games_played || 0;
+                    dbTotalWords = challengeAnalysisData.total_words || 0;
+                    dbLevel = challengeAnalysisData.level || 0;
+                    dbStreak = 0;
+                }
+            }
+
+            // Always fetch main analysis for the menu rank card + main tab
+            if (myRank.profile_id) {
+                const { getPlayerAnalysisData } = await import('./src/lib/supabase.js');
+                mainAnalysisData = await getPlayerAnalysisData(myRank.profile_id);
+                if (mainAnalysisData && !isChallenge) {
+                    dbHighScore = mainAnalysisData.high_score || 0;
+                    dbGamesPlayed = mainAnalysisData.games_played || 0;
+                    dbTotalWords = mainAnalysisData.total_words || 0;
+                    dbLevel = mainAnalysisData.level || 0;
+                    dbStreak = mainAnalysisData.play_streak || 0;
+                }
+            }
+        } catch (e) {
+            console.warn('[leaderboard] stats fetch failed, using rank row:', e);
+        }
+
+        // Final fallback: rank row fields (still DB data, just less detailed)
+        if (!dbGamesPlayed) dbGamesPlayed = myRank.games_played || 0;
+        if (!dbHighScore) dbHighScore = myRank.high_score || 0;
+
+        // Top stat cells (leaderboard screen — context-aware: main or challenge)
+        if (this.els.lbsRating) this.els.lbsRating.textContent = (myRank.skill_rating || 0).toFixed(1);
+        if (this.els.lbsHighScore) this.els.lbsHighScore.textContent = dbHighScore.toLocaleString();
+        if (this.els.lbsGames) this.els.lbsGames.textContent = dbGamesPlayed.toLocaleString();
+        if (this.els.lbsWords) this.els.lbsWords.textContent = dbTotalWords.toLocaleString();
+        if (this.els.lbsLevel) this.els.lbsLevel.textContent = dbLevel || 1;
+        if (this.els.lbsStreak) this.els.lbsStreak.textContent = isChallenge
+            ? (challengeAnalysisData?.target_word_level ? `Lvl ${challengeAnalysisData.target_word_level}` : '—')
+            : `${dbStreak}d`;
+
+        // Top stat cells (menu rank card dropdown — always main stats from DB)
+        const mHigh = mainAnalysisData?.high_score || 0;
+        const mGames = mainAnalysisData?.games_played || 0;
+        const mWords = mainAnalysisData?.total_words || 0;
+        const mLevel = mainAnalysisData?.level || 1;
+        const mStreak = mainAnalysisData?.play_streak || 0;
         if (this.els.mrsRating) this.els.mrsRating.textContent = (myRank.skill_rating || 0).toFixed(1);
-        if (this.els.mrsHighScore) this.els.mrsHighScore.textContent = (p.highScore || 0).toLocaleString();
-        if (this.els.mrsGames) this.els.mrsGames.textContent = (p.gamesPlayed || 0).toLocaleString();
-        if (this.els.mrsWords) this.els.mrsWords.textContent = (p.totalWords || 0).toLocaleString();
-        if (this.els.mrsLevel) this.els.mrsLevel.textContent = p.level || 1;
-        if (this.els.mrsStreak) this.els.mrsStreak.textContent = `${p.playStreak || 0}d`;
+        if (this.els.mrsHighScore) this.els.mrsHighScore.textContent = mHigh.toLocaleString();
+        if (this.els.mrsGames) this.els.mrsGames.textContent = mGames.toLocaleString();
+        if (this.els.mrsWords) this.els.mrsWords.textContent = mWords.toLocaleString();
+        if (this.els.mrsLevel) this.els.mrsLevel.textContent = mLevel;
+        if (this.els.mrsStreak) this.els.mrsStreak.textContent = `${mStreak}d`;
 
         // Component radar charts (replaces old horizontal bars)
         const container = this.els.lbsComponents;
