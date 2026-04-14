@@ -1675,7 +1675,7 @@ function coinsForWord(wordLength) {
 }
 
 /** Word-runner coin rates — higher payouts since words are harder to form in real-time. */
-const WR_COIN_PER_WORD_LENGTH = { 3: 10, 4: 20, 5: 35, 6: 50, 7: 70 };
+const WR_COIN_PER_WORD_LENGTH = { 3: 100, 4: 200, 5: 350, 6: 500, 7: 700 };
 function coinsForWordRunner(wordLength) {
     if (wordLength >= 7) return 42;
     return WR_COIN_PER_WORD_LENGTH[wordLength] || 6;
@@ -19658,7 +19658,7 @@ class Game {
         this.profileMgr.recordChallengeGame(CHALLENGE_TYPES.WORD_RUNNER, score, wordsFound);
 
         // XP award
-        const xpBase = Math.floor(score / 10) + wordsFound.length * 15;
+        const xpBase = Math.floor(score / 10) + wordsFound.length * 150;
         const xpEarned = wordsFound.length > 0 ? Math.max(1, xpBase) : 0;
         const xpResult = this.profileMgr.awardXP(xpEarned);
         this.profileMgr.addCoins(totalCoins);
