@@ -2631,6 +2631,45 @@ body.touch-input #mobile-controls {
     font-weight: 600;
 }
 
+/* Sort row */
+#milestones-sort-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0;
+    margin-top: 4px;
+}
+
+.ms-sort-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+
+.ms-sort-btn {
+    padding: 4px 10px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+.ms-sort-btn:hover {
+    border-color: var(--border-light);
+    color: var(--text);
+    background: var(--accent-soft);
+}
+.ms-sort-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #111;
+    font-weight: 600;
+}
+
 /* Milestone grid */
 #milestones-grid {
     display: flex;

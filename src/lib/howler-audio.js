@@ -250,7 +250,8 @@ export class HowlerAudioManager {
 export class HowlerMusicPlayer {
     constructor(playlistManager) {
         this.plMgr = playlistManager;
-        this.muted = false;
+        // Initialize muted state from localStorage (same key used by Game._initMutePref)
+        this.muted = localStorage.getItem('wf_music_muted') === '1';
         this._volume = parseFloat(localStorage.getItem('wf_music_volume') || '0.7');
         this.playing = false;
         this.currentTrackId = null;
@@ -260,6 +261,11 @@ export class HowlerMusicPlayer {
 
         // Current Howl instance
         this._currentHowl = null;
+
+        // Web Audio API for volume control on mobile (iOS ignores html5 audio.volume)
+        this._audioCtx = null;
+        this._gainNode = null;
+        this._connectedSources = new WeakMap(); // Track which Howls we've connected
 
         // Shuffle & repeat
         this.shuffleOn = localStorage.getItem('wf_music_shuffle') === '1';
@@ -286,6 +292,69 @@ export class HowlerMusicPlayer {
 
         this._buildQueue();
         this._restoreMusicState();
+    }
+
+    // ── Web Audio GainNode for volume control (mobile support) ──
+    
+    _ensureAudioContext() {
+        if (!this._audioCtx) {
+            this._audioCtx = Howler.ctx || new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this._audioCtx.state === 'suspended') {
+            this._audioCtx.resume().catch(() => {});
+        }
+        if (!this._gainNode) {
+            this._gainNode = this._audioCtx.createGain();
+            this._gainNode.connect(this._audioCtx.destination);
+            this._gainNode.gain.value = this.muted ? 0 : this._volume;
+        }
+    }
+
+    _connectHowlToGain(howl) {
+        if (!howl || this._connectedSources.has(howl)) return;
+        
+        this._ensureAudioContext();
+        
+        // Get the underlying Howler sound node(s)
+        const sounds = howl._sounds;
+        if (!sounds || sounds.length === 0) return;
+        
+        for (const sound of sounds) {
+            // For html5 mode, get the audio element and create MediaElementSource
+            if (sound._node && sound._node instanceof HTMLAudioElement) {
+                try {
+                    // Check if already has a source node
+                    if (!sound._gainNode) {
+                        const source = this._audioCtx.createMediaElementSource(sound._node);
+                        sound._gainNode = this._audioCtx.createGain();
+                        source.connect(sound._gainNode);
+                        sound._gainNode.connect(this._gainNode);
+                    }
+                } catch (e) {
+                    // Already connected or other error - fallback to Howler volume
+                    console.warn('Could not connect to Web Audio:', e.message);
+                }
+            }
+        }
+        
+        this._connectedSources.set(howl, true);
+    }
+
+    _applyVolume() {
+        const effectiveVol = this.muted ? 0 : this._volume;
+        
+        // Update GainNode if available (works on mobile)
+        if (this._gainNode) {
+            this._gainNode.gain.value = effectiveVol;
+        }
+        
+        // Also set Howler volume as fallback
+        if (this._currentHowl) {
+            this._currentHowl.volume(effectiveVol);
+        }
+        if (this._crossfadeHowl) {
+            this._crossfadeHowl.volume(effectiveVol);
+        }
     }
 
     // ── Queue Management ──
@@ -403,8 +472,14 @@ export class HowlerMusicPlayer {
         this._currentHowl = new Howl({
             src: [track.file],
             html5: true,  // Streaming for music (doesn't load entire file)
-            volume: this.muted ? 0 : this._volume,
+            volume: this._volume,
+            mute: this.muted,  // Set initial mute state for mobile reliability
             onend: () => this._onTrackEnded(),
+            onload: () => {
+                // Connect to Web Audio GainNode for mobile volume control
+                this._connectHowlToGain(this._currentHowl);
+                this._applyVolume();
+            },
             onloaderror: (id, err) => {
                 console.warn('♪ Howler load error on track', trackId, err);
                 if (this.playing) this.next();
@@ -426,6 +501,10 @@ export class HowlerMusicPlayer {
 
     play() {
         if (this.currentTrackId && this._currentHowl) {
+            // Connect to Web Audio and apply volume (mobile support)
+            this._connectHowlToGain(this._currentHowl);
+            this._applyVolume();
+            this._currentHowl.mute(this.muted);
             this._currentHowl.play();
             this.playing = true;
             localStorage.setItem('wf_music_paused', '0');
@@ -456,8 +535,12 @@ export class HowlerMusicPlayer {
 
     resumePlayback() {
         if (!this.playing || !this.currentTrackId) return;
+        // Resume Web Audio contexts (both Howler's and ours)
         if (Howler.ctx?.state === 'suspended') Howler.ctx.resume();
+        if (this._audioCtx?.state === 'suspended') this._audioCtx.resume();
         if (this._currentHowl && !this._currentHowl.playing()) {
+            this._connectHowlToGain(this._currentHowl);
+            this._applyVolume();
             this._currentHowl.play();
         }
     }
@@ -499,12 +582,8 @@ export class HowlerMusicPlayer {
 
     setVolume(vol) {
         this._volume = Math.max(0, Math.min(1, vol));
-        if (this._currentHowl) {
-            this._currentHowl.volume(this.muted ? 0 : this._volume);
-        }
-        if (this._crossfadeHowl) {
-            this._crossfadeHowl.volume(this.muted ? 0 : this._volume);
-        }
+        // Apply volume through Web Audio GainNode (works on mobile) and Howler fallback
+        this._applyVolume();
         localStorage.setItem('wf_music_volume', this._volume.toFixed(2));
         this._notify();
     }
@@ -515,8 +594,16 @@ export class HowlerMusicPlayer {
 
     setMuted(muted) {
         this.muted = muted;
-        if (this._currentHowl) this._currentHowl.volume(muted ? 0 : this._volume);
-        if (this._crossfadeHowl) this._crossfadeHowl.volume(muted ? 0 : this._volume);
+        // Apply mute through GainNode and Howler
+        this._applyVolume();
+        // Also use Howler's mute for mobile reliability
+        if (this._currentHowl) {
+            this._currentHowl.mute(muted);
+        }
+        if (this._crossfadeHowl) {
+            this._crossfadeHowl.mute(muted);
+        }
+        this._notify();
     }
 
     getCurrentTrack() {
@@ -547,20 +634,33 @@ export class HowlerMusicPlayer {
             src: [track.file],
             html5: true,
             volume: 0,
+            mute: this.muted,  // Respect mute state for mobile
+            onload: () => {
+                // Connect to Web Audio GainNode for mobile volume control
+                this._connectHowlToGain(this._crossfadeHowl);
+            },
         });
 
         this._crossfadeHowl.play();
         const dur = this._crossfadeDuration * 1000;
 
-        // Fade out current, fade in next
+        // Fade out current, fade in next (only if not muted)
         if (this._currentHowl) {
             this._currentHowl.fade(this._volume, 0, dur);
         }
-        this._crossfadeHowl.fade(0, this._volume, dur);
+        if (!this.muted) {
+            this._crossfadeHowl.fade(0, this._volume, dur);
+        }
 
         setTimeout(() => {
             if (this._currentHowl) this._currentHowl.unload();
             this._currentHowl = this._crossfadeHowl;
+            // Ensure proper state after crossfade completes
+            if (this._currentHowl) {
+                this._currentHowl.mute(this.muted);
+                this._connectHowlToGain(this._currentHowl);
+                this._applyVolume();
+            }
             this._crossfadeHowl = null;
             this._crossfading = false;
             this.currentTrackId = nextTrackId;
@@ -609,7 +709,7 @@ export class HowlerMusicPlayer {
 
     // ── Sleep Timer ──
 
-    setSleepTimer(minutes) {
+    startSleepTimer(minutes) {
         this.clearSleepTimer();
         if (minutes <= 0) return;
         this.sleepTimerEnd = Date.now() + minutes * 60 * 1000;
@@ -622,6 +722,12 @@ export class HowlerMusicPlayer {
                 this.onSleepTimerTick(remaining);
             }
         }, 1000);
+        this._notify();
+    }
+
+    setSleepTimer(minutes) {
+        // Alias for backwards compatibility
+        this.startSleepTimer(minutes);
     }
 
     clearSleepTimer() {
@@ -630,6 +736,13 @@ export class HowlerMusicPlayer {
             this.sleepTimerInterval = null;
         }
         this.sleepTimerEnd = 0;
+        if (this.onSleepTimerTick) this.onSleepTimerTick(0);
+        this._notify();
+    }
+
+    getSleepTimerRemaining() {
+        if (!this.sleepTimerEnd) return 0;
+        return Math.max(0, this.sleepTimerEnd - Date.now());
     }
 
     // ── State Persistence ──
@@ -677,13 +790,15 @@ export class HowlerMusicPlayer {
     // ── Compatibility: pass-through for old code that accesses .audio ──
 
     get audio() {
+        const self = this;
         // Fake audio element interface for backwards compatibility
         return {
-            currentTime: this._currentHowl ? this._currentHowl.seek() : 0,
-            duration: this._currentHowl ? this._currentHowl.duration() : 0,
-            paused: !this.playing,
-            muted: this.muted,
-            volume: this._volume,
+            get currentTime() { return self._currentHowl ? self._currentHowl.seek() : 0; },
+            set currentTime(val) { if (self._currentHowl) self._currentHowl.seek(val); },
+            get duration() { return self._currentHowl ? self._currentHowl.duration() : 0; },
+            get paused() { return !self.playing; },
+            get muted() { return self.muted; },
+            get volume() { return self._volume; },
         };
     }
 }

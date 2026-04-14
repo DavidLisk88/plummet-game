@@ -517,7 +517,7 @@ export function generateChallengeAnalysis(data) {
         avg_score,
         score_consistency,
         best_combo,
-        avg_words,
+        avg_words_per_game,
         recent_trend,
         recent_scores,
     } = data;
@@ -555,7 +555,7 @@ export function generateChallengeAnalysis(data) {
         html += `<span class="ws-stat-item"><b>${(high_score || 0).toLocaleString()}</b> high score</span>`;
         if (avg_score != null) html += `<span class="ws-stat-item"><b>${Math.round(avg_score).toLocaleString()}</b> avg score</span>`;
         if (best_combo != null && best_combo > 0) html += `<span class="ws-stat-item"><b>${best_combo}x</b> best combo</span>`;
-        if (avg_words != null) html += `<span class="ws-stat-item"><b>${avg_words.toFixed(1)}</b> avg words/game</span>`;
+        if (avg_words_per_game != null) html += `<span class="ws-stat-item"><b>${avg_words_per_game.toFixed(1)}</b> avg words/game</span>`;
         html += `<span class="ws-stat-item"><b>${(skill_rating || 0).toFixed(1)}</b> rating</span>`;
         html += `</div></div>`;
     }
@@ -653,12 +653,15 @@ function _getChallengeSpecificHtml(data, seed) {
 
     if (ct === 'word-category') {
         const breakdown = data.category_breakdown;
-        if (breakdown && typeof breakdown === 'object' && Object.keys(breakdown).length > 0) {
+        // breakdown is an array: [{category, games, high_score, best_words}, ...]
+        if (breakdown && Array.isArray(breakdown) && breakdown.length > 0) {
             html += `<div class="analysis-section"><h4 class="analysis-heading ws-heading">Category Breakdown</h4>`;
             html += `<div class="analysis-ws-grid">`;
-            const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]).slice(0, 6);
-            for (const [cat, count] of sorted) {
-                html += `<span class="ws-stat-item"><b>${count}</b> ${cat}</span>`;
+            const sorted = [...breakdown].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 6);
+            for (const cat of sorted) {
+                const name = cat.category || 'Unknown';
+                const games = cat.games || 0;
+                html += `<span class="ws-stat-item"><b>${games}</b> ${name}</span>`;
             }
             html += `</div>`;
             html += `<p class="analysis-desc ws-insight">${sorted.length >= 3 ? 'Well-rounded category knowledge with breadth across multiple domains.' : 'Still exploring categories — try different word groups to broaden your range.'}</p>`;
@@ -692,7 +695,7 @@ function _getChallengeSpecificHtml(data, seed) {
             html += `<div class="analysis-section"><h4 class="analysis-heading ws-heading">Word Runner Stats</h4>`;
             html += `<div class="analysis-ws-grid">`;
             if (data.high_score != null) html += `<span class="ws-stat-item"><b>${data.high_score.toLocaleString()}</b> high score</span>`;
-            if (data.avg_words != null) html += `<span class="ws-stat-item"><b>${data.avg_words.toFixed(1)}</b> avg words/run</span>`;
+            if (data.avg_words_per_game != null) html += `<span class="ws-stat-item"><b>${data.avg_words_per_game.toFixed(1)}</b> avg words/run</span>`;
             if (data.best_combo != null && data.best_combo > 0) html += `<span class="ws-stat-item"><b>${data.best_combo}x</b> best word streak</span>`;
             html += `</div>`;
 
@@ -796,9 +799,9 @@ export function extractChallengeChartData(data) {
         }
     }
     if (ct === 'word-runner') {
-        if (data.avg_words != null) {
+        if (data.avg_words_per_game != null) {
             labels.push('Avg Words/Run');
-            values.push(Number(data.avg_words.toFixed ? data.avg_words.toFixed(1) : data.avg_words));
+            values.push(Number(data.avg_words_per_game.toFixed ? data.avg_words_per_game.toFixed(1) : data.avg_words_per_game));
         }
     }
 

@@ -17,7 +17,7 @@ import {
     createGameEngine, destroyGameEngine, getLetterTracker, destroyLetterTracker,
     LETTER_FREQ as CHANCE_LETTER_FREQ, FREQ_TOTAL as CHANCE_FREQ_TOTAL,
 } from './src/lib/chance-engine.js';
-import { HowlerAudioManager } from './src/lib/howler-audio.js';
+import { HowlerAudioManager, HowlerMusicPlayer } from './src/lib/howler-audio.js';
 import {
     getDifficultyTier, DynamicDifficulty, LootTable,
     createBonusLootTable, createTerrainLootTable,
@@ -4528,9 +4528,11 @@ class Game {
         this.renderer = new Renderer(this.canvas);
         this.usesTouchSwipeInput = window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(hover: none)").matches;
 
-        // Music system
+        // Music system (uses Howler.js for reliable cross-platform audio)
         this.plMgr = new PlaylistManager(DEFAULT_TRACKS);
-        this.music = new MusicManager(this.plMgr);
+        this.music = new HowlerMusicPlayer(this.plMgr);
+        // Initialize muted state from localStorage (will be re-synced by _initMutePref)
+        this.musicMuted = localStorage.getItem("wf_music_muted") === "1";
         this.activePlaylistTab = "__default";
         this._editingPlaylist = null;
 
@@ -5458,6 +5460,7 @@ class Game {
         // Milestones filter chips
         if (this.els.milestonesFilterRow) {
             this._milestonesActiveFilter = "all";
+            this._milestonesSortOrder = "default"; // "default", "recent", "oldest"
             this.els.milestonesFilterRow.addEventListener("click", (e) => {
                 const chip = e.target.closest(".ms-chip");
                 if (!chip) return;
@@ -5473,6 +5476,22 @@ class Game {
                     c.classList.toggle("active", c.dataset.filter === this._milestonesActiveFilter));
                 this._renderMilestonesPage();
             });
+        }
+
+        // Milestones sort buttons
+        const sortRow = document.getElementById("milestones-sort-row");
+        if (sortRow) {
+            sortRow.addEventListener("click", (e) => {
+                const btn = e.target.closest(".ms-sort-btn");
+                if (!btn) return;
+                const sort = btn.dataset.sort;
+                this._milestonesSortOrder = sort;
+                sortRow.querySelectorAll(".ms-sort-btn").forEach(b =>
+                    b.classList.toggle("active", b.dataset.sort === sort));
+                this._renderMilestonesPage();
+            });
+            // Set initial active state
+            sortRow.querySelector('[data-sort="default"]')?.classList.add("active");
         }
 
         // Word of the Day toggle
@@ -7388,6 +7407,7 @@ class Game {
         const claimed = p ? (p.claimedMilestones || []) : [];
         const earnedDates = (p && p._milestoneTimestamps) || {};
         const activeFilter = this._milestonesActiveFilter || 'all';
+        const sortOrder = this._milestonesSortOrder || 'default';
 
         // Category display config — order matters
         const CAT_CONFIG = [
@@ -7414,78 +7434,88 @@ class Game {
             { key: 'meta',          label: '🌟 Meta Achievements' },
         ];
 
-        // Group milestones by cat
-        const grouped = {};
-        for (const m of MILESTONES) {
-            if (!grouped[m.cat]) grouped[m.cat] = [];
-            grouped[m.cat].push(m);
-        }
+        // If sorting by date, flatten all milestones and sort
+        if (sortOrder === 'recent' || sortOrder === 'oldest') {
+            // Get all milestones, optionally filtered by category
+            let milestones = [...MILESTONES];
+            if (activeFilter !== 'all') {
+                milestones = milestones.filter(m => m.cat === activeFilter);
+            }
 
-        // Calculate total earned count for progress bar (across ALL milestones)
-        const totalEarnedCount = MILESTONES.filter(m => claimed.includes(m.id)).length;
+            // Sort by earned date (earned first, then by date)
+            milestones.sort((a, b) => {
+                const aEarned = claimed.includes(a.id);
+                const bEarned = claimed.includes(b.id);
+                
+                // Earned milestones come first
+                if (aEarned && !bEarned) return -1;
+                if (!aEarned && bEarned) return 1;
+                
+                // Both earned - sort by date
+                if (aEarned && bEarned) {
+                    const aDate = earnedDates[a.id] ? new Date(earnedDates[a.id]).getTime() : 0;
+                    const bDate = earnedDates[b.id] ? new Date(earnedDates[b.id]).getTime() : 0;
+                    return sortOrder === 'recent' ? bDate - aDate : aDate - bDate;
+                }
+                
+                // Both unearned - keep original order
+                return 0;
+            });
 
-        for (const cat of CAT_CONFIG) {
-            // Skip if filtering and this isn't the selected category
-            if (activeFilter !== 'all' && cat.key !== activeFilter) continue;
-            
-            const items = grouped[cat.key];
-            if (!items || items.length === 0) continue;
-
+            // Render as flat list with date headers
             const section = document.createElement('div');
-            section.className = 'ms-category';
-
-            // Category header with earned count
-            const catEarned = items.filter(m => claimed.includes(m.id)).length;
+            section.className = 'ms-category ms-sorted-list';
+            
             const label = document.createElement('div');
             label.className = 'ms-category-label';
-            label.innerHTML = `${cat.label} <span class="ms-cat-count">${catEarned}/${items.length}</span>`;
+            const earnedCount = milestones.filter(m => claimed.includes(m.id)).length;
+            label.innerHTML = sortOrder === 'recent' 
+                ? `🕐 Most Recent <span class="ms-cat-count">${earnedCount} earned</span>`
+                : `📅 Oldest First <span class="ms-cat-count">${earnedCount} earned</span>`;
             section.appendChild(label);
 
-            for (const m of items) {
+            for (const m of milestones) {
                 const isEarned = claimed.includes(m.id);
-
-                const card = document.createElement('div');;
-                card.className = `ms-card ${isEarned ? 'earned' : 'locked'}`;
-
-                const icon = document.createElement('div');
-                icon.className = 'ms-icon';
-                icon.textContent = isEarned ? '🏆' : '🔒';
-
-                const info = document.createElement('div');
-                info.className = 'ms-info';
-
-                const lbl = document.createElement('div');
-                lbl.className = 'ms-label';
-                lbl.textContent = m.label;
-
-                const desc = document.createElement('div');
-                desc.className = 'ms-desc';
-                desc.textContent = m.desc;
-
-                info.appendChild(lbl);
-                info.appendChild(desc);
-
-                // Earned date
-                if (isEarned && earnedDates[m.id]) {
-                    const dateEl = document.createElement('div');
-                    dateEl.className = 'ms-date';
-                    const d = new Date(earnedDates[m.id]);
-                    dateEl.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                    info.appendChild(dateEl);
-                }
-
-                const reward = document.createElement('div');
-                reward.className = 'ms-reward';
-                reward.innerHTML = `<span class="ms-reward-coin">●</span> ${m.coins}<span class="ms-earned-check">${isEarned ? '✓' : ''}</span>`;
-
-                card.appendChild(icon);
-                card.appendChild(info);
-                card.appendChild(reward);
+                const card = this._createMilestoneCard(m, isEarned, earnedDates);
                 section.appendChild(card);
             }
 
             grid.appendChild(section);
+        } else {
+            // Default: group by category
+            const grouped = {};
+            for (const m of MILESTONES) {
+                if (!grouped[m.cat]) grouped[m.cat] = [];
+                grouped[m.cat].push(m);
+            }
+
+            for (const cat of CAT_CONFIG) {
+                if (activeFilter !== 'all' && cat.key !== activeFilter) continue;
+                
+                const items = grouped[cat.key];
+                if (!items || items.length === 0) continue;
+
+                const section = document.createElement('div');
+                section.className = 'ms-category';
+
+                const catEarned = items.filter(m => claimed.includes(m.id)).length;
+                const label = document.createElement('div');
+                label.className = 'ms-category-label';
+                label.innerHTML = `${cat.label} <span class="ms-cat-count">${catEarned}/${items.length}</span>`;
+                section.appendChild(label);
+
+                for (const m of items) {
+                    const isEarned = claimed.includes(m.id);
+                    const card = this._createMilestoneCard(m, isEarned, earnedDates);
+                    section.appendChild(card);
+                }
+
+                grid.appendChild(section);
+            }
         }
+
+        // Calculate total earned count for progress bar (across ALL milestones)
+        const totalEarnedCount = MILESTONES.filter(m => claimed.includes(m.id)).length;
 
         // Progress bar
         const total = MILESTONES.length;
@@ -7495,6 +7525,47 @@ class Game {
         if (this.els.milestonesProgressText) {
             this.els.milestonesProgressText.textContent = `${totalEarnedCount} / ${total}`;
         }
+    }
+
+    _createMilestoneCard(m, isEarned, earnedDates) {
+        const card = document.createElement('div');
+        card.className = `ms-card ${isEarned ? 'earned' : 'locked'}`;
+
+        const icon = document.createElement('div');
+        icon.className = 'ms-icon';
+        icon.textContent = isEarned ? '🏆' : '🔒';
+
+        const info = document.createElement('div');
+        info.className = 'ms-info';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'ms-label';
+        lbl.textContent = m.label;
+
+        const desc = document.createElement('div');
+        desc.className = 'ms-desc';
+        desc.textContent = m.desc;
+
+        info.appendChild(lbl);
+        info.appendChild(desc);
+
+        // Earned date
+        if (isEarned && earnedDates[m.id]) {
+            const dateEl = document.createElement('div');
+            dateEl.className = 'ms-date';
+            const d = new Date(earnedDates[m.id]);
+            dateEl.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            info.appendChild(dateEl);
+        }
+
+        const reward = document.createElement('div');
+        reward.className = 'ms-reward';
+        reward.innerHTML = `<span class="ms-reward-coin">●</span> ${m.coins}<span class="ms-earned-check">${isEarned ? '✓' : ''}</span>`;
+
+        card.appendChild(icon);
+        card.appendChild(info);
+        card.appendChild(reward);
+        return card;
     }
 
     /**
@@ -15729,6 +15800,27 @@ class Game {
         challengeGridEntrance(grid.querySelectorAll('.challenge-card'));
     }
 
+    /**
+     * Refresh challenge card levels after cloud sync completes.
+     * Re-renders the challenges grid if the menu screen is visible.
+     */
+    _refreshChallengeCards() {
+        if (this._activeScreen === 'menu') {
+            this._renderChallengesGrid();
+        }
+        // Also update challenge setup screen level if it's showing
+        if (this._activeScreen === 'challengesetup' && this.activeChallenge) {
+            const levelEl = this.els.challengeSetupScreen?.querySelector('.challenge-level-badge');
+            if (levelEl) {
+                const stats = this.profileMgr.getChallengeStats(this.activeChallenge);
+                const level = this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH 
+                    ? this.profileMgr.getWordSearchLevel() 
+                    : (stats.targetWordLevel || 1);
+                levelEl.textContent = `Lv.${level}`;
+            }
+        }
+    }
+
     _setupCategorySelector(challengeKey) {
         const sel = this.els.challengeCategorySelector;
         const wrap = this.els.challengeCategoryButtons;
@@ -17259,19 +17351,15 @@ class Game {
         }
     }
 
-    async _handleForgotPassword() {
+    _handleForgotPassword() {
         const email = this.els.authEmail?.value?.trim();
-        if (!email || !email.includes("@")) {
-            this._showAuthError("Enter your email address above, then click Forgot password.");
-            return;
-        }
-        try {
-            const { resetPassword } = await import('./src/lib/supabase.js');
-            await resetPassword(email);
-            this._showAuthError("Password reset email sent! Check your inbox.");
-        } catch (err) {
-            this._showAuthError(err.message || "Could not send reset email.");
-        }
+        const subject = encodeURIComponent("Plummet – Password Recovery Request");
+        const body = encodeURIComponent(
+            `Hi,\n\nI forgot my password for Plummet Word Game.\n\nMy account email address is: ${email || "(please fill in your email)"}\n\nCould you please help me recover my password?\n\nThank you!`
+        );
+        const mailto = `mailto:plummetwordgame@gmail.com?subject=${subject}&body=${body}`;
+        window.location.href = mailto;
+        this._showAuthError("Your email app should open. Just hit Send — we'll get back to you shortly!");
     }
 
     async _onAuthSuccess(user) {
@@ -17288,23 +17376,29 @@ class Game {
         this._initialSyncComplete = false; // Block cloud pushes until we've loaded cloud data
         // Load profiles from Supabase and sync with local ProfileManager
         try {
-            const { getProfiles, getInventory, getChallengeStats } = await import('./src/lib/supabase.js');
+            const { getProfiles, getInventory, getChallengeStats, getWordSearchStats, getHighScores } = await import('./src/lib/supabase.js');
             const cloudProfiles = await getProfiles(user.id);
-            // For each cloud profile, also fetch inventory and challenge stats
+            // For each cloud profile, also fetch inventory, challenge stats, WS stats, and high scores
             for (const cp of cloudProfiles) {
                 try {
-                    const [inventory, challengeStats] = await Promise.all([
+                    const [inventory, challengeStats, wsStats, highScores] = await Promise.all([
                         getInventory(cp.id),
                         getChallengeStats(cp.id),
+                        getWordSearchStats(cp.id),
+                        getHighScores(cp.id),
                     ]);
-                    cp._inventory = inventory;          // attach for merge
-                    cp._challengeStats = challengeStats; // attach for merge
+                    cp._inventory = inventory;
+                    cp._challengeStats = challengeStats;
+                    cp._wsStats = wsStats;
+                    cp._highScores = highScores;
                 } catch (e) {
                     console.warn('[auth] failed to load extras for profile:', cp.id, e);
                 }
             }
             this._syncCloudProfilesToLocal(cloudProfiles);
             this._initialSyncComplete = true; // Cloud data loaded, safe to push updates
+            // Refresh challenge cards to show updated levels after sync
+            this._refreshChallengeCards();
             // Load milestone timestamps after profiles are synced
             await this._loadMilestonesFromCloud();
             this._renderMilestonesPage();
@@ -17366,99 +17460,97 @@ class Game {
     }
 
     /**
-     * Merge cloud profile fields into local profile.
-     * Cloud is source of truth — it has the most recently pushed state.
-     * For monotonically-increasing stats (score, games, words, xp), take the max.
-     * For spendable resources (coins), cloud wins if it was updated more recently.
-     * For preferences/cosmetics, cloud wins.
-     * For inventory and challenge stats, merge from attached _inventory/_challengeStats.
+     * Load cloud profile data into the local profile cache.
+     * Cloud is the SINGLE SOURCE OF TRUTH — local storage is just a cache.
+     * Called on every login. No merging with local data.
      */
     _mergeCloudIntoLocal(local, cloud) {
+        // Core profile
         local.username = cloud.username;
-        // Determine which is more recent for conflict resolution
-        const cloudUpdated = cloud.updated_at ? new Date(cloud.updated_at).getTime() : 0;
-        const localUpdated = local._lastSyncedAt ? new Date(local._lastSyncedAt).getTime() : 0;
-        const cloudIsNewer = cloudUpdated >= localUpdated;
-        // Take max for monotonically-increasing stats
-        local.level = Math.max(local.level || 1, cloud.level || 1);
-        local.xp = Math.max(local.xp || 0, cloud.xp || 0);
-        local.totalXp = Math.max(local.totalXp || 0, cloud.total_xp || 0);
-        local.highScore = Math.max(local.highScore || 0, cloud.high_score || 0);
-        local.gamesPlayed = Math.max(local.gamesPlayed || 0, cloud.games_played || 0);
-        local.totalWords = Math.max(local.totalWords || 0, cloud.total_words || 0);
-        local.totalCoinsEarned = Math.max(local.totalCoinsEarned || 0, cloud.total_coins_earned || 0);
-        // Coins: cloud wins if newer (coins go up AND down via spending)
-        if (cloudIsNewer) {
-            local.coins = cloud.coins ?? local.coins ?? 0;
-        } else {
-            local.coins = Math.max(local.coins || 0, cloud.coins || 0);
-        }
-        // Preferences — cloud wins
-        if (cloud.preferred_grid_size) local.gridSize = cloud.preferred_grid_size;
-        if (cloud.preferred_difficulty) local.difficulty = cloud.preferred_difficulty;
-        if (cloud.preferred_game_mode) local.gameMode = cloud.preferred_game_mode;
-        // Cosmetics — cloud wins
-        if (cloud.equipped_theme || cloud.equipped_block_style) {
-            local.equipped = local.equipped || {};
-            if (cloud.equipped_theme) local.equipped.gridTheme = cloud.equipped_theme;
-            if (cloud.equipped_block_style) local.equipped.blockStyle = cloud.equipped_block_style;
-        }
-        if (cloud.bonus_slot_contents) local.bonusSlotContents = cloud.bonus_slot_contents;
-        if (cloud.perks) local.perks = cloud.perks;
-        if (cloud.unlocked_grids) local.unlockedGrids = cloud.unlocked_grids;
-        // Streak — take cloud if more recent
-        if (cloud.last_play_date) {
-            const cloudDate = new Date(cloud.last_play_date);
-            const localDate = local.lastPlayDate ? new Date(local.lastPlayDate) : new Date(0);
-            if (cloudDate >= localDate) {
-                local.lastPlayDate = cloud.last_play_date;
-                local.playStreak = cloud.play_streak || 0;
+        local.level = cloud.level || 1;
+        local.xp = cloud.xp || 0;
+        local.totalXp = cloud.total_xp || 0;
+        local.highScore = cloud.high_score || 0;
+        local.gamesPlayed = cloud.games_played || 0;
+        local.totalWords = cloud.total_words || 0;
+        local.totalCoinsEarned = cloud.total_coins_earned || 0;
+        local.coins = cloud.coins ?? 0;
+
+        // Preferences
+        local.gridSize = cloud.preferred_grid_size || 5;
+        local.difficulty = cloud.preferred_difficulty || 'casual';
+        local.gameMode = cloud.preferred_game_mode || GAME_MODES.SANDBOX;
+
+        // Cosmetics
+        local.equipped = {
+            gridTheme: cloud.equipped_theme || 'theme_default',
+            blockStyle: cloud.equipped_block_style || 'block_default',
+        };
+        local.bonusSlotContents = cloud.bonus_slot_contents || [null, null, null];
+        local.perks = cloud.perks || {};
+        local.unlockedGrids = cloud.unlocked_grids || {};
+
+        // Streak
+        local.lastPlayDate = cloud.last_play_date || null;
+        local.playStreak = cloud.play_streak || 0;
+
+        // Milestones
+        local.claimedMilestones = cloud.claimed_milestones || [];
+
+        // Unique words
+        local.uniqueWordsFound = cloud.unique_words_found || [];
+
+        // Inventory
+        local.inventory = cloud._inventory || [];
+
+        // Per-dimension best scores (from profile_high_scores table)
+        // Key scheme: `${gridSize}-${difficulty}-${gameMode}` for regular, `ch-${challengeType}` for challenges
+        local.bestScores = {};
+        if (cloud._highScores?.length) {
+            for (const row of cloud._highScores) {
+                const key = row.is_challenge && row.challenge_type
+                    ? `ch-${row.challenge_type}`
+                    : `${row.grid_size}-${row.difficulty}-${row.game_mode}`;
+                // Keep the highest score if multiple rows map to the same key
+                if (!local.bestScores[key] || row.high_score > local.bestScores[key]) {
+                    local.bestScores[key] = row.high_score;
+                }
             }
         }
-        // Milestones — union of local and cloud
-        if (cloud.claimed_milestones?.length) {
-            const localMilestones = new Set(local.claimedMilestones || []);
-            for (const m of cloud.claimed_milestones) localMilestones.add(m);
-            local.claimedMilestones = [...localMilestones];
-        }
-        // Unique words — union
-        if (cloud.unique_words_found?.length) {
-            const localWords = new Set(local.uniqueWordsFound || []);
-            for (const w of cloud.unique_words_found) localWords.add(w);
-            local.uniqueWordsFound = [...localWords];
-        }
-        // Inventory — union of local and cloud items
-        if (cloud._inventory?.length) {
-            const localInv = new Set(local.inventory || []);
-            for (const itemId of cloud._inventory) localInv.add(itemId);
-            local.inventory = [...localInv];
-        }
-        // Challenge stats — merge from cloud (take max for each challenge type)
+
+        // Challenge stats (from profile_challenge_stats table)
+        local.challengeStats = {};
         if (cloud._challengeStats?.length) {
-            if (!local.challengeStats) local.challengeStats = {};
             for (const cs of cloud._challengeStats) {
                 const type = cs.challenge_type;
-                if (!local.challengeStats[type]) {
-                    local.challengeStats[type] = { highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], targetWordLevel: 1 };
-                }
-                const ls = local.challengeStats[type];
-                ls.highScore = Math.max(ls.highScore || 0, cs.high_score || 0);
-                ls.gamesPlayed = Math.max(ls.gamesPlayed || 0, cs.games_played || 0);
-                ls.totalWords = Math.max(ls.totalWords || 0, cs.total_words || 0);
-                ls.targetWordLevel = Math.max(ls.targetWordLevel || 1, cs.target_word_level || 1);
-                // Word search uses wordSearchLevel locally, mapped to target_word_level in DB
+                local.challengeStats[type] = {
+                    highScore: cs.high_score || 0,
+                    gamesPlayed: cs.games_played || 0,
+                    totalWords: cs.total_words || 0,
+                    targetWordLevel: cs.target_word_level || 1,
+                    uniqueWordsFound: cs.unique_words_found || [],
+                };
                 if (type === CHALLENGE_TYPES.WORD_SEARCH) {
-                    ls.wordSearchLevel = Math.max(ls.wordSearchLevel || 1, cs.target_word_level || 1);
-                }
-                // Unique words — union
-                if (cs.unique_words_found?.length) {
-                    const wordSet = new Set(ls.uniqueWordsFound || []);
-                    for (const w of cs.unique_words_found) wordSet.add(w);
-                    ls.uniqueWordsFound = [...wordSet];
+                    local.challengeStats[type].wordSearchLevel = cs.target_word_level || 1;
                 }
             }
         }
-        // Record sync timestamp for future conflict resolution
+
+        // Word Search level fallback: profile_word_search_stats.highest_level_reached
+        // is updated by database trigger on every game so it's the ground truth
+        if (cloud._wsStats?.highest_level_reached) {
+            if (!local.challengeStats[CHALLENGE_TYPES.WORD_SEARCH]) {
+                local.challengeStats[CHALLENGE_TYPES.WORD_SEARCH] = {
+                    highScore: 0, gamesPlayed: 0, totalWords: 0, uniqueWordsFound: [], wordSearchLevel: 1,
+                };
+            }
+            const ls = local.challengeStats[CHALLENGE_TYPES.WORD_SEARCH];
+            ls.wordSearchLevel = Math.max(ls.wordSearchLevel || 1, cloud._wsStats.highest_level_reached);
+            ls.gamesPlayed = Math.max(ls.gamesPlayed || 0, cloud._wsStats.games_played || 0);
+            ls.highScore = Math.max(ls.highScore || 0, cloud._wsStats.high_score || 0);
+            ls.totalWords = Math.max(ls.totalWords || 0, cloud._wsStats.total_words_found || 0);
+        }
+
         local._lastSyncedAt = new Date().toISOString();
     }
 
@@ -18107,12 +18199,8 @@ class Game {
             const { isLocalMode, recordGameScore, updateMyRanking } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
             const profile = this.profileMgr.getActive();
-            if (!profile || !profile.cloudId) {
-                console.warn('[supabase] Cannot record game — no cloudId. Profile:', profile?.username, 'cloudId:', profile?.cloudId);
-                return;
-            }
+            if (!profile || !profile.cloudId) return;
 
-            console.log('[supabase] Recording game score for profile:', profile.cloudId);
             await recordGameScore({
                 profile_id: profile.cloudId,
                 game_mode: scoreData.gameMode,
@@ -18137,8 +18225,7 @@ class Game {
             });
 
             // Update this user's leaderboard ranking after recording the score
-            console.log('[supabase] Game score recorded. Updating ranking...');
-            try { await updateMyRanking(); console.log('[supabase] Ranking updated successfully.'); } catch (e) {
+            try { await updateMyRanking(); } catch (e) {
                 console.warn('[supabase] ranking update failed:', e);
             }
 
@@ -18147,7 +18234,6 @@ class Game {
                 const { clearLeaderboardCache, fetchMyRank } = await import('./src/lib/leaderboard-service.js');
                 clearLeaderboardCache();
                 const myRank = await fetchMyRank(true);
-                console.log('[supabase] My rank:', myRank);
                 this._updateMyRankDisplay(myRank);
             } catch (e) {
                 console.warn('[supabase] rank display refresh failed:', e);

@@ -179,17 +179,12 @@ export async function checkUsernameAvailable(username, excludeProfileId = null) 
 
 export async function recordGameScore(scoreData) {
     if (isLocalMode) return null;
-    console.log('[supabase] recordGameScore payload:', JSON.stringify(scoreData, null, 2));
     const { data, error } = await supabase
         .from('game_scores')
         .insert(scoreData)
         .select()
         .single();
-    if (error) {
-        console.error('[supabase] recordGameScore INSERT error:', error.message, error.code, error.details, error.hint);
-        throw error;
-    }
-    console.log('[supabase] recordGameScore SUCCESS:', data?.id);
+    if (error) throw error;
     return data;
 }
 
@@ -228,6 +223,41 @@ export async function getChallengeStats(profileId) {
     return data || [];
 }
 
+/**
+ * Fetch per-dimension high scores for a profile.
+ * Returns rows from profile_high_scores, which we map back to the local `bestScores` keying scheme.
+ */
+export async function getHighScores(profileId) {
+    if (isLocalMode) return [];
+    const { data, error } = await supabase
+        .from('profile_high_scores')
+        .select('game_mode, is_challenge, challenge_type, category_key, grid_size, difficulty, high_score')
+        .eq('profile_id', profileId);
+    if (error) {
+        console.warn('[supabase] getHighScores error:', error.message);
+        return [];
+    }
+    return data || [];
+}
+
+/**
+ * Fetch Word Search stats from the dedicated profile_word_search_stats table.
+ * This table is updated by database triggers and may have more accurate level data.
+ */
+export async function getWordSearchStats(profileId) {
+    if (isLocalMode) return null;
+    const { data, error } = await supabase
+        .from('profile_word_search_stats')
+        .select('highest_level_reached, games_played, high_score, total_words_found')
+        .eq('profile_id', profileId)
+        .maybeSingle();
+    if (error) {
+        console.warn('[supabase] getWordSearchStats error:', error.message);
+        return null;
+    }
+    return data;
+}
+
 export async function upsertChallengeStats(profileId, challengeType, stats) {
     if (isLocalMode) return null;
     
@@ -239,11 +269,19 @@ export async function upsertChallengeStats(profileId, challengeType, stats) {
         .eq('challenge_type', challengeType)
         .maybeSingle();
     
-    // Use Math.max for monotonically increasing values (never decrease levels/scores)
-    const newLevel = stats.targetWordLevel || stats.wordSearchLevel || 1;
+    // Use the correct level field per challenge type.
+    // Word Search tracks progress in wordSearchLevel; Target Word uses targetWordLevel.
+    // We cannot use `stats.targetWordLevel || stats.wordSearchLevel` because targetWordLevel
+    // defaults to 1 (truthy), which would always shadow wordSearchLevel.
+    let newLevel;
+    if (challengeType === 'word-search') {
+        newLevel = stats.wordSearchLevel || 1;
+    } else {
+        newLevel = stats.targetWordLevel || 1;
+    }
     const existingLevel = existing?.target_word_level || 1;
     const safeLevel = Math.max(newLevel, existingLevel);
-    
+
     // Union unique words
     const existingWords = existing?.unique_words_found || [];
     const newWords = stats.uniqueWordsFound || [];
