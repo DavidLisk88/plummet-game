@@ -556,7 +556,189 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ────────────────────────────────────────
--- 6. Auto-trigger: recompute rankings on every game_scores INSERT
+-- 6. Fix get_challenge_analysis_data() — read ALL stats from game_scores
+--    The old version read high_score, total_words, target_word_level from
+--    profile_challenge_stats (stale cache). Now everything is counted
+--    directly from game_scores (the authoritative source).
+-- ────────────────────────────────────────
+CREATE OR REPLACE FUNCTION get_challenge_analysis_data(
+    p_profile_id UUID,
+    p_challenge_type TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+    result JSONB;
+    v_profile RECORD;
+    v_cl RECORD;
+    v_recent_scores JSONB;
+    v_avg_score REAL;
+    v_score_stddev REAL;
+    v_best_combo INTEGER;
+    v_avg_words REAL;
+    v_total_games INTEGER;
+    v_high_score INTEGER;
+    v_total_words INTEGER;
+    v_recent_trend REAL;
+BEGIN
+    -- Access control: must be on a leaderboard or own profile
+    IF NOT EXISTS (
+        SELECT 1 FROM challenge_leaderboards WHERE profile_id = p_profile_id
+        UNION ALL
+        SELECT 1 FROM profiles WHERE id = p_profile_id AND account_id = auth.uid()
+    ) THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT * INTO v_profile FROM profiles WHERE id = p_profile_id;
+    IF v_profile IS NULL THEN RETURN NULL; END IF;
+
+    SELECT * INTO v_cl
+    FROM challenge_leaderboards
+    WHERE profile_id = p_profile_id AND challenge_type = p_challenge_type;
+
+    -- ALL stats from game_scores — zero reliance on cache tables
+    SELECT
+        COALESCE(AVG(gs.score), 0),
+        COALESCE(STDDEV(gs.score), 0),
+        COALESCE(MAX(gs.best_combo), 0),
+        COALESCE(AVG(gs.words_found), 0),
+        COUNT(*)::INTEGER,
+        COALESCE(MAX(gs.score), 0)::INTEGER,
+        COALESCE(SUM(gs.words_found), 0)::INTEGER
+    INTO v_avg_score, v_score_stddev, v_best_combo, v_avg_words,
+         v_total_games, v_high_score, v_total_words
+    FROM game_scores gs
+    WHERE gs.profile_id = p_profile_id
+      AND gs.challenge_type = p_challenge_type
+      AND gs.is_challenge = TRUE;
+
+    SELECT COALESCE(
+        (SELECT AVG(s) FROM (
+            SELECT gs.score as s FROM game_scores gs
+            WHERE gs.profile_id = p_profile_id AND gs.challenge_type = p_challenge_type AND gs.is_challenge = TRUE
+            ORDER BY gs.played_at DESC LIMIT 5
+        ) recent)
+        -
+        (SELECT AVG(s) FROM (
+            SELECT gs.score as s FROM game_scores gs
+            WHERE gs.profile_id = p_profile_id AND gs.challenge_type = p_challenge_type AND gs.is_challenge = TRUE
+            ORDER BY gs.played_at DESC LIMIT 5 OFFSET 5
+        ) older)
+    , 0) INTO v_recent_trend;
+
+    SELECT COALESCE(jsonb_agg(t.score ORDER BY t.played_at DESC), '[]'::JSONB)
+    INTO v_recent_scores
+    FROM (
+        SELECT gs.score, gs.played_at
+        FROM game_scores gs
+        WHERE gs.profile_id = p_profile_id
+          AND gs.challenge_type = p_challenge_type
+          AND gs.is_challenge = TRUE
+        ORDER BY gs.played_at DESC
+        LIMIT 20
+    ) t;
+
+    result := jsonb_build_object(
+        'username', v_profile.username,
+        'level', v_profile.level,
+        'challenge_type', p_challenge_type,
+        'skill_rating', COALESCE(v_cl.challenge_skill_rating, 0),
+        'skill_class', COALESCE(v_cl.skill_class, 'low'),
+        'global_rank', COALESCE(v_cl.global_rank, 0),
+        'high_score', v_high_score,
+        'games_played', v_total_games,
+        'total_words', v_total_words,
+        'avg_score', ROUND(v_avg_score::NUMERIC, 1),
+        'score_consistency', CASE
+            WHEN v_avg_score > 0 THEN ROUND((1 - LEAST(1, v_score_stddev / GREATEST(v_avg_score, 1)))::NUMERIC, 2)
+            ELSE 0
+        END,
+        'best_combo', v_best_combo,
+        'avg_words_per_game', ROUND(v_avg_words::NUMERIC, 1),
+        'recent_trend', ROUND(v_recent_trend::NUMERIC, 1),
+        'recent_scores', v_recent_scores
+    );
+
+    IF p_challenge_type = 'target-word' THEN
+        result := result || jsonb_build_object(
+            'target_word_level', COALESCE((
+                SELECT MAX(gs.target_words_completed)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'target-word' AND gs.is_challenge = TRUE
+            ), 1),
+            'avg_targets_per_game', (
+                SELECT ROUND(COALESCE(AVG(gs.target_words_completed), 0)::NUMERIC, 1)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'target-word' AND gs.is_challenge = TRUE
+            ),
+            'best_targets_in_game', (
+                SELECT COALESCE(MAX(gs.target_words_completed), 0)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'target-word' AND gs.is_challenge = TRUE
+            )
+        );
+    END IF;
+
+    IF p_challenge_type = 'speed-round' THEN
+        result := result || jsonb_build_object(
+            'avg_words_per_minute', (
+                SELECT ROUND(COALESCE(AVG(gs.words_found::REAL / GREATEST(1, (COALESCE(gs.time_limit_seconds, 180) - COALESCE(gs.time_remaining_seconds, 0))) * 60), 0)::NUMERIC, 2)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'speed-round' AND gs.is_challenge = TRUE
+            ),
+            'best_words_in_game', (
+                SELECT COALESCE(MAX(gs.words_found), 0)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'speed-round' AND gs.is_challenge = TRUE
+            )
+        );
+    END IF;
+
+    IF p_challenge_type = 'word-category' THEN
+        result := result || jsonb_build_object(
+            'avg_category_words', (
+                SELECT ROUND(COALESCE(AVG(gs.bonus_words_completed), 0)::NUMERIC, 1)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'word-category' AND gs.is_challenge = TRUE
+            ),
+            'best_category_words', (
+                SELECT COALESCE(MAX(gs.bonus_words_completed), 0)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'word-category' AND gs.is_challenge = TRUE
+            )
+        );
+    END IF;
+
+    IF p_challenge_type = 'word-runner' THEN
+        result := result || jsonb_build_object(
+            'avg_distance', (
+                SELECT ROUND(COALESCE(AVG(gs.score), 0)::NUMERIC, 1)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'word-runner' AND gs.is_challenge = TRUE
+            ),
+            'best_distance', (
+                SELECT COALESCE(MAX(gs.score), 0)
+                FROM game_scores gs
+                WHERE gs.profile_id = p_profile_id
+                  AND gs.challenge_type = 'word-runner' AND gs.is_challenge = TRUE
+            )
+        );
+    END IF;
+
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ────────────────────────────────────────
+-- 7. Auto-trigger: recompute rankings on every game_scores INSERT
 --    This makes rankings fully server-authoritative — no client call needed.
 --    The trigger looks up the account from the profile and recomputes
 --    both the main leaderboard ranking AND all challenge rankings.
@@ -587,7 +769,7 @@ CREATE TRIGGER trg_auto_update_ranking
     FOR EACH ROW EXECUTE FUNCTION auto_update_ranking_on_game();
 
 -- ────────────────────────────────────────
--- 7. Backfill: Fix stale profile_challenge_stats from game_scores (truth)
+-- 8. Backfill: Fix stale profile_challenge_stats from game_scores (truth)
 --    The stats table was broken before migration 019, so games_played,
 --    high_score, and total_words may be wrong. Recompute from game_scores.
 -- ────────────────────────────────────────
@@ -638,7 +820,7 @@ FROM (
 WHERE wss.profile_id = gs_agg.profile_id;
 
 -- ────────────────────────────────────────
--- 8. Backfill: Recompute rankings for ALL accounts
+-- 9. Backfill: Recompute rankings for ALL accounts
 --    Since update_ranking_for_account() has been silently failing,
 --    all rankings are stale. Force a fresh computation.
 -- ────────────────────────────────────────

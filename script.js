@@ -18307,10 +18307,13 @@ class Game {
         let mainAnalysisData = null;
 
         try {
-            if (isChallenge && myRank.profile_id) {
+            // Resolve profile_id: prefer from rank RPC, fallback to local profile cloudId
+            const profileId = myRank.profile_id || this.profileMgr.getActive()?.cloudId;
+
+            if (isChallenge && profileId) {
                 // Challenge tab: fetch challenge-specific stats from DB
                 const { getChallengeAnalysisData } = await import('./src/lib/supabase.js');
-                challengeAnalysisData = await getChallengeAnalysisData(myRank.profile_id, currentTab);
+                challengeAnalysisData = await getChallengeAnalysisData(profileId, currentTab);
                 if (challengeAnalysisData) {
                     dbHighScore = challengeAnalysisData.high_score || 0;
                     dbGamesPlayed = challengeAnalysisData.games_played || 0;
@@ -18321,9 +18324,9 @@ class Game {
             }
 
             // Always fetch main analysis for the menu rank card + main tab
-            if (myRank.profile_id) {
+            if (profileId) {
                 const { getPlayerAnalysisData } = await import('./src/lib/supabase.js');
-                mainAnalysisData = await getPlayerAnalysisData(myRank.profile_id);
+                mainAnalysisData = await getPlayerAnalysisData(profileId);
                 if (mainAnalysisData && !isChallenge) {
                     dbHighScore = mainAnalysisData.high_score || 0;
                     dbGamesPlayed = mainAnalysisData.games_played || 0;
@@ -18426,7 +18429,8 @@ class Game {
                         const { extractChallengeChartData, extractRecentScores } = await import('./src/lib/player-analysis.js');
                         const { renderBarInto, renderTrendInto } = await import('./src/lib/chart-helpers.js');
                         const { getChallengeAnalysisData } = await import('./src/lib/supabase.js');
-                        const analysisData = await getChallengeAnalysisData(myRank.profile_id, challengeType);
+                        const analysisProfileId = myRank.profile_id || this.profileMgr.getActive()?.cloudId;
+                        const analysisData = analysisProfileId ? await getChallengeAnalysisData(analysisProfileId, challengeType) : null;
                         if (analysisData) {
                             const chartData = extractChallengeChartData(analysisData);
                             if (chartData) {
