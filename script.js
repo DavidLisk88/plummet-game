@@ -9131,6 +9131,32 @@ class Game {
         }
     }
 
+    _showEasterEggBanner() {
+        // Secret jackpot: player spelled the game name. Create a temporary full-screen flash banner.
+        let banner = document.getElementById('plummet-easter-egg-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'plummet-easter-egg-banner';
+            banner.style.cssText = [
+                'position:fixed', 'inset:0', 'z-index:9999',
+                'display:flex', 'flex-direction:column',
+                'align-items:center', 'justify-content:center',
+                'background:rgba(0,0,0,0.82)',
+                'color:#ffe066', 'font-family:inherit',
+                'pointer-events:none', 'opacity:0',
+                'transition:opacity 0.3s',
+            ].join(';');
+            banner.innerHTML = `
+                <div style="font-size:2.8rem;font-weight:900;letter-spacing:0.08em;text-shadow:0 0 24px #ffe066,0 0 48px #ff9800;">✨ PLUMMET ✨</div>
+                <div style="font-size:1.1rem;margin-top:0.5rem;color:#fff;opacity:0.9;">You found the secret word!</div>
+                <div style="font-size:1.4rem;margin-top:0.6rem;font-weight:700;color:#4fffb0;">+10,000 pts &nbsp;•&nbsp; +1,000 coins</div>
+            `;
+            document.body.appendChild(banner);
+        }
+        banner.style.opacity = '1';
+        setTimeout(() => { banner.style.opacity = '0'; }, 2800);
+    }
+
     _showChainBanner(chainCount) {
         const el = this.els.chainBanner;
         if (!el) return;
@@ -15544,6 +15570,13 @@ class Game {
             // ── Earn coins per word ──
             const wordCoins = coinsForWord(group.word.length) + (this.comboCount >= 2 ? Math.min(this.comboCount, 10) * COIN_COMBO_BONUS : 0);
             this._coinsThisGame = (this._coinsThisGame || 0) + wordCoins;
+
+            // 🥚 Easter egg: spelling the game's own name gives a secret jackpot
+            if (group.word === 'PLUMMET') {
+                this.score += 10000;
+                this._coinsThisGame += 1000;
+                this._showEasterEggBanner();
+            }
 
             // Check for target word match (exact or contains as substring)
             if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
