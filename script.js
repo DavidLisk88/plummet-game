@@ -1675,10 +1675,10 @@ function coinsForWord(wordLength) {
 }
 
 /** Word-runner coin rates — higher payouts since words are harder to form in real-time. */
-const WR_COIN_PER_WORD_LENGTH = { 3: 100, 4: 200, 5: 350, 6: 500, 7: 700 };
+const WR_COIN_PER_WORD_LENGTH = { 3: 33, 4: 67, 5: 117, 6: 167, 7: 233 };
 function coinsForWordRunner(wordLength) {
-    if (wordLength >= 7) return 42;
-    return WR_COIN_PER_WORD_LENGTH[wordLength] || 6;
+    if (wordLength >= 7) return 14;
+    return WR_COIN_PER_WORD_LENGTH[wordLength] || 2;
 }
 
 /** Calculate coins earned at game end. */
