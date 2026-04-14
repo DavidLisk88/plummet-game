@@ -17427,15 +17427,22 @@ class Game {
         }
     }
 
-    _handleForgotPassword() {
+    async _handleForgotPassword() {
         const email = this.els.authEmail?.value?.trim();
-        const subject = encodeURIComponent("Plummet – Password Recovery Request");
-        const body = encodeURIComponent(
-            `Hi,\n\nI forgot my password for Plummet Word Game.\n\nMy account email address is: ${email || "(please fill in your email)"}\n\nCould you please help me recover my password?\n\nThank you!`
-        );
-        const mailto = `mailto:plummetwordgame@gmail.com?subject=${subject}&body=${body}`;
-        window.location.href = mailto;
-        this._showAuthError("Your email app should open. Just hit Send — we'll get back to you shortly!");
+        if (!email || !email.includes("@")) {
+            this._showAuthError("Please enter your email address first, then tap Forgot password.");
+            return;
+        }
+        this._setAuthLoading(true);
+        try {
+            const { resetPassword } = await import('./src/lib/supabase.js');
+            await resetPassword(email);
+            this._showAuthError("Password reset email sent! Check your inbox (and spam folder).");
+        } catch (err) {
+            this._showAuthError(err.message || "Failed to send reset email. Please try again.");
+        } finally {
+            this._setAuthLoading(false);
+        }
     }
 
     async _onAuthSuccess(user) {
