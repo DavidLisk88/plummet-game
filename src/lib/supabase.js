@@ -276,47 +276,27 @@ export async function getWordSearchStats(profileId) {
 
 export async function upsertChallengeStats(profileId, challengeType, stats) {
     if (isLocalMode) return null;
-    
-    // Fetch existing record to prevent accidental downgrades of level values
-    const { data: existing } = await supabase
-        .from('profile_challenge_stats')
-        .select('high_score, games_played, total_words, target_word_level, unique_words_found')
-        .eq('profile_id', profileId)
-        .eq('challenge_type', challengeType)
-        .maybeSingle();
-    
+
     // Use the correct level field per challenge type.
     // Word Search tracks progress in wordSearchLevel; Target Word uses targetWordLevel.
-    // We cannot use `stats.targetWordLevel || stats.wordSearchLevel` because targetWordLevel
-    // defaults to 1 (truthy), which would always shadow wordSearchLevel.
     let newLevel;
     if (challengeType === 'word-search') {
         newLevel = stats.wordSearchLevel || 1;
     } else {
         newLevel = stats.targetWordLevel || 1;
     }
-    const existingLevel = existing?.target_word_level || 1;
-    const safeLevel = Math.max(newLevel, existingLevel);
 
-    // Union unique words
-    const existingWords = existing?.unique_words_found || [];
-    const newWords = stats.uniqueWordsFound || [];
-    const mergedWords = [...new Set([...existingWords, ...newWords])];
-    
-    const { data, error } = await supabase
-        .from('profile_challenge_stats')
-        .upsert({
-            profile_id: profileId,
-            challenge_type: challengeType,
-            high_score: Math.max(stats.highScore || 0, existing?.high_score || 0),
-            games_played: Math.max(stats.gamesPlayed || 0, existing?.games_played || 0),
-            total_words: Math.max(stats.totalWords || 0, existing?.total_words || 0),
-            target_word_level: safeLevel,
-            unique_words_found: mergedWords,
-            updated_at: new Date().toISOString(),
-        }, { onConflict: 'profile_id,challenge_type' })
-        .select()
-        .single();
+    // Call the SECURITY DEFINER RPC which bypasses RLS and guarantees GREATEST
+    // on all monotonic fields (level can never go down, server-side atomic).
+    const { data, error } = await supabase.rpc('upsert_challenge_stats', {
+        p_profile_id: profileId,
+        p_challenge_type: challengeType,
+        p_high_score: stats.highScore || 0,
+        p_games_played: stats.gamesPlayed || 0,
+        p_total_words: stats.totalWords || 0,
+        p_target_word_level: newLevel,
+        p_unique_words: stats.uniqueWordsFound || [],
+    });
     if (error) throw error;
     return data;
 }
