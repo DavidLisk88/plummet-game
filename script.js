@@ -9284,12 +9284,6 @@ class Game {
             this._updateTimerDisplay();
         }
 
-        // Rollback target word level on End Game (player didn't complete naturally)
-        if (reason === "endgame" && this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
-            && this._targetWordLevelAtStart != null) {
-            this.profileMgr.setTargetWordLevel(this._targetWordLevelAtStart);
-        }
-
         this.state = State.GAMEOVER;
         this.block = null;
         this._clearAllWordPopups();  // Clean up any pending popups
@@ -15756,6 +15750,20 @@ class Game {
         this._setupCategorySelector(key);
         const gridSizeSel = document.getElementById("challenge-grid-size-selector");
         if (gridSizeSel) gridSizeSel.classList.toggle("hidden", key === CHALLENGE_TYPES.WORD_SEARCH || key === CHALLENGE_TYPES.WORD_RUNNER);
+
+        // For Target Word: replace "START CHALLENGE" with "CONTINUE" once players are past level 1,
+        // since progress always carries over and there is no concept of starting fresh.
+        if (key === CHALLENGE_TYPES.TARGET_WORD) {
+            const level = this.profileMgr.getTargetWordLevel();
+            if (level > 1) {
+                this.els.challengeStartBtn.textContent = `▶ CONTINUE (Lv. ${level})`;
+            } else {
+                this.els.challengeStartBtn.textContent = 'START CHALLENGE';
+            }
+        } else {
+            this.els.challengeStartBtn.textContent = 'START CHALLENGE';
+        }
+
         this._showScreen("challengesetup");
     }
 
@@ -15813,10 +15821,17 @@ class Game {
             const levelEl = this.els.challengeSetupScreen?.querySelector('.challenge-level-badge');
             if (levelEl) {
                 const stats = this.profileMgr.getChallengeStats(this.activeChallenge);
-                const level = this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH 
-                    ? this.profileMgr.getWordSearchLevel() 
+                const level = this.activeChallenge === CHALLENGE_TYPES.WORD_SEARCH
+                    ? this.profileMgr.getWordSearchLevel()
                     : (stats.targetWordLevel || 1);
                 levelEl.textContent = `Lv.${level}`;
+            }
+            // Keep the start button label in sync after a cloud sync
+            if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
+                const level = this.profileMgr.getTargetWordLevel();
+                this.els.challengeStartBtn.textContent = level > 1
+                    ? `▶ CONTINUE (Lv. ${level})`
+                    : 'START CHALLENGE';
             }
         }
     }
