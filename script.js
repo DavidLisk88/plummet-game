@@ -17473,6 +17473,7 @@ class Game {
             }
             this._syncCloudProfilesToLocal(cloudProfiles);
             this._initialSyncComplete = true; // Cloud data loaded, safe to push updates
+            this._flushProgressRepairsToCloud();
             this._subscribeProfileRealtime();
             // Refresh challenge cards to show updated levels after sync
             this._refreshChallengeCards();
@@ -17542,6 +17543,8 @@ class Game {
      * Called on every login. No merging with local data.
      */
     _mergeCloudIntoLocal(local, cloud) {
+        const localChallengeStats = local.challengeStats || {};
+
         // Core profile
         local.username = cloud.username;
         local.level = cloud.level || 1;
@@ -17613,6 +17616,53 @@ class Game {
             }
         }
 
+        // Preserve higher monotonic local challenge progression if the cloud write has not landed yet.
+        // This avoids level regression after a refresh during in-flight syncs, then repairs the cloud copy.
+        local._needsChallengeResync = [];
+        for (const [type, prior] of Object.entries(localChallengeStats)) {
+            if (!prior) continue;
+            if (!local.challengeStats[type]) {
+                local.challengeStats[type] = {
+                    highScore: prior.highScore || 0,
+                    gamesPlayed: prior.gamesPlayed || 0,
+                    totalWords: prior.totalWords || 0,
+                    targetWordLevel: prior.targetWordLevel || 1,
+                    uniqueWordsFound: prior.uniqueWordsFound || [],
+                };
+                if (type === CHALLENGE_TYPES.WORD_SEARCH) {
+                    local.challengeStats[type].wordSearchLevel = prior.wordSearchLevel || prior.targetWordLevel || 1;
+                }
+                local._needsChallengeResync.push(type);
+                continue;
+            }
+
+            const merged = local.challengeStats[type];
+            const localLevel = type === CHALLENGE_TYPES.WORD_SEARCH
+                ? (prior.wordSearchLevel || prior.targetWordLevel || 1)
+                : (prior.targetWordLevel || 1);
+            const cloudLevel = type === CHALLENGE_TYPES.WORD_SEARCH
+                ? (merged.wordSearchLevel || merged.targetWordLevel || 1)
+                : (merged.targetWordLevel || 1);
+
+            const before = JSON.stringify(merged);
+            merged.highScore = Math.max(merged.highScore || 0, prior.highScore || 0);
+            merged.gamesPlayed = Math.max(merged.gamesPlayed || 0, prior.gamesPlayed || 0);
+            merged.totalWords = Math.max(merged.totalWords || 0, prior.totalWords || 0);
+            merged.uniqueWordsFound = [...new Set([...(merged.uniqueWordsFound || []), ...(prior.uniqueWordsFound || [])])];
+
+            if (type === CHALLENGE_TYPES.WORD_SEARCH) {
+                merged.wordSearchLevel = Math.max(merged.wordSearchLevel || 1, localLevel);
+                merged.targetWordLevel = Math.max(merged.targetWordLevel || 1, localLevel);
+            } else {
+                merged.targetWordLevel = Math.max(merged.targetWordLevel || 1, localLevel);
+            }
+
+            const after = JSON.stringify(merged);
+            if (after !== before || localLevel > cloudLevel) {
+                local._needsChallengeResync.push(type);
+            }
+        }
+
         // Word Search level fallback: profile_word_search_stats.highest_level_reached
         // is updated by database trigger on every game so it's the ground truth
         if (cloud._wsStats?.highest_level_reached) {
@@ -17629,6 +17679,28 @@ class Game {
         }
 
         local._lastSyncedAt = new Date().toISOString();
+    }
+
+    _flushProgressRepairsToCloud() {
+        for (const profile of this.profileMgr.getAll()) {
+            if (!profile?.cloudId || !profile._needsChallengeResync?.length) continue;
+            for (const challengeType of profile._needsChallengeResync) {
+                this._syncSpecificChallengeStatsToCloud(profile, challengeType);
+            }
+            delete profile._needsChallengeResync;
+        }
+        this.profileMgr._save();
+    }
+
+    async _syncSpecificChallengeStatsToCloud(profile, challengeType) {
+        try {
+            const { isLocalMode, upsertChallengeStats } = await import('./src/lib/supabase.js');
+            if (isLocalMode || !this._initialSyncComplete) return;
+            if (!profile?.cloudId || !profile.challengeStats?.[challengeType]) return;
+            await upsertChallengeStats(profile.cloudId, challengeType, profile.challengeStats[challengeType]);
+        } catch (err) {
+            console.warn(`[supabase] challenge repair sync (${challengeType}) failed:`, err?.message || err);
+        }
     }
 
     _showAuthError(msg) {
