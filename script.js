@@ -15587,6 +15587,8 @@ class Game {
                 // Advance level and pick next word from the new level's pool
                 this._targetWordLevel = this.profileMgr.advanceTargetWordLevel();
                 this._pickTargetWord();
+                // Immediately persist the new level to the cloud so a refresh never rolls back progress
+                this._debouncedSyncProfileToCloud();
             }
 
             // Track category word matches
