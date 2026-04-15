@@ -290,6 +290,9 @@ export class HowlerMusicPlayer {
         // Time update interval
         this._timeUpdateInterval = null;
 
+        // iOS AudioContext suspension watchdog
+        this._watchdogTimer = setInterval(() => this._audioWatchdog(), 3000);
+
         this._buildQueue();
         this._restoreMusicState();
     }
@@ -299,6 +302,12 @@ export class HowlerMusicPlayer {
     _ensureAudioContext() {
         if (!this._audioCtx) {
             this._audioCtx = Howler.ctx || new (window.AudioContext || window.webkitAudioContext)();
+            // Listen for iOS-triggered suspensions so we can auto-resume
+            this._audioCtx.onstatechange = () => {
+                if (this._audioCtx.state === 'suspended' && this.playing) {
+                    this._audioCtx.resume().catch(() => {});
+                }
+            };
         }
         if (this._audioCtx.state === 'suspended') {
             this._audioCtx.resume().catch(() => {});
@@ -541,6 +550,17 @@ export class HowlerMusicPlayer {
         if (this._currentHowl && !this._currentHowl.playing()) {
             this._connectHowlToGain(this._currentHowl);
             this._applyVolume();
+            this._currentHowl.play();
+        }
+    }
+
+    _audioWatchdog() {
+        if (!this.playing || !this.currentTrackId) return;
+        // Detect AudioContext suspended mid-playback (common on iOS)
+        if (Howler.ctx?.state === 'suspended') Howler.ctx.resume();
+        if (this._audioCtx?.state === 'suspended') this._audioCtx.resume().catch(() => {});
+        // Detect Howl stopped while we think we're playing
+        if (this._currentHowl && !this._currentHowl.playing()) {
             this._currentHowl.play();
         }
     }

@@ -3353,6 +3353,12 @@ class MusicManager {
 
         this._lastSavedTime = 0;
 
+        // iOS AudioContext suspension watchdog — iOS can suspend the AudioContext
+        // mid-foreground (Siri, notification banners, system audio), which halts
+        // playback without triggering visibilitychange. Poll every 3s to detect
+        // and recover from this state.
+        this._watchdogTimer = setInterval(() => this._audioWatchdog(), 3000);
+
         // Attach ended + timeupdate listeners to initial audio element
         this._bindAudioListeners(this.audio);
 
@@ -3533,6 +3539,18 @@ class MusicManager {
         }
     }
 
+    _audioWatchdog() {
+        if (!this.playing || !this.currentTrackId) return;
+        // Detect AudioContext suspended mid-playback (common on iOS)
+        if (this._audioCtx && this._audioCtx.state === "suspended") {
+            this._audioCtx.resume().catch(() => {});
+        }
+        // Detect audio element paused while we think we're playing
+        if (this.audio.paused && !this.audio.ended) {
+            this.audio.play().catch(() => {});
+        }
+    }
+
     _preloadNextTrack() {
         const nextId = this._getNextTrackId();
         if (this._preloadedAudio && this._preloadedTrackId !== nextId) {
@@ -3596,6 +3614,12 @@ class MusicManager {
     _ensureGainNode(audioEl) {
         if (!this._audioCtx) {
             this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            // Listen for iOS-triggered suspensions so we can auto-resume
+            this._audioCtx.onstatechange = () => {
+                if (this._audioCtx.state === "suspended" && this.playing) {
+                    this._audioCtx.resume().catch(() => {});
+                }
+            };
         }
         if (this._audioCtx.state === "suspended") {
             this._audioCtx.resume().catch(() => {});
