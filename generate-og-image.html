@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { margin: 0; background: #111; display: flex; align-items: center; justify-content: center; height: 100vh; }
+  canvas { border: 1px solid #333; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1200" height="630"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// Background gradient
+const grad = ctx.createLinearGradient(0, 0, 1200, 630);
+grad.addColorStop(0, '#1a1a15');
+grad.addColorStop(1, '#2f3029');
+ctx.fillStyle = grad;
+ctx.fillRect(0, 0, 1200, 630);
+
+// Subtle falling letters in background
+ctx.font = '800 60px Inter, sans-serif';
+ctx.fillStyle = 'rgba(226, 216, 166, 0.06)';
+const letters = 'PLUMMETWORDGAME';
+for (let i = 0; i < 40; i++) {
+  const x = Math.random() * 1200;
+  const y = Math.random() * 630;
+  const rot = (Math.random() - 0.5) * 0.5;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.fillText(letters[Math.floor(Math.random() * letters.length)], 0, 0);
+  ctx.restore();
+}
+
+// "PLUMMET" title
+ctx.textAlign = 'center';
+ctx.font = '900 96px Inter, sans-serif';
+ctx.fillStyle = '#e2d8a6';
+ctx.letterSpacing = '8px';
+ctx.fillText('PLUMMET', 600, 280);
+
+// Subtitle
+ctx.font = '400 28px Inter, sans-serif';
+ctx.fillStyle = '#b8b098';
+ctx.letterSpacing = '3px';
+ctx.fillText('WORD PUZZLE GAME', 600, 340);
+
+// Tagline
+ctx.font = '500 22px Inter, sans-serif';
+ctx.fillStyle = 'rgba(184, 176, 152, 0.6)';
+ctx.letterSpacing = '1px';
+ctx.fillText('Great music. No ads.', 600, 400);
+
+// Border accent
+ctx.strokeStyle = 'rgba(226, 216, 166, 0.15)';
+ctx.lineWidth = 2;
+ctx.strokeRect(40, 40, 1120, 550);
+
+// Download button
+const link = document.createElement('a');
+link.download = 'og-image.png';
+link.href = canvas.toDataURL('image/png');
+link.textContent = '⬇️ Right-click canvas or click here to download og-image.png';
+link.style.cssText = 'display:block;text-align:center;margin:20px;color:#e2d8a6;font-family:Inter,sans-serif;font-size:18px;';
+document.body.appendChild(link);
+</script>
+</body>
+</html>
