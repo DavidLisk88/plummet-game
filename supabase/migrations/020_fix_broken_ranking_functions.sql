@@ -733,6 +733,29 @@ BEGIN
         );
     END IF;
 
+    -- Word Search: needs profile_word_search_stats because game_scores
+    -- doesn't store total_placed_words per game (required for completion rate).
+    IF p_challenge_type = 'word-search' THEN
+        result := result || jsonb_build_object(
+            'word_search', (
+                SELECT jsonb_build_object(
+                    'games_played', COALESCE(pws.games_played, 0),
+                    'avg_completion_rate', COALESCE(pws.avg_completion_rate, 0),
+                    'perfect_clear_rate', CASE
+                        WHEN COALESCE(pws.games_played, 0) > 0
+                        THEN ROUND((COALESCE(pws.perfect_clears, 0)::REAL / pws.games_played)::NUMERIC, 3)
+                        ELSE 0
+                    END,
+                    'avg_time_efficiency', COALESCE(pws.avg_time_efficiency, 0),
+                    'highest_level', COALESCE(pws.highest_level_reached, 1),
+                    'total_bonus_words', COALESCE(pws.total_bonus_words, 0)
+                )
+                FROM profile_word_search_stats pws
+                WHERE pws.profile_id = p_profile_id
+            )
+        );
+    END IF;
+
     RETURN result;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

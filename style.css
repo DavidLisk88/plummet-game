@@ -7124,10 +7124,10 @@ body.touch-input #mobile-controls {
     flex-shrink: 0;
 }
 
-/* Word popup — floating above the grid */
+/* Word popup — floating above the grid, inside ws-grid-container */
 #ws-word-popup {
     position: absolute;
-    top: 88px;
+    top: 8px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -7135,7 +7135,7 @@ body.touch-input #mobile-controls {
     align-items: center;
     gap: 4px;
     pointer-events: none;
-    z-index: 20;
+    z-index: 35;
 }
 
 .ws-popup-row {

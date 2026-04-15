@@ -135,6 +135,14 @@
                 <button id="auth-forgot-btn" class="link-btn auth-forgot">Forgot password?</button>
             </div>
 
+            <!-- Reset Password Form (shown after clicking email link) -->
+            <div id="auth-reset-password" class="auth-form hidden">
+                <p class="auth-info">Enter your new password below.</p>
+                <input type="password" id="reset-new-password" class="text-input" placeholder="New password (8+ characters)" autocomplete="new-password" minlength="8">
+                <input type="password" id="reset-confirm-password" class="text-input" placeholder="Confirm new password" autocomplete="new-password" minlength="8">
+                <button id="reset-password-btn" class="primary-btn" style="width:100%;max-width:280px">Update Password</button>
+            </div>
+
             <!-- Sign Up Form (multi-step: Email → Code → Password) -->
             <div id="auth-signup" class="auth-form hidden">
                 <!-- Step 1: Email -->
@@ -698,7 +706,6 @@
 
         <!-- WORD SEARCH SCREEN -->
         <div id="ws-screen" class="screen">
-            <div id="ws-word-popup" aria-live="polite"></div>
             <!-- Level / XP bar (matches #level-bar) -->
             <div id="ws-level-bar">
                 <span id="ws-level-text">Lv. 1</span>
@@ -728,6 +735,7 @@
             <button id="ws-pause-btn" class="icon-btn play-fab-btn play-pause-btn ws-pause-mobile" title="Pause" aria-label="Pause">⏐⏐</button>
             <!-- The grid (matches #canvas-wrapper) -->
             <div id="ws-grid-container">
+                <div id="ws-word-popup" aria-live="polite"></div>
                 <canvas id="ws-canvas"></canvas>
             </div>
             <!-- Words found count -->

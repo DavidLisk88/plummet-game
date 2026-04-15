@@ -19,7 +19,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: false,
+        detectSessionInUrl: true,
     },
 });
 
@@ -84,7 +84,15 @@ export function onAuthStateChange(callback) {
 
 export async function resetPassword(email) {
     if (isLocalMode) throw new Error('Supabase not configured');
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'https://plummet.netlify.app/',
+    });
+    if (error) throw error;
+}
+
+export async function updatePassword(newPassword) {
+    if (isLocalMode) throw new Error('Supabase not configured');
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throw error;
 }
 
@@ -174,132 +182,266 @@ export async function checkUsernameAvailable(username, excludeProfileId = null) 
 }
 
 // ════════════════════════════════════════
-// GAME SCORES
+// GAME RECORDING (aggregate tables)
 // ════════════════════════════════════════
-
-export async function recordGameScore(scoreData) {
-    if (isLocalMode) return null;
-    const { data, error } = await supabase
-        .from('game_scores')
-        .insert(scoreData)
-        .select()
-        .single();
-    if (error) throw error;
-    return data;
-}
 
 /**
  * Atomic server-authoritative write for one completed game.
- * Persists game_scores + profile progression snapshot + challenge progression in one transaction.
+ * Upserts the mode-specific aggregate table + profile_game_stats,
+ * updates game_history JSONB, recomputes skill_rating, and refreshes rankings.
+ * Returns { success, games_played, high_score, total_words, skill_rating, is_new_high_score }.
  */
-export async function recordGameAndSyncProfile({ profileId, scoreData, profileUpdates, challengeStats }) {
+export async function recordGame({
+    profileId, gameMode, isChallenge, challengeType, categoryKey,
+    gridSize, difficulty, timeLimitSeconds, score, wordsFound,
+    longestWordLength, bestCombo, targetWordsCompleted, bonusWordsCompleted,
+    timeRemainingSeconds, xpEarned, coinsEarned, gridFactor,
+    difficultyMultiplier, modeMultiplier,
+    wsPlacedWords, wsLevel, wsIsPerfectClear, wsClearSeconds,
+}) {
     if (isLocalMode) return null;
-    const { data, error } = await supabase.rpc('record_game_and_sync_profile', {
+    const { data, error } = await supabase.rpc('record_game', {
         p_profile_id: profileId,
-        p_score_data: scoreData || {},
-        p_profile_updates: profileUpdates || {},
-        p_challenge_stats: challengeStats || null,
+        p_game_mode: gameMode,
+        p_is_challenge: isChallenge || false,
+        p_challenge_type: challengeType || null,
+        p_category_key: categoryKey || null,
+        p_grid_size: gridSize ?? null,
+        p_difficulty: difficulty || null,
+        p_time_limit_seconds: timeLimitSeconds ?? null,
+        p_score: score ?? 0,
+        p_words_found: wordsFound ?? 0,
+        p_longest_word_length: longestWordLength ?? 0,
+        p_best_combo: bestCombo ?? 0,
+        p_target_words_completed: targetWordsCompleted ?? 0,
+        p_bonus_words_completed: bonusWordsCompleted ?? 0,
+        p_time_remaining_seconds: timeRemainingSeconds ?? null,
+        p_xp_earned: xpEarned ?? 0,
+        p_coins_earned: coinsEarned ?? 0,
+        p_grid_factor: gridFactor ?? 1.0,
+        p_difficulty_multiplier: difficultyMultiplier ?? 1.0,
+        p_mode_multiplier: modeMultiplier ?? 1.0,
+        p_ws_placed_words: wsPlacedWords ?? null,
+        p_ws_level: wsLevel ?? null,
+        p_ws_is_perfect_clear: wsIsPerfectClear || false,
+        p_ws_clear_seconds: wsClearSeconds ?? null,
     });
     if (error) throw error;
     return data;
 }
 
 // ════════════════════════════════════════
-// INVENTORY
+// INVENTORY (via RPC)
 // ════════════════════════════════════════
 
-export async function addInventoryItem(profileId, itemId) {
+export async function addInventoryItem(profileId, itemId, cost = 0) {
     if (isLocalMode) return null;
-    const { data, error } = await supabase
-        .from('profile_inventory')
-        .upsert({ profile_id: profileId, item_id: itemId })
-        .select()
-        .single();
+    const { data, error } = await supabase.rpc('add_inventory_item', {
+        p_profile_id: profileId,
+        p_item_id: itemId,
+        p_cost: cost,
+    });
     if (error) throw error;
     return data;
 }
 
 export async function getInventory(profileId) {
     if (isLocalMode) return [];
-    const { data, error } = await supabase
-        .from('profile_inventory')
-        .select('item_id')
-        .eq('profile_id', profileId);
+    const { data, error } = await supabase.rpc('get_inventory', {
+        p_profile_id: profileId,
+    });
     if (error) throw error;
-    return (data || []).map(row => row.item_id);
-}
-
-export async function getChallengeStats(profileId) {
-    if (isLocalMode) return [];
-    const { data, error } = await supabase
-        .from('profile_challenge_stats')
-        .select('*')
-        .eq('profile_id', profileId);
-    if (error) throw error;
+    // RPC returns a JSONB array of item_id strings
     return data || [];
 }
 
 /**
- * Fetch per-dimension high scores for a profile.
- * Returns rows from profile_high_scores, which we map back to the local `bestScores` keying scheme.
+ * Fetch challenge stats for a profile from the new per-challenge aggregate tables.
+ * Returns an array of objects shaped like the old profile_challenge_stats rows
+ * so the merge logic in script.js works without changes.
+ * Some tables have multiple rows per profile (per grid_size or category_key),
+ * so we aggregate across all dimensions to produce one summary per challenge type.
+ */
+export async function getChallengeStats(profileId) {
+    if (isLocalMode) return [];
+    const results = [];
+
+    // Target Word — keyed by (profile_id, grid_size), aggregate across grid sizes
+    const { data: twRows } = await supabase
+        .from('challenge_target_word_stats')
+        .select('games_played, high_score, total_words, target_word_level')
+        .eq('profile_id', profileId);
+    if (twRows?.length) {
+        let highScore = 0, gamesPlayed = 0, totalWords = 0, targetWordLevel = 1;
+        for (const r of twRows) {
+            highScore = Math.max(highScore, r.high_score || 0);
+            gamesPlayed += r.games_played || 0;
+            totalWords += r.total_words || 0;
+            targetWordLevel = Math.max(targetWordLevel, r.target_word_level || 1);
+        }
+        results.push({
+            challenge_type: 'target-word',
+            high_score: highScore,
+            games_played: gamesPlayed,
+            total_words: totalWords,
+            target_word_level: targetWordLevel,
+            unique_words_found: [],
+        });
+    }
+
+    // Speed Round — keyed by (profile_id, grid_size), aggregate across grid sizes
+    const { data: srRows } = await supabase
+        .from('challenge_speed_round_stats')
+        .select('games_played, high_score, total_words')
+        .eq('profile_id', profileId);
+    if (srRows?.length) {
+        let highScore = 0, gamesPlayed = 0, totalWords = 0;
+        for (const r of srRows) {
+            highScore = Math.max(highScore, r.high_score || 0);
+            gamesPlayed += r.games_played || 0;
+            totalWords += r.total_words || 0;
+        }
+        results.push({
+            challenge_type: 'speed-round',
+            high_score: highScore,
+            games_played: gamesPlayed,
+            total_words: totalWords,
+            target_word_level: 1,
+            unique_words_found: [],
+        });
+    }
+
+    // Word Category — keyed by (profile_id, grid_size, category_key), aggregate across all
+    const { data: wcRows } = await supabase
+        .from('challenge_word_category_stats')
+        .select('games_played, high_score, total_words')
+        .eq('profile_id', profileId);
+    if (wcRows?.length) {
+        let highScore = 0, gamesPlayed = 0, totalWords = 0;
+        for (const r of wcRows) {
+            highScore = Math.max(highScore, r.high_score || 0);
+            gamesPlayed += r.games_played || 0;
+            totalWords += r.total_words || 0;
+        }
+        results.push({
+            challenge_type: 'word-category',
+            high_score: highScore,
+            games_played: gamesPlayed,
+            total_words: totalWords,
+            target_word_level: 1,
+            unique_words_found: [],
+        });
+    }
+
+    // Word Search — single row per profile
+    const { data: ws } = await supabase
+        .from('challenge_word_search_stats')
+        .select('games_played, high_score, total_words, highest_level_reached')
+        .eq('profile_id', profileId)
+        .maybeSingle();
+    if (ws) results.push({
+        challenge_type: 'word-search',
+        high_score: ws.high_score || 0,
+        games_played: ws.games_played || 0,
+        total_words: ws.total_words || 0,
+        target_word_level: ws.highest_level_reached || 1,
+        unique_words_found: [],
+    });
+
+    // Word Runner — single row per profile
+    const { data: wr } = await supabase
+        .from('challenge_word_runner_stats')
+        .select('games_played, high_score, total_words')
+        .eq('profile_id', profileId)
+        .maybeSingle();
+    if (wr) results.push({
+        challenge_type: 'word-runner',
+        high_score: wr.high_score || 0,
+        games_played: wr.games_played || 0,
+        total_words: wr.total_words || 0,
+        target_word_level: 1,
+        unique_words_found: [],
+    });
+
+    return results;
+}
+
+/**
+ * Fetch per-dimension high scores from the mode-specific aggregate tables.
+ * Returns rows shaped like the old profile_high_scores table for backward compat
+ * with the bestScores merge logic in script.js.
  */
 export async function getHighScores(profileId) {
     if (isLocalMode) return [];
-    const { data, error } = await supabase
-        .from('profile_high_scores')
-        .select('game_mode, is_challenge, challenge_type, category_key, grid_size, difficulty, high_score')
+    const rows = [];
+
+    const { data: sandbox } = await supabase
+        .from('sandbox_grid_stats')
+        .select('grid_size, difficulty, high_score')
         .eq('profile_id', profileId);
-    if (error) {
-        console.warn('[supabase] getHighScores error:', error.message);
-        return [];
+    if (sandbox) {
+        for (const r of sandbox) {
+            rows.push({ game_mode: 'sandbox', is_challenge: false, challenge_type: null, category_key: null, grid_size: r.grid_size, difficulty: r.difficulty, high_score: r.high_score });
+        }
     }
-    return data || [];
+
+    const { data: timed } = await supabase
+        .from('timed_grid_stats')
+        .select('grid_size, difficulty, high_score')
+        .eq('profile_id', profileId);
+    if (timed) {
+        for (const r of timed) {
+            rows.push({ game_mode: 'timed', is_challenge: false, challenge_type: null, category_key: null, grid_size: r.grid_size, difficulty: r.difficulty, high_score: r.high_score });
+        }
+    }
+
+    // Challenge modes — aggregate per-grid rows into one high score per challenge type
+    const challengeTables = [
+        { table: 'challenge_target_word_stats', type: 'target-word' },
+        { table: 'challenge_speed_round_stats', type: 'speed-round' },
+        { table: 'challenge_word_category_stats', type: 'word-category' },
+        { table: 'challenge_word_search_stats', type: 'word-search' },
+        { table: 'challenge_word_runner_stats', type: 'word-runner' },
+    ];
+    for (const { table, type } of challengeTables) {
+        const { data: chRows } = await supabase
+            .from(table)
+            .select('high_score')
+            .eq('profile_id', profileId);
+        if (chRows?.length) {
+            const maxScore = Math.max(...chRows.map(r => r.high_score || 0));
+            rows.push({ game_mode: 'sandbox', is_challenge: true, challenge_type: type, category_key: null, grid_size: null, difficulty: null, high_score: maxScore });
+        }
+    }
+
+    return rows;
 }
 
 /**
- * Fetch Word Search stats from the dedicated profile_word_search_stats table.
- * This table is updated by database triggers and may have more accurate level data.
+ * Fetch Word Search stats from the challenge_word_search_stats aggregate table.
  */
 export async function getWordSearchStats(profileId) {
     if (isLocalMode) return null;
     const { data, error } = await supabase
-        .from('profile_word_search_stats')
-        .select('highest_level_reached, games_played, high_score, total_words_found')
+        .from('challenge_word_search_stats')
+        .select('highest_level_reached, games_played, high_score, total_words')
         .eq('profile_id', profileId)
         .maybeSingle();
     if (error) {
         console.warn('[supabase] getWordSearchStats error:', error.message);
         return null;
     }
-    return data;
+    if (!data) return null;
+    // Map to the shape expected by _mergeCloudIntoLocal (uses total_words_found)
+    return {
+        highest_level_reached: data.highest_level_reached,
+        games_played: data.games_played,
+        high_score: data.high_score,
+        total_words_found: data.total_words,
+    };
 }
 
-export async function upsertChallengeStats(profileId, challengeType, stats) {
-    if (isLocalMode) return null;
-
-    // Use the correct level field per challenge type.
-    // Word Search tracks progress in wordSearchLevel; Target Word uses targetWordLevel.
-    let newLevel;
-    if (challengeType === 'word-search') {
-        newLevel = stats.wordSearchLevel || 1;
-    } else {
-        newLevel = stats.targetWordLevel || 1;
-    }
-
-    // Call the SECURITY DEFINER RPC which bypasses RLS and guarantees GREATEST
-    // on all monotonic fields (level can never go down, server-side atomic).
-    const { data, error } = await supabase.rpc('upsert_challenge_stats', {
-        p_profile_id: profileId,
-        p_challenge_type: challengeType,
-        p_high_score: stats.highScore || 0,
-        p_games_played: stats.gamesPlayed || 0,
-        p_total_words: stats.totalWords || 0,
-        p_target_word_level: newLevel,
-        p_unique_words: stats.uniqueWordsFound || [],
-    });
-    if (error) throw error;
-    return data;
-}
+// upsertChallengeStats is no longer needed — record_game() handles all challenge stat updates.
 
 // ════════════════════════════════════════
 // LEADERBOARD
@@ -354,6 +496,8 @@ export async function getChallengeAnalysisData(profileId, challengeType) {
     return data;
 }
 
+// updateMyRanking is now called internally by record_game().
+// Kept as a manual fallback for edge cases (e.g. initial ranking after migration).
 export async function updateMyRanking() {
     if (isLocalMode) return;
     const { error } = await supabase.rpc('update_my_ranking');
@@ -402,33 +546,40 @@ export async function deleteAccount() {
 }
 
 // ════════════════════════════════════════
-// MILESTONES
+// MILESTONES (via RPC)
 // ════════════════════════════════════════
 
 /**
- * Record a milestone achievement. Idempotent — the UNIQUE constraint
- * on (profile_id, milestone_id) means duplicates are silently ignored.
+ * Record a milestone achievement via the record_milestone RPC.
+ * Deduplicates server-side — safe to call multiple times for the same milestone.
  */
 export async function recordMilestone(profileId, milestoneId, coinsAwarded) {
     if (isLocalMode) return;
-    const { error } = await supabase
-        .from('profile_milestones')
-        .upsert(
-            { profile_id: profileId, milestone_id: milestoneId, coins_awarded: coinsAwarded },
-            { onConflict: 'profile_id,milestone_id', ignoreDuplicates: true }
-        );
+    const { data, error } = await supabase.rpc('record_milestone', {
+        p_profile_id: profileId,
+        p_milestone_id: milestoneId,
+        p_coins_awarded: coinsAwarded || 0,
+    });
     if (error) throw error;
+    return data;
 }
 
 /**
- * Fetch all milestones for a profile. Returns array of { milestone_id, coins_awarded, earned_at }.
+ * Fetch all milestones for a profile via the get_milestones RPC.
+ * Returns array of { id, earned_at, coins_awarded }.
  */
 export async function getProfileMilestones(profileId) {
     if (isLocalMode) return [];
-    const { data, error } = await supabase
-        .from('profile_milestones')
-        .select('milestone_id, coins_awarded, earned_at')
-        .eq('profile_id', profileId);
+    const { data, error } = await supabase.rpc('get_milestones', {
+        p_profile_id: profileId,
+    });
     if (error) throw error;
-    return data || [];
+    // RPC returns JSONB array of {id, earned_at, coins_awarded}
+    const milestones = data || [];
+    // Map to the shape expected by script.js (_loadMilestonesFromCloud)
+    return milestones.map(m => ({
+        milestone_id: m.id,
+        earned_at: m.earned_at,
+        coins_awarded: m.coins_awarded,
+    }));
 }

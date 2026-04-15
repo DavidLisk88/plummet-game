@@ -3324,7 +3324,7 @@ class MusicManager {
         this._shuffledQueue = [];
         this._shuffledIndex = -1;
         // repeatMode: "off" | "all" | "one"
-        this.repeatMode = localStorage.getItem("wf_music_repeat") || "all";
+        this.repeatMode = localStorage.getItem("wf_music_repeat") || "off";
 
         // Crossfade
         this._crossfadeDuration = 1.5; // seconds
@@ -4793,6 +4793,10 @@ class Game {
             authGotoSignup: document.getElementById("auth-goto-signup"),
             authGotoSignin: document.getElementById("auth-goto-signin"),
             authForgotBtn: document.getElementById("auth-forgot-btn"),
+            authResetPassword: document.getElementById("auth-reset-password"),
+            resetNewPassword: document.getElementById("reset-new-password"),
+            resetConfirmPassword: document.getElementById("reset-confirm-password"),
+            resetPasswordBtn: document.getElementById("reset-password-btn"),
             authLogoutBtn: document.getElementById("auth-logout-btn"),
             deleteAccountBtn: document.getElementById("delete-account-btn"),
             signupEmail: document.getElementById("signup-email"),
@@ -9128,6 +9132,10 @@ class Game {
         if (this.letterChoiceActive) return;
         if (this.state === State.PLAYING) {
             this.state = State.PAUSED;
+            // Target Word has no Save & Quit — only End Game
+            if (this.els.quitBtn) {
+                this.els.quitBtn.style.display = this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD ? "none" : "";
+            }
             this.els.pauseOverlay.classList.add("active");
         } else if (this.state === State.PAUSED) {
             this.state = State.PLAYING;
@@ -9524,9 +9532,9 @@ class Game {
             wordsFound: wordsCount.length || 0,
             longestWordLength: Math.max(0, ...(wordsCount.map(w => w.length) || [0])),
             bestCombo: this.bestCombo || 0,
-            targetWordsCompleted: this.targetWordsCompleted || 0,
+            targetWordsCompleted: this.targetWordsCompleted ?? 0,
             bonusWordsCompleted: (this.categoryWordsFound || []).length,
-            timeRemainingSeconds: this.timeRemainingSeconds || null,
+            timeRemainingSeconds: this.timeRemainingSeconds ?? null,
             xpEarned,
             coinsEarned: finalCoins,
             gridFactor: gs / 8,
@@ -9962,7 +9970,7 @@ class Game {
      */
     async _syncProfileToCloud() {
         try {
-            const { isLocalMode, updateProfile, upsertChallengeStats } = await import('./src/lib/supabase.js');
+            const { isLocalMode, updateProfile } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
             // Don't push local data until we've loaded cloud data (prevents overwriting with stale values)
             if (!this._initialSyncComplete) {
@@ -9980,9 +9988,8 @@ class Game {
                 level: p.level,
                 xp: p.xp,
                 total_xp: p.totalXp,
-                high_score: p.highScore,
-                games_played: p.gamesPlayed,
-                total_words: p.totalWords,
+                // NOTE: games_played, high_score, total_words are updated server-side
+                // by record_game() — do NOT overwrite them here to avoid race conditions.
                 // Currency
                 coins: p.coins,
                 total_coins_earned: p.totalCoinsEarned,
@@ -10004,45 +10011,19 @@ class Game {
                 unique_words_found: p.uniqueWordsFound || [],
             });
 
-            // Push challenge stats (target word level, word search level, etc.)
-            if (p.challengeStats) {
-                const challengePromises = [];
-                for (const [type, stats] of Object.entries(p.challengeStats)) {
-                    if (stats && (stats.gamesPlayed > 0 || stats.targetWordLevel > 1 || stats.wordSearchLevel > 1)) {
-                        challengePromises.push(
-                            upsertChallengeStats(p.cloudId, type, stats).catch(e =>
-                                console.warn(`[supabase] sync challenge stats (${type}) failed:`, e.message)
-                            )
-                        );
-                    }
-                }
-                if (challengePromises.length > 0) await Promise.all(challengePromises);
-            }
+            // Challenge stats are now updated server-side by record_game() —
+            // no need to push them separately from the client.
         } catch (err) {
             console.error('[supabase] sync profile to cloud failed:', err);
         }
     }
 
     /**
-     * Push one challenge stat row immediately (used for critical progression events).
-     * This avoids losing levels if the app refreshes before a debounced full-profile sync.
+     * Challenge stats are now updated server-side by record_game().
+     * This function is kept as a no-op to avoid breaking existing call sites.
      */
     async _syncChallengeStatsToCloud(challengeType) {
-        try {
-            const { isLocalMode, upsertChallengeStats } = await import('./src/lib/supabase.js');
-            if (isLocalMode) return;
-            if (!this._initialSyncComplete) return;
-
-            const p = this.profileMgr.getActive();
-            if (!p || !p.cloudId || !p.challengeStats) return;
-
-            const stats = p.challengeStats[challengeType];
-            if (!stats) return;
-
-            await upsertChallengeStats(p.cloudId, challengeType, stats);
-        } catch (err) {
-            console.warn(`[supabase] immediate challenge sync (${challengeType}) failed:`, err?.message || err);
-        }
+        // No-op: record_game() handles all challenge stat updates server-side.
     }
 
     /**
@@ -10057,13 +10038,13 @@ class Game {
     /**
      * Push a newly purchased item to the cloud inventory table.
      */
-    async _syncInventoryItemToCloud(itemId) {
+    async _syncInventoryItemToCloud(itemId, cost = 0) {
         try {
             const { isLocalMode, addInventoryItem } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
             const p = this.profileMgr.getActive();
             if (!p || !p.cloudId) return;
-            await addInventoryItem(p.cloudId, itemId);
+            await addInventoryItem(p.cloudId, itemId, cost);
         } catch (err) {
             console.error('[supabase] sync inventory item failed:', err);
         }
@@ -10376,7 +10357,7 @@ class Game {
                 this.profileMgr.equipItem(id);
             }
             this._syncProfileToCloud();
-            if (!isPerk) this._syncInventoryItemToCloud(id);
+            if (!isPerk) this._syncInventoryItemToCloud(id, item.price || 0);
             this._renderShop();
             const msg = isPerk
                 ? `Bought ${item.stackSize}× ${item.name}! (${result.quantity} total)`
@@ -10631,7 +10612,7 @@ class Game {
                 const result = this.profileMgr.purchaseItem(slotItemId);
                 if (result.success) {
                     this._syncProfileToCloud();
-                    this._syncInventoryItemToCloud(slotItemId);
+                    this._syncInventoryItemToCloud(slotItemId, SHOP_ITEMS[slotItemId].price || 0);
                     this._showShopToast(`${SHOP_ITEMS[slotItemId].name} unlocked!`);
                     this._renderShop();
                 } else if (result.reason === "insufficient_coins") {
@@ -15110,16 +15091,19 @@ class Game {
 
             const isFav = this.plMgr.isFavorite(track.id);
 
+            const eid = this._escapeHtml(track.id);
+            const etitle = this._escapeHtml(track.title);
+            const eartist = this._escapeHtml(track.artist);
             item.innerHTML = `
                 <button class="track-play-btn">
                     ${isPlaying ? "⏸" : "▶"}
                     <span class="track-eq-bars"><span class="eq-bar"></span><span class="eq-bar"></span><span class="eq-bar"></span><span class="eq-bar"></span></span>
                 </button>
                 <div class="track-info">
-                    <div class="track-name">${track.title}</div>
-                    <div class="track-artist">${track.artist}</div>
+                    <div class="track-name">${etitle}</div>
+                    <div class="track-artist">${eartist}</div>
                 </div>
-                <span class="track-duration" data-track-id="${track.id}"></span>
+                <span class="track-duration" data-track-id="${eid}"></span>
                 <button class="track-fav-btn${isFav ? " active" : ""}" title="Favorite" aria-label="Toggle Favorite">${isFav ? "♦" : "◇"}</button>
                 ${!searchTerm ? '<span class="track-drag-handle" title="Drag to reorder">☰</span>' : ""}
                 ${isCustom && !searchTerm ? '<button class="track-remove-btn" title="Remove from playlist">✕</button>' : ""}
@@ -15315,11 +15299,14 @@ class Game {
         for (const track of this.plMgr.allTracks) {
             const div = document.createElement("div");
             div.className = "picker-item";
+            const eid = this._escapeHtml(track.id);
+            const etitle = this._escapeHtml(track.title);
+            const eartist = this._escapeHtml(track.artist);
             div.innerHTML = `
-                <input type="checkbox" value="${track.id}" ${existing.has(track.id) ? "checked" : ""}>
+                <input type="checkbox" value="${eid}" ${existing.has(track.id) ? "checked" : ""}>
                 <div>
-                    <div class="picker-track-name">${track.title}</div>
-                    <div class="picker-track-artist">${track.artist}</div>
+                    <div class="picker-track-name">${etitle}</div>
+                    <div class="picker-track-artist">${eartist}</div>
                 </div>
             `;
             div.addEventListener("click", (e) => {
@@ -17108,14 +17095,33 @@ class Game {
         // In local mode (no Supabase), go straight to profiles
         // When Supabase is configured, check for existing session
         // Returns a promise so loading screen can wait for auth check
-        this._authReady = import('./src/lib/supabase.js').then(async ({ isLocalMode, getSession, getUser }) => {
+        this._authReady = import('./src/lib/supabase.js').then(async ({ isLocalMode, getSession, getUser, onAuthStateChange }) => {
             if (isLocalMode) {
                 this._showScreen("profiles");
                 return;
             }
+
+            // Listen for PASSWORD_RECOVERY event from Supabase email link
+            this._isPasswordRecovery = false;
+            onAuthStateChange((event, session) => {
+                if (event === 'PASSWORD_RECOVERY') {
+                    this._isPasswordRecovery = true;
+                    this._recoveryUser = session?.user || null;
+                    this._showScreen("auth");
+                    // Hide sign-in/sign-up, show reset password form
+                    if (this.els.authSignin) this.els.authSignin.classList.add("hidden");
+                    if (this.els.authSignup) this.els.authSignup.classList.add("hidden");
+                    if (this.els.authResetPassword) this.els.authResetPassword.classList.remove("hidden");
+                    if (this.els.authSubtitle) this.els.authSubtitle.textContent = "Reset your password";
+                    this._clearAuthError();
+                }
+            });
+
             try {
                 const session = await getSession();
-                if (session?.user) {
+                if (this._isPasswordRecovery) {
+                    // PASSWORD_RECOVERY already fired — stay on reset form, don't navigate away
+                } else if (session?.user) {
                     // Already authenticated — load profiles and go to profile select
                     await this._onAuthSuccess(session.user);
                     this._showScreen("profiles");
@@ -17179,6 +17185,12 @@ class Game {
 
         // Forgot password
         this.els.authForgotBtn?.addEventListener("click", () => this._handleForgotPassword());
+
+        // Reset password (after clicking email link)
+        this.els.resetPasswordBtn?.addEventListener("click", () => this._handleResetPassword());
+        this.els.resetConfirmPassword?.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") this._handleResetPassword();
+        });
 
         // Logout
         this.els.authLogoutBtn?.addEventListener("click", async () => {
@@ -17455,6 +17467,44 @@ class Game {
         }
     }
 
+    async _handleResetPassword() {
+        const pw = this.els.resetNewPassword?.value;
+        const confirm = this.els.resetConfirmPassword?.value;
+        if (!pw || pw.length < 8) {
+            this._showAuthError("Password must be at least 8 characters.");
+            return;
+        }
+        if (pw !== confirm) {
+            this._showAuthError("Passwords do not match.");
+            return;
+        }
+        this._setAuthLoading(true);
+        try {
+            const { updatePassword } = await import('./src/lib/supabase.js');
+            await updatePassword(pw);
+            // Clear the reset fields
+            if (this.els.resetNewPassword) this.els.resetNewPassword.value = "";
+            if (this.els.resetConfirmPassword) this.els.resetConfirmPassword.value = "";
+            this._isPasswordRecovery = false;
+            // User already has a valid session from the recovery link — go straight in
+            const user = this._recoveryUser;
+            if (user) {
+                await this._onAuthSuccess(user);
+                this._showScreen("profiles");
+            } else {
+                // Fallback: show sign-in form
+                if (this.els.authResetPassword) this.els.authResetPassword.classList.add("hidden");
+                if (this.els.authSignin) this.els.authSignin.classList.remove("hidden");
+                if (this.els.authSubtitle) this.els.authSubtitle.textContent = "Sign in to play";
+                this._showAuthError("Password updated! You can now sign in with your new password.");
+            }
+        } catch (err) {
+            this._showAuthError(err.message || "Failed to update password. Please try again.");
+        } finally {
+            this._setAuthLoading(false);
+        }
+    }
+
     async _onAuthSuccess(user) {
         // If a different user logged in, clear local profiles from previous account
         const prevUserId = localStorage.getItem("wf_auth_user_id");
@@ -17710,14 +17760,7 @@ class Game {
     }
 
     async _syncSpecificChallengeStatsToCloud(profile, challengeType) {
-        try {
-            const { isLocalMode, upsertChallengeStats } = await import('./src/lib/supabase.js');
-            if (isLocalMode || !this._initialSyncComplete) return;
-            if (!profile?.cloudId || !profile.challengeStats?.[challengeType]) return;
-            await upsertChallengeStats(profile.cloudId, challengeType, profile.challengeStats[challengeType]);
-        } catch (err) {
-            console.warn(`[supabase] challenge repair sync (${challengeType}) failed:`, err?.message || err);
-        }
+        // No-op: record_game() handles all challenge stat updates server-side.
     }
 
     _showAuthError(msg) {
@@ -18031,9 +18074,9 @@ class Game {
                 .on('postgres_changes', {
                     event: '*',
                     schema: 'public',
-                    table: 'profile_challenge_stats',
+                    table: 'profile_game_stats',
                     filter: `profile_id=eq.${profile.cloudId}`,
-                }, (payload) => this._handleChallengeRealtimeUpdate(payload))
+                }, (payload) => this._handleGameStatsRealtimeUpdate(payload))
                 .subscribe();
         } catch (err) {
             console.warn('[realtime] profile subscription failed:', err);
@@ -18077,6 +18120,26 @@ class Game {
         this._updateLevelDisplay();
     }
 
+    _handleGameStatsRealtimeUpdate(payload) {
+        const row = payload?.new;
+        if (!row) return;
+        const p = this.profileMgr.getActive();
+        if (!p) return;
+
+        // Update overall stats from profile_game_stats
+        if (row.games_played != null) p.gamesPlayed = Math.max(p.gamesPlayed || 0, row.games_played);
+        if (row.high_score != null) p.highScore = Math.max(p.highScore || 0, row.high_score);
+        if (row.total_words != null) p.totalWords = Math.max(p.totalWords || 0, row.total_words);
+
+        this.profileMgr._save();
+        this._updateHighScoreDisplay();
+        this._updateMenuStats();
+    }
+
+    /**
+     * Legacy handler kept for backward compatibility during migration transition.
+     * Once profile_challenge_stats is fully archived, this is never called.
+     */
     _handleChallengeRealtimeUpdate(payload) {
         const row = payload?.new;
         if (!row) return;
@@ -18521,91 +18584,46 @@ class Game {
 
     async _recordGameToSupabase(scoreData) {
         try {
-            const { isLocalMode, recordGameScore, recordGameAndSyncProfile, updateMyRanking } = await import('./src/lib/supabase.js');
+            const { isLocalMode, recordGame } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
             const profile = this.profileMgr.getActive();
             if (!profile || !profile.cloudId) return;
 
-            const scorePayload = {
-                profile_id: profile.cloudId,
-                game_mode: scoreData.gameMode,
-                is_challenge: scoreData.isChallenge || false,
-                challenge_type: scoreData.challengeType || null,
-                category_key: scoreData.categoryKey || null,
-                grid_size: scoreData.gridSize,
+            const result = await recordGame({
+                profileId: profile.cloudId,
+                gameMode: scoreData.gameMode,
+                isChallenge: scoreData.isChallenge || false,
+                challengeType: scoreData.challengeType || null,
+                categoryKey: scoreData.categoryKey || null,
+                gridSize: scoreData.gridSize,
                 difficulty: scoreData.difficulty,
-                time_limit_seconds: scoreData.timeLimitSeconds || null,
-                score: scoreData.score,
-                words_found: scoreData.wordsFound,
-                longest_word_length: scoreData.longestWordLength || 0,
-                best_combo: scoreData.bestCombo || 0,
-                target_words_completed: scoreData.targetWordsCompleted || 0,
-                bonus_words_completed: scoreData.bonusWordsCompleted || 0,
-                time_remaining_seconds: scoreData.timeRemainingSeconds || null,
-                xp_earned: scoreData.xpEarned || 0,
-                coins_earned: scoreData.coinsEarned || 0,
-                grid_factor: scoreData.gridFactor || null,
-                difficulty_multiplier: scoreData.difficultyMultiplier || null,
-                mode_multiplier: scoreData.modeMultiplier || null,
-            };
+                timeLimitSeconds: scoreData.timeLimitSeconds ?? null,
+                score: scoreData.score ?? 0,
+                wordsFound: scoreData.wordsFound ?? 0,
+                longestWordLength: scoreData.longestWordLength ?? 0,
+                bestCombo: scoreData.bestCombo ?? 0,
+                targetWordsCompleted: scoreData.targetWordsCompleted ?? 0,
+                bonusWordsCompleted: scoreData.bonusWordsCompleted ?? 0,
+                timeRemainingSeconds: scoreData.timeRemainingSeconds ?? null,
+                xpEarned: scoreData.xpEarned ?? 0,
+                coinsEarned: scoreData.coinsEarned ?? 0,
+                gridFactor: scoreData.gridFactor ?? null,
+                difficultyMultiplier: scoreData.difficultyMultiplier ?? null,
+                modeMultiplier: scoreData.modeMultiplier ?? null,
+                // Word Search specific fields
+                wsPlacedWords: scoreData.wsPlacedWords ?? null,
+                wsLevel: scoreData.wsLevel ?? null,
+                wsIsPerfectClear: scoreData.wsIsPerfectClear || false,
+                wsClearSeconds: scoreData.wsClearSeconds ?? null,
+            });
 
-            const profilePayload = {
-                username: profile.username,
-                level: profile.level,
-                xp: profile.xp,
-                total_xp: profile.totalXp,
-                high_score: profile.highScore,
-                games_played: profile.gamesPlayed,
-                total_words: profile.totalWords,
-                coins: profile.coins,
-                total_coins_earned: profile.totalCoinsEarned,
-                last_play_date: profile.lastPlayDate || null,
-                play_streak: profile.playStreak || 0,
-                claimed_milestones: profile.claimedMilestones || [],
-                unique_words_found: profile.uniqueWordsFound || [],
-            };
-
-            let challengePayload = null;
-            if (scoreData.isChallenge && scoreData.challengeType) {
-                const cs = profile.challengeStats?.[scoreData.challengeType];
-                if (cs) {
-                    const level = scoreData.challengeType === CHALLENGE_TYPES.WORD_SEARCH
-                        ? (cs.wordSearchLevel || cs.targetWordLevel || 1)
-                        : (cs.targetWordLevel || 1);
-                    challengePayload = {
-                        challenge_type: scoreData.challengeType,
-                        high_score: cs.highScore || 0,
-                        games_played: cs.gamesPlayed || 0,
-                        total_words: cs.totalWords || 0,
-                        target_word_level: level,
-                        unique_words_found: cs.uniqueWordsFound || [],
-                    };
-                }
-            }
-
-            let wroteAuthoritatively = false;
-            try {
-                await recordGameAndSyncProfile({
-                    profileId: profile.cloudId,
-                    scoreData: scorePayload,
-                    profileUpdates: profilePayload,
-                    challengeStats: challengePayload,
-                });
-                wroteAuthoritatively = true;
-            } catch (rpcErr) {
-                console.warn('[supabase] record_game_and_sync_profile RPC failed, falling back:', rpcErr?.message || rpcErr);
-            }
-
-            if (!wroteAuthoritatively) {
-                await recordGameScore(scorePayload);
-            }
-
-            // Update this user's leaderboard ranking after recording the score
-            try { await updateMyRanking(); } catch (e) {
-                console.warn('[supabase] ranking update failed:', e);
+            // Check if server reported failure
+            if (result && result.success === false) {
+                console.error('[supabase] record_game server error:', result.error);
             }
 
             // Clear leaderboard cache and refresh my rank display immediately
+            // (record_game calls update_ranking_for_account internally)
             try {
                 const { clearLeaderboardCache, fetchMyRank } = await import('./src/lib/leaderboard-service.js');
                 clearLeaderboardCache();
@@ -19373,6 +19391,11 @@ class Game {
             gridFactor: ws.gridSize / 8,
             difficultyMultiplier: 1.0,
             modeMultiplier: 1.0,
+            // Word Search specific fields for aggregate stats
+            wsPlacedWords: ws.placedWordSet.size,
+            wsLevel: ws.level,
+            wsIsPerfectClear: earlyFinish,
+            wsClearSeconds: earlyFinish ? (WORD_SEARCH_TIME_LIMIT - timeRemaining) : null,
         });
         this._syncProfileToCloud();
 
