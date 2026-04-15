@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   server: {
     // Serve assets from the local device, no external server
     androidScheme: "https",
-    iosScheme: "capacitor",
+    iosScheme: "https",
   },
   ios: {
     contentInset: "automatic",

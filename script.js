@@ -5097,12 +5097,7 @@ class Game {
         this.music.onStateChange = () => this._updateMusicUI();
         this.music.onTimeUpdate = (cur, dur) => this._updateMusicProgress(cur, dur);
 
-        // Resume audio context when tab becomes visible again
-        document.addEventListener("visibilitychange", () => {
-            if (!document.hidden && this.music && this.music.playing) {
-                this.music.resumePlayback();
-            }
-        });
+        // Audio resume on visibility change is handled by the global listener at bottom of file
 
         // Music starts when the player presses Start (see _startGame)
 
@@ -20218,9 +20213,7 @@ class Game {
         if (this.music) {
             this.music.pause();
             this.music._cancelCrossfade();
-            if (this.music.audio) { this.music.audio.pause(); this.music.audio.src = ""; }
-            if (this.music._preloadedAudio) { this.music._preloadedAudio.src = ""; this.music._preloadedAudio = null; }
-            if (this.music._audioCtx) { try { this.music._audioCtx.close(); } catch {} }
+            // Don't close _audioCtx — it's shared and can't be reopened
         }
         if (this.bgAnim && this.bgAnim._animId) cancelAnimationFrame(this.bgAnim._animId);
     }

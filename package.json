@@ -13,7 +13,11 @@
     "cap:open:android": "npx cap open android",
     "ios": "npm run build && npx cap sync ios && npx cap open ios",
     "android": "npm run build && npx cap sync android && npx cap open android",
-    "icons": "node generate-icons.js"
+    "icons": "node generate-icons.js",
+    "remotion:studio": "npx remotion studio remotion/index.ts",
+    "remotion:render": "npx remotion render remotion/index.ts PlummetTikTok out/tiktok.mp4",
+    "remotion:render60": "npx remotion render remotion/index.ts PlummetTikTok60 out/tiktok-60s.mp4",
+    "remotion:batch": "node remotion/render-batch.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
@@ -56,8 +60,12 @@
   "devDependencies": {
     "@capacitor/cli": "^8.3.0",
     "@preact/preset-vite": "^2.10.5",
+    "@remotion/cli": "^4.0.448",
+    "@remotion/player": "^4.0.448",
+    "@types/react": "^19.2.14",
     "canvas": "^3.2.3",
     "ffmpeg-static": "^5.3.0",
+    "remotion": "^4.0.448",
     "sharp": "^0.34.5",
     "typescript": "^6.0.2",
     "vite": "^8.0.3"

@@ -300,6 +300,11 @@ export class HowlerMusicPlayer {
     // ── Web Audio GainNode for volume control (mobile support) ──
     
     _ensureAudioContext() {
+        // If we have a context but it's been closed, discard it
+        if (this._audioCtx && this._audioCtx.state === 'closed') {
+            this._audioCtx = null;
+            this._gainNode = null;
+        }
         if (!this._audioCtx) {
             this._audioCtx = Howler.ctx || new (window.AudioContext || window.webkitAudioContext)();
             // Listen for iOS-triggered suspensions so we can auto-resume
@@ -307,9 +312,13 @@ export class HowlerMusicPlayer {
                 if (this._audioCtx.state === 'suspended' && this.playing) {
                     this._audioCtx.resume().catch(() => {});
                 }
+                // iOS reports 'interrupted' when system audio takes over
+                if (this._audioCtx.state === 'interrupted' && this.playing) {
+                    this._audioCtx.resume().catch(() => {});
+                }
             };
         }
-        if (this._audioCtx.state === 'suspended') {
+        if (this._audioCtx.state === 'suspended' || this._audioCtx.state === 'interrupted') {
             this._audioCtx.resume().catch(() => {});
         }
         if (!this._gainNode) {
@@ -332,16 +341,18 @@ export class HowlerMusicPlayer {
             // For html5 mode, get the audio element and create MediaElementSource
             if (sound._node && sound._node instanceof HTMLAudioElement) {
                 try {
-                    // Check if already has a source node
-                    if (!sound._gainNode) {
+                    // Check if already has a source node (createMediaElementSource can only be called once)
+                    if (!sound._gainNode && !sound._node._webAudioConnected) {
                         const source = this._audioCtx.createMediaElementSource(sound._node);
                         sound._gainNode = this._audioCtx.createGain();
                         source.connect(sound._gainNode);
                         sound._gainNode.connect(this._gainNode);
+                        sound._node._webAudioConnected = true;
                     }
                 } catch (e) {
                     // Already connected or other error - fallback to Howler volume
                     console.warn('Could not connect to Web Audio:', e.message);
+                    sound._node._webAudioConnected = true; // Mark so we don't try again
                 }
             }
         }
@@ -545,23 +556,106 @@ export class HowlerMusicPlayer {
     resumePlayback() {
         if (!this.playing || !this.currentTrackId) return;
         // Resume Web Audio contexts (both Howler's and ours)
-        if (Howler.ctx?.state === 'suspended') Howler.ctx.resume();
-        if (this._audioCtx?.state === 'suspended') this._audioCtx.resume();
-        if (this._currentHowl && !this._currentHowl.playing()) {
-            this._connectHowlToGain(this._currentHowl);
-            this._applyVolume();
-            this._currentHowl.play();
+        // iOS uses 'interrupted' state; other platforms use 'suspended'
+        if (Howler.ctx && Howler.ctx.state !== 'running') {
+            Howler.ctx.resume().catch(() => {});
         }
+        if (this._audioCtx && this._audioCtx.state !== 'running') {
+            this._audioCtx.resume().catch(() => {});
+        }
+        if (this._currentHowl) {
+            // Check if the underlying Howl is still functional
+            const state = this._currentHowl.state();
+            if (state === 'unloaded' || state === 'loading') {
+                // Howl was destroyed by OS during background — recreate it
+                this._rekindleTrack();
+                return;
+            }
+            if (!this._currentHowl.playing()) {
+                try {
+                    this._connectHowlToGain(this._currentHowl);
+                    this._applyVolume();
+                    this._currentHowl.play();
+                } catch (e) {
+                    // Play failed — recreate the track entirely
+                    console.warn('\u266a Resume play failed, rekindling track:', e.message);
+                    this._rekindleTrack();
+                }
+            }
+        } else {
+            // Howl was garbage collected — recreate
+            this._rekindleTrack();
+        }
+    }
+
+    /**
+     * Recreate the current track's Howl from scratch.
+     * Called when the OS has killed the underlying audio resource.
+     */
+    _rekindleTrack() {
+        if (!this.currentTrackId) return;
+        const track = this.plMgr.getTrack(this.currentTrackId);
+        if (!track) return;
+        // Save position before we destroy
+        let pos = 0;
+        try { pos = this._currentHowl ? this._currentHowl.seek() || 0 : 0; } catch {}
+        // Clean up the dead Howl
+        try { if (this._currentHowl) this._currentHowl.unload(); } catch {}
+        this._currentHowl = null;
+
+        this._currentHowl = new Howl({
+            src: [track.file],
+            html5: true,
+            volume: this._volume,
+            mute: this.muted,
+            onend: () => this._onTrackEnded(),
+            onload: () => {
+                this._connectHowlToGain(this._currentHowl);
+                this._applyVolume();
+                // Restore position if we had one
+                if (pos > 0 && this._currentHowl.duration() > 0) {
+                    this._currentHowl.seek(Math.min(pos, this._currentHowl.duration()));
+                }
+            },
+            onloaderror: (id, err) => {
+                console.warn('\u266a Rekindle load error:', err);
+                this.playing = false;
+                this._notify();
+            },
+            onplayerror: (id, err) => {
+                console.warn('\u266a Rekindle play error:', err);
+                if (Howler.ctx) Howler.ctx.resume().catch(() => {});
+                try { this._currentHowl.play(); } catch {}
+            },
+        });
+
+        this._currentHowl.play();
+        this.playing = true;
+        this._startTimeUpdates();
+        this._notify();
     }
 
     _audioWatchdog() {
         if (!this.playing || !this.currentTrackId) return;
         // Detect AudioContext suspended mid-playback (common on iOS)
-        if (Howler.ctx?.state === 'suspended') Howler.ctx.resume();
-        if (this._audioCtx?.state === 'suspended') this._audioCtx.resume().catch(() => {});
-        // Detect Howl stopped while we think we're playing
-        if (this._currentHowl && !this._currentHowl.playing()) {
-            this._currentHowl.play();
+        if (Howler.ctx && Howler.ctx.state !== 'running') {
+            Howler.ctx.resume().catch(() => {});
+        }
+        if (this._audioCtx && this._audioCtx.state !== 'running') {
+            this._audioCtx.resume().catch(() => {});
+        }
+        // Detect Howl stopped or destroyed while we think we're playing
+        if (!this._currentHowl || this._currentHowl.state() === 'unloaded') {
+            console.warn('\u266a Watchdog: Howl dead, rekindling');
+            this._rekindleTrack();
+            return;
+        }
+        if (!this._currentHowl.playing()) {
+            try {
+                this._currentHowl.play();
+            } catch {
+                this._rekindleTrack();
+            }
         }
     }
 
