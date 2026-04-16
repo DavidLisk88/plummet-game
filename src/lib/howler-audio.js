@@ -520,6 +520,7 @@ export class HowlerMusicPlayer {
 
         this._currentHowl.play();
         this.playing = true;
+        localStorage.setItem('wf_music_paused', '0');
         this._startTimeUpdates();
         this._saveMusicState();
         this._notify();
@@ -915,11 +916,12 @@ export class HowlerMusicPlayer {
                 const idx = q.indexOf(saved.trackId);
                 if (idx >= 0) this._setEffectiveIndex(idx);
             }
-            // Remember if the user was playing — resumePlayback uses this
+            // Only clear the paused flag if we know the user was playing.
+            // Don't force _intentionallyPaused=true for a missing/false saved.playing —
+            // the constructor already reads the canonical value from wf_music_paused.
             if (saved.playing) {
                 this._intentionallyPaused = false;
-            } else {
-                this._intentionallyPaused = true;
+                localStorage.setItem('wf_music_paused', '0');
             }
         } catch {}
     }

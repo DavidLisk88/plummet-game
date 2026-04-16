@@ -3139,7 +3139,7 @@ class Renderer {
 // Update FALLBACK_TRACKS when you add/remove music files.
 // ────────────────────────────────────────
 const FALLBACK_TRACKS = [
-    { id: "track01", title: "LIQUID", artist: "Freddy River", file: "Music/LIQUID.mp3" },
+    { id: "track01", title: "LIQUID", artist: "Freddy River", file: "Music/liquid.mp3" },
 ];
 
 let DEFAULT_TRACKS = [...FALLBACK_TRACKS];

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- Background -->
+  <rect width="400" height="400" fill="#2f3029"/>
+
+  <!-- Falling letters with motion trail lines -->
+  <!-- Each letter has thin vertical lines above it showing its fall path -->
+
+  <!-- L — high left -->
+  <g opacity="0.35">
+    <line x1="138" y1="20" x2="138" y2="88" stroke="#9a9680" stroke-width="1" stroke-linecap="round"/>
+    <line x1="146" y1="14" x2="146" y2="80" stroke="#9a9680" stroke-width="1" stroke-linecap="round"/>
+    <text x="132" y="112" font-family="'Helvetica Neue', 'Segoe UI', Arial, sans-serif" font-size="32" font-weight="300" fill="#9a9680">L</text>
+  </g>
+
+  <!-- T — high right -->
+  <g opacity="0.35">
+    <line x1="240" y1="24" x2="240" y2="82" stroke="#9a9680" stroke-width="1" stroke-linecap="round"/>
+    <line x1="248" y1="18" x2="248" y2="76" stroke="#9a9680" stroke-width="1" stroke-linecap="round"/>
+    <text x="232" y="106" font-family="'Helvetica Neue', 'Segoe UI', Arial, sans-serif" font-size="32" font-weight="300" fill="#9a9680">T</text>
+  </g>
+
+  <!-- M — mid center-left -->
+  <g opacity="0.45">
+    <line x1="182" y1="40" x2="182" y2="118" stroke="#8a866e" stroke-width="1" stroke-linecap="round"/>
+    <line x1="190" y1="34" x2="190" y2="112" stroke="#8a866e" stroke-width="1" stroke-linecap="round"/>
+    <text x="174" y="146" font-family="'Helvetica Neue', 'Segoe UI', Arial, sans-serif" font-size="32" font-weight="300" fill="#8a866e">M</text>
+  </g>
+
+  <!-- E — mid right -->
+  <g opacity="0.42">
+    <line x1="268" y1="46" x2="268" y2="122" stroke="#8a866e" stroke-width="1" stroke-linecap="round"/>
+    <line x1="276" y1="38" x2="276" y2="116" stroke="#8a866e" stroke-width="1" stroke-linecap="round"/>
+    <text x="260" y="148" font-family="'Helvetica Neue', 'Segoe UI', Arial, sans-serif" font-size="32" font-weight="300" fill="#8a866e">E</text>
+  </g>
+
+  <!-- P — lower left, almost landed -->
+  <g opacity="0.7">
+    <line x1="148" y1="90" x2="148" y2="158" stroke="#706c58" stroke-width="1" stroke-linecap="round"/>
+    <line x1="156" y1="82" x2="156" y2="150" stroke="#706c58" stroke-width="1" stroke-linecap="round"/>
+    <text x="140" y="194" font-family="'Helvetica Neue', 'Segoe UI', Arial, sans-serif" font-size="40" font-weight="400" fill="#b0a878">P</text>
+  </g>
+
+  <!-- U — lower center-right -->
+  <g opacity="0.55">
+    <line x1="226" y1="72" x2="226" y2="152" stroke="#7a765e" stroke-width="1" stroke-linecap="round"/>
+    <line x1="234" y1="64" x2="234" y2="146" stroke="#7a765e" stroke-width="1" stroke-linecap="round"/>
+    <text x="218" y="186" font-family="'Helvetica Neue', 'Segoe UI', Arial, sans-serif" font-size="36" font-weight="300" fill="#9a9478">U</text>
+  </g>
+
+  <!-- Main "plummet" logotype — thin elegant lowercase -->
+  <text x="200" y="262" text-anchor="middle" font-family="'Helvetica Neue', 'Segoe UI Light', 'Arial', sans-serif" font-size="62" font-weight="300" fill="#e2d8a6" letter-spacing="3">plummet</text>
+
+  <!-- "WORD FALL" subtitle -->
+  <text x="200" y="294" text-anchor="middle" font-family="'Helvetica Neue', 'Segoe UI', 'Arial', sans-serif" font-size="16" font-weight="300" fill="#b0a878" letter-spacing="8">WORD FALL</text>
+</svg>

@@ -1,10 +1,10 @@
 {
   "name": "plummet",
-  "version": "1.1.1",
+  "version": "1.1.4",
   "description": "A falling-letter word puzzle game",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node build-web.js",
+    "build": "vite build",
     "preview": "vite preview",
     "dedupe:words": "node dedupe-words.js",
     "export:distinct-words": "node dedupe-words.js --output distinct-words.js",

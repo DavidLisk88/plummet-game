@@ -1,134 +1,134 @@
- [
-  {
-    "id": "track01",
-    "title": "UPWARD",
-    "artist": "Freddy River",
-    "file": "Music/UPWARD.mp3"
-  },
-  {
-    "id": "track02",
-    "title": "LIQUID",
-    "artist": "Freddy River",
-    "file": "Music/LIQUID.mp3"
-  },
-  {
-    "id": "track03",
-    "title": "DREAMS",
-    "artist": "Freddy River",
-    "file": "Music/DREAMS.mp3"
-  },
-  {
-    "id": "track04",
-    "title": "LEXICON",
-    "artist": "Freddy River",
-    "file": "Music/LEXICON.mp3"
-  },
-  {
-    "id": "track05",
-    "title": "CANDY",
-    "artist": "Freddy River",
-    "file": "Music/CANDY.mp3"
-  },
-  {
-    "id": "track06",
-    "title": "LINES",
-    "artist": "Freddy River",
-    "file": "Music/LINES.mp3"
-  },
-  {
-    "id": "track07",
-    "title": "GALAXY",
-    "artist": "Freddy River",
-    "file": "Music/GALAXY.mp3"
-  },
-  {
-    "id": "track08",
-    "title": "TUMBLE",
-    "artist": "Freddy River",
-    "file": "Music/TUMBLE.mp3"
-  },
-  {
-    "id": "track09",
-    "title": "POINTS",
-    "artist": "Freddy River",
-    "file": "Music/POINTS.mp3"
-  },
-  {
-    "id": "track10",
-    "title": "It's always something",
-    "artist": "Freddy River",
-    "file": "Music/It's always something.mp3"
-  },
-  {
-    "id": "track11",
-    "title": "It Never Stops, It Never Ends",
-    "artist": "Freddy River",
-    "file": "Music/It Never Stops, It Never Ends.mp3"
-  },
-  {
-    "id": "track12",
-    "title": "AGAINST THE WORLD",
-    "artist": "Freddy River",
-    "file": "Music/AGAINST THE WORLD.mp3"
-  },
-  {
-    "id": "track13",
-    "title": "BERRY WINE 2",
-    "artist": "Freddy River",
-    "file": "Music/BERRY WINE 2.mp3"
-  },
-  {
-    "id": "track14",
-    "title": "CINNAMON MAPLE",
-    "artist": "Freddy River",
-    "file": "Music/CINNAMON MAPLE.mp3"
-  },
-  {
-    "id": "track15",
-    "title": "DON'T WAIT FOR ME",
-    "artist": "Freddy River",
-    "file": "Music/DON'T WAIT FOR ME.mp3"
-  },
-  {
-    "id": "track16",
-    "title": "GOODBYE AGAIN",
-    "artist": "Freddy River",
-    "file": "Music/GOODBYE AGAIN.mp3"
-  },
-  {
-    "id": "track17",
-    "title": "GUMMIES",
-    "artist": "Freddy River",
-    "file": "Music/GUMMIES.mp3"
-  },
-  {
-    "id": "track18",
-    "title": "I DON'T BELONG HERE",
-    "artist": "Freddy River",
-    "file": "Music/I DON'T BELONG HERE.mp3"
-  },
-  {
-    "id": "track19",
-    "title": "IT IS YOU OR IS IT ME",
-    "artist": "Freddy River",
-    "file": "Music/IT IS YOU OR IS IT ME.mp3"
-  },
-  {
-    "id": "track20",
-    "title": "STAY FOREVER",
-    "artist": "Freddy River",
-    "file": "Music/STAY FOREVER.mp3"
-  },
-  {
-    "id": "track21",
-    "title": "THREADS",
-    "artist": "Freddy River",
-    "file": "Music/THREADS.mp3"
-  },
-  {
-    "id": "track22",
-    "title": "UNKNOWN",
-    "artist": "Freddy River",
-    "file": "Music/UNKNOWN.mp3"
-  }
+﻿[
+    {
+        "id": "track01",
+        "title": "UPWARD",
+        "artist": "Freddy River",
+        "file": "Music/upward.mp3"
+    },
+    {
+        "id": "track02",
+        "title": "LIQUID",
+        "artist": "Freddy River",
+        "file": "Music/liquid.mp3"
+    },
+    {
+        "id": "track03",
+        "title": "DREAMS",
+        "artist": "Freddy River",
+        "file": "Music/dreams.mp3"
+    },
+    {
+        "id": "track04",
+        "title": "LEXICON",
+        "artist": "Freddy River",
+        "file": "Music/lexicon.mp3"
+    },
+    {
+        "id": "track05",
+        "title": "CANDY",
+        "artist": "Freddy River",
+        "file": "Music/candy.mp3"
+    },
+    {
+        "id": "track06",
+        "title": "LINES",
+        "artist": "Freddy River",
+        "file": "Music/lines.mp3"
+    },
+    {
+        "id": "track07",
+        "title": "GALAXY",
+        "artist": "Freddy River",
+        "file": "Music/galaxy.mp3"
+    },
+    {
+        "id": "track08",
+        "title": "TUMBLE",
+        "artist": "Freddy River",
+        "file": "Music/tumble.mp3"
+    },
+    {
+        "id": "track09",
+        "title": "POINTS",
+        "artist": "Freddy River",
+        "file": "Music/points.mp3"
+    },
+    {
+        "id": "track10",
+        "title": "It\u0027s always something",
+        "artist": "Freddy River",
+        "file": "Music/its-always-something.mp3"
+    },
+    {
+        "id": "track11",
+        "title": "It Never Stops, It Never Ends",
+        "artist": "Freddy River",
+        "file": "Music/it-never-stops-it-never-ends.mp3"
+    },
+    {
+        "id": "track12",
+        "title": "AGAINST THE WORLD",
+        "artist": "Freddy River",
+        "file": "Music/against-the-world.mp3"
+    },
+    {
+        "id": "track13",
+        "title": "BERRY WINE 2",
+        "artist": "Freddy River",
+        "file": "Music/berry-wine-2.mp3"
+    },
+    {
+        "id": "track14",
+        "title": "CINNAMON MAPLE",
+        "artist": "Freddy River",
+        "file": "Music/cinnamon-maple.mp3"
+    },
+    {
+        "id": "track15",
+        "title": "DON\u0027T WAIT FOR ME",
+        "artist": "Freddy River",
+        "file": "Music/dont-wait-for-me.mp3"
+    },
+    {
+        "id": "track16",
+        "title": "GOODBYE AGAIN",
+        "artist": "Freddy River",
+        "file": "Music/goodbye-again.mp3"
+    },
+    {
+        "id": "track17",
+        "title": "GUMMIES",
+        "artist": "Freddy River",
+        "file": "Music/gummies.mp3"
+    },
+    {
+        "id": "track18",
+        "title": "I DON\u0027T BELONG HERE",
+        "artist": "Freddy River",
+        "file": "Music/i-dont-belong-here.mp3"
+    },
+    {
+        "id": "track19",
+        "title": "IT IS YOU OR IS IT ME",
+        "artist": "Freddy River",
+        "file": "Music/it-is-you-or-is-it-me.mp3"
+    },
+    {
+        "id": "track20",
+        "title": "STAY FOREVER",
+        "artist": "Freddy River",
+        "file": "Music/stay-forever.mp3"
+    },
+    {
+        "id": "track21",
+        "title": "THREADS",
+        "artist": "Freddy River",
+        "file": "Music/threads.mp3"
+    },
+    {
+        "id": "track22",
+        "title": "UNKNOWN",
+        "artist": "Freddy River",
+        "file": "Music/unknown.mp3"
+    }
 ]
