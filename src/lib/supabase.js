@@ -509,6 +509,14 @@ export async function updateMyRanking() {
 
 // Note: refreshLeaderboard and refreshChallengeLeaderboards are restricted to service_role.
 // Use updateMyRanking() for per-user updates after games.
+// Use refreshMyStats() to un-stale PGS skill_rating + leaderboard ranking.
+export async function refreshMyStats() {
+    if (isLocalMode) return { success: true, profiles_updated: 0 };
+    const { data, error } = await supabase.rpc('refresh_my_stats');
+    if (error) throw error;
+    return data;
+}
+
 export async function refreshLeaderboard() {
     if (isLocalMode) return;
     const { error } = await supabase.rpc('refresh_leaderboard');

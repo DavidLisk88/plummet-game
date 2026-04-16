@@ -17588,6 +17588,11 @@ class Game {
             import('./src/lib/push-notifications.js')
                 .then(({ registerPushNotifications }) => registerPushNotifications())
                 .catch(e => console.warn('[push] registration skipped:', e));
+            // Silently refresh stats (un-stale PGS skill_rating + leaderboard) — fire-and-forget
+            import('./src/lib/supabase.js')
+                .then(({ refreshMyStats }) => refreshMyStats())
+                .then(r => r?.profiles_updated && console.log('[auth] stats refreshed, profiles_updated:', r.profiles_updated))
+                .catch(e => console.warn('[auth] stats refresh skipped:', e));
         } catch (err) {
             console.error('[auth] failed to load cloud profiles:', err);
             this._initialSyncComplete = true; // Even on error, allow syncing (user may have new data)
