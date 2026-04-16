@@ -495,6 +495,7 @@ export class HowlerMusicPlayer {
         }
 
         // Create new Howl for the track
+        this._loadRetries = 0;
         this._currentHowl = new Howl({
             src: [track.file],
             html5: true,  // Streaming for music (doesn't load entire file)
@@ -502,13 +503,26 @@ export class HowlerMusicPlayer {
             mute: this.muted,  // Set initial mute state for mobile reliability
             onend: () => this._onTrackEnded(),
             onload: () => {
+                this._loadRetries = 0;
                 // Connect to Web Audio GainNode for mobile volume control
                 this._connectHowlToGain(this._currentHowl);
                 this._applyVolume();
             },
             onloaderror: (id, err) => {
-                console.warn('♪ Howler load error on track', trackId, err);
-                if (this.playing) this.next();
+                console.warn('♪ Howler load error on track', trackId, err, 'attempt', this._loadRetries + 1);
+                this._loadRetries++;
+                if (this._loadRetries <= 2) {
+                    // Retry after a short delay (iOS sometimes fails first load after background)
+                    setTimeout(() => {
+                        if (this._currentHowl) {
+                            try { this._currentHowl.unload(); } catch {}
+                        }
+                        this.playTrackById(trackId);
+                    }, 500 * this._loadRetries);
+                } else {
+                    this._loadRetries = 0;
+                    if (this.playing) this.next();
+                }
             },
             onplayerror: (id, err) => {
                 console.warn('♪ Howler play error on track', trackId, err);
@@ -572,14 +586,17 @@ export class HowlerMusicPlayer {
         }
         if (!this.playing) return;  // User actually paused — don't resume
         this._intentionallyPaused = false;
+
         // Resume Web Audio contexts (both Howler's and ours)
         // iOS uses 'interrupted' state; other platforms use 'suspended'
-        if (Howler.ctx && Howler.ctx.state !== 'running') {
-            Howler.ctx.resume().catch(() => {});
-        }
-        if (this._audioCtx && this._audioCtx.state !== 'running') {
-            this._audioCtx.resume().catch(() => {});
-        }
+        const resumeCtx = (ctx) => {
+            if (ctx && ctx.state !== 'running') {
+                ctx.resume().catch(() => {});
+            }
+        };
+        resumeCtx(Howler.ctx);
+        resumeCtx(this._audioCtx);
+
         if (this._currentHowl) {
             // Check if the underlying Howl is still functional
             const state = this._currentHowl.state();
@@ -588,11 +605,32 @@ export class HowlerMusicPlayer {
                 this._rekindleTrack();
                 return;
             }
+            // iOS sometimes leaves the HTMLAudioElement in a broken state
+            // where state is 'loaded' but .playing() returns false and play() silently fails.
+            // Detect by checking the underlying <audio> element's error property.
+            try {
+                const sounds = this._currentHowl._sounds || [];
+                for (const s of sounds) {
+                    if (s._node && s._node.error) {
+                        console.warn('♪ Underlying audio element has error, rekindling');
+                        this._rekindleTrack();
+                        return;
+                    }
+                }
+            } catch (_) {}
+
             if (!this._currentHowl.playing()) {
                 try {
                     this._connectHowlToGain(this._currentHowl);
                     this._applyVolume();
                     this._currentHowl.play();
+                    // Verify playback actually started after a short delay
+                    setTimeout(() => {
+                        if (this.playing && this._currentHowl && !this._currentHowl.playing()) {
+                            console.warn('♪ Play call succeeded but not playing, rekindling');
+                            this._rekindleTrack();
+                        }
+                    }, 500);
                 } catch (e) {
                     // Play failed — recreate the track entirely
                     console.warn('\u266a Resume play failed, rekindling track:', e.message);

@@ -20317,6 +20317,24 @@ document.addEventListener("visibilitychange", () => {
         }
     }
 });
+
+// ── Capacitor native app state listener (more reliable than visibilitychange on iOS) ──
+(async () => {
+    try {
+        const { App } = await import('@capacitor/app');
+        App.addListener('appStateChange', ({ isActive }) => {
+            const g = window._game;
+            if (!g) return;
+            if (isActive) {
+                if (g.music) g.music.resumePlayback();
+            } else {
+                if (g.music) g.music._saveMusicState();
+            }
+        });
+    } catch (_) {
+        // @capacitor/app not available (web) — visibilitychange is sufficient
+    }
+})();
 window.addEventListener("beforeunload", () => {
     const g = window._game;
     if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
