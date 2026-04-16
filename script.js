@@ -18666,6 +18666,9 @@ class Game {
                 wsLevel: safeInt(scoreData.wsLevel),
                 wsIsPerfectClear: scoreData.wsIsPerfectClear || false,
                 wsClearSeconds: scoreData.wsClearSeconds ?? null,
+                // T2: Server-side level sync
+                level: safeInt(profile.level),
+                totalXp: safeInt(profile.totalXp),
             });
 
             // Check if server reported failure
@@ -18688,6 +18691,14 @@ class Game {
             try {
                 const { clearLeaderboardCache, fetchMyRank } = await import('./src/lib/leaderboard-service.js');
                 clearLeaderboardCache();
+                // T6: Reset any expanded analysis dropdowns so stale HTML is removed
+                document.querySelectorAll('.lb-entry.expanded').forEach(e => {
+                    e.classList.remove('expanded');
+                    const el = e.querySelector('.lb-analysis');
+                    if (el) { el.style.maxHeight = '0'; el.classList.remove('fully-open'); }
+                    const inner = e.querySelector('.lb-analysis-inner');
+                    if (inner) inner.innerHTML = '<div class="lb-analysis-loading">Loading analysis...</div>';
+                });
                 const myRank = await fetchMyRank(true);
                 this._updateMyRankDisplay(myRank);
             } catch (e) {

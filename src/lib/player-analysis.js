@@ -355,7 +355,9 @@ export function generatePlayerAnalysis(data) {
         html += `<span class="analysis-stat">Level ${level || 1}</span>`;
         html += `<span class="analysis-stat">${games_played} games</span>`;
         html += `<span class="analysis-stat">Rating: ${(skill_rating || 0).toFixed(1)}</span>`;
-        if (players_in_class > 1) {
+        if (data.class_rank && players_in_class > 1) {
+            html += `<span class="analysis-stat">#${data.class_rank} of ${players_in_class} in ${_classLabel(skill_class)}</span>`;
+        } else if (players_in_class > 1) {
             html += `<span class="analysis-stat">${players_in_class} in ${_classLabel(skill_class)}</span>`;
         }
         html += `</div>`;

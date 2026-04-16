@@ -198,6 +198,7 @@ export async function recordGame({
     timeRemainingSeconds, xpEarned, coinsEarned, gridFactor,
     difficultyMultiplier, modeMultiplier,
     wsPlacedWords, wsLevel, wsIsPerfectClear, wsClearSeconds,
+    level, totalXp,
 }) {
     if (isLocalMode) return null;
     const { data, error } = await supabase.rpc('record_game', {
@@ -225,6 +226,8 @@ export async function recordGame({
         p_ws_level: wsLevel ?? null,
         p_ws_is_perfect_clear: wsIsPerfectClear || false,
         p_ws_clear_seconds: wsClearSeconds ?? null,
+        p_level: level ?? null,
+        p_total_xp: totalXp ?? null,
     });
     if (error) throw error;
     return data;
