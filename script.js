@@ -20476,4 +20476,13 @@ Promise.all([
     
     // Hide loading screen
     LoadingScreen.hide();
+
+    // Notify Capgo OTA updater that the app loaded successfully.
+    // Without this call, Capgo assumes the update is broken and rolls back.
+    try {
+        const { CapacitorUpdater } = await import('@capgo/capacitor-updater');
+        await CapacitorUpdater.notifyAppReady();
+    } catch (e) {
+        // Not on a native platform or plugin not available — safe to ignore
+    }
 });
