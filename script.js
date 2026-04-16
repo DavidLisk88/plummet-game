@@ -18660,7 +18660,7 @@ class Game {
             // Check if server reported failure
             if (result && result.success === false) {
                 console.error('[supabase] record_game server error:', result.error);
-                this._showSyncError('Game not saved to cloud');
+                this._showSyncError('Game not saved: ' + (result.error || 'server error'));
             }
 
             // Clear leaderboard cache and refresh my rank display immediately
@@ -18675,21 +18675,22 @@ class Game {
             }
         } catch (err) {
             console.error('[supabase] Failed to record game score:', err);
-            this._showSyncError('Game not saved to cloud');
+            this._showSyncError('Game not saved: ' + (err.message || err));
         }
     }
 
-    /** Show a brief non-blocking toast when cloud sync fails */
+    /** Show a non-blocking toast when cloud sync fails — tappable to dismiss */
     _showSyncError(msg) {
         const existing = document.querySelector('.sync-error-toast');
         if (existing) existing.remove();
         const toast = document.createElement('div');
         toast.className = 'sync-error-toast';
         toast.textContent = '⚠ ' + msg;
-        toast.style.cssText = 'position:fixed;top:env(safe-area-inset-top,12px);left:50%;transform:translateX(-50%);background:#ff4444;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .3s;pointer-events:none;';
+        toast.style.cssText = 'position:fixed;top:env(safe-area-inset-top,12px);left:50%;transform:translateX(-50%);background:#ff4444;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .3s;pointer-events:auto;cursor:pointer;max-width:90vw;word-break:break-word;text-align:center;';
+        toast.addEventListener('click', () => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); });
         document.body.appendChild(toast);
         requestAnimationFrame(() => toast.style.opacity = '1');
-        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 4000);
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 12000);
     }
 
     // ════════════════════════════════════════
