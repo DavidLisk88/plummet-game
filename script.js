@@ -3993,11 +3993,15 @@ class ProfileManager {
     }
 
     _save() {
-        localStorage.setItem("wf_profiles", JSON.stringify({
-            version: 1,
-            profiles: this.profiles,
-            activeId: this.activeId,
-        }));
+        try {
+            localStorage.setItem("wf_profiles", JSON.stringify({
+                version: 1,
+                profiles: this.profiles,
+                activeId: this.activeId,
+            }));
+        } catch (e) {
+            console.error('[profile] localStorage save failed:', e);
+        }
     }
 
     getAll() { return this.profiles; }
@@ -4079,7 +4083,10 @@ class ProfileManager {
         p.totalWords += wordsFound.length;
         if (!Array.isArray(p.uniqueWordsFound)) p.uniqueWordsFound = [];
         const uniqueSet = new Set(p.uniqueWordsFound);
-        for (const { word } of wordsFound) uniqueSet.add(word);
+        for (const entry of wordsFound) {
+            const w = typeof entry === 'string' ? entry : (entry.word || '');
+            if (w) uniqueSet.add(w);
+        }
         p.uniqueWordsFound = [...uniqueSet];
         if (score > p.highScore) p.highScore = score;
         this._save();
@@ -4129,7 +4136,10 @@ class ProfileManager {
         cs.totalWords += wordsFound.length;
         if (!Array.isArray(cs.uniqueWordsFound)) cs.uniqueWordsFound = [];
         const uniqueSet = new Set(cs.uniqueWordsFound);
-        for (const { word } of wordsFound) uniqueSet.add(word);
+        for (const entry of wordsFound) {
+            const w = typeof entry === 'string' ? entry : (entry.word || '');
+            if (w) uniqueSet.add(w);
+        }
         cs.uniqueWordsFound = [...uniqueSet];
         if (score > cs.highScore) cs.highScore = score;
         this._save();
@@ -9339,7 +9349,7 @@ class Game {
     }
 
 
-    _gameOver(reason = "board") {
+    async _gameOver(reason = "board") {
         if (this.state === State.GAMEOVER) return;
         const timedOut = reason === "time";
         if (timedOut) {
@@ -9538,8 +9548,8 @@ class Game {
         // ── Show gameover screen with XP animation ──
         this._showGameOverXP(xpEarned, xpResult, wasFirstGame);
 
-        // ── Record to Supabase and update ranking (awaited so rank is ready) ──
-        this._recordGameToSupabase({
+        // ── Record to Supabase and update ranking — await before profile sync ──
+        await this._recordGameToSupabase({
             gameMode: this.gameMode,
             isChallenge: !!this._gameOverChallenge,
             challengeType: this._gameOverChallenge || null,
@@ -9549,7 +9559,7 @@ class Game {
             timeLimitSeconds: this.timeLimitSeconds || null,
             score: this.score,
             wordsFound: wordsCount.length || 0,
-            longestWordLength: Math.max(0, ...(wordsCount.map(w => w.length) || [0])),
+            longestWordLength: Math.max(0, ...(wordsCount.map(w => (w.word || w || "").length) || [0])),
             bestCombo: this.bestCombo || 0,
             targetWordsCompleted: this.targetWordsCompleted ?? 0,
             bonusWordsCompleted: (this.categoryWordsFound || []).length,
@@ -17214,6 +17224,10 @@ class Game {
         // Logout
         this.els.authLogoutBtn?.addEventListener("click", async () => {
             try {
+                const { unregisterPushToken } = await import('./src/lib/push-notifications.js');
+                await unregisterPushToken();
+            } catch (e) { /* ignore */ }
+            try {
                 const { signOut } = await import('./src/lib/supabase.js');
                 await signOut();
             } catch (e) {
@@ -17566,6 +17580,13 @@ class Game {
             // Load milestone timestamps after profiles are synced
             await this._loadMilestonesFromCloud();
             this._renderMilestonesPage();
+            // Register for push notifications after successful auth
+            try {
+                const { registerPushNotifications } = await import('./src/lib/push-notifications.js');
+                await registerPushNotifications();
+            } catch (e) {
+                console.warn('[push] registration skipped:', e);
+            }
         } catch (err) {
             console.error('[auth] failed to load cloud profiles:', err);
             this._initialSyncComplete = true; // Even on error, allow syncing (user may have new data)
@@ -18587,7 +18608,7 @@ class Game {
             const myRank = await fetchMyRank(true);
             this._updateMyRankDisplay(myRank);
         } catch (e) {
-            // Non-critical — don't block menu rendering
+            console.warn('[leaderboard] rank refresh failed:', e.message || e);
         }
     }
 
@@ -18606,7 +18627,10 @@ class Game {
             const { isLocalMode, recordGame } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
             const profile = this.profileMgr.getActive();
-            if (!profile || !profile.cloudId) return;
+            if (!profile || !profile.cloudId) {
+                console.warn('[supabase] No active profile or cloudId — game not recorded');
+                return;
+            }
 
             const result = await recordGame({
                 profileId: profile.cloudId,
@@ -18639,6 +18663,7 @@ class Game {
             // Check if server reported failure
             if (result && result.success === false) {
                 console.error('[supabase] record_game server error:', result.error);
+                this._showSyncError('Game not saved to cloud');
             }
 
             // Clear leaderboard cache and refresh my rank display immediately
@@ -18653,7 +18678,21 @@ class Game {
             }
         } catch (err) {
             console.error('[supabase] Failed to record game score:', err);
+            this._showSyncError('Game not saved to cloud');
         }
+    }
+
+    /** Show a brief non-blocking toast when cloud sync fails */
+    _showSyncError(msg) {
+        const existing = document.querySelector('.sync-error-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.className = 'sync-error-toast';
+        toast.textContent = '⚠ ' + msg;
+        toast.style.cssText = 'position:fixed;top:env(safe-area-inset-top,12px);left:50%;transform:translateX(-50%);background:#ff4444;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .3s;pointer-events:none;';
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => toast.style.opacity = '1');
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 4000);
     }
 
     // ════════════════════════════════════════
@@ -19294,7 +19333,7 @@ class Game {
         }, 300);
     }
 
-    _wsLevelComplete(advanceLevel = true, earlyFinish = false) {
+    async _wsLevelComplete(advanceLevel = true, earlyFinish = false) {
         if (!this._ws || this._ws.gameOver) return;
         const ws = this._ws;
         const wordsFoundCount = ws.foundWords.size;
@@ -19390,7 +19429,7 @@ class Game {
         const bonusWordsFound = wordsFoundCount - placedWordsFound;
 
         // Record to Supabase
-        this._recordGameToSupabase({
+        await this._recordGameToSupabase({
             gameMode: GAME_MODES.SANDBOX,
             isChallenge: true,
             challengeType: CHALLENGE_TYPES.WORD_SEARCH,
@@ -19412,11 +19451,11 @@ class Game {
             modeMultiplier: 1.0,
             // Word Search specific fields for aggregate stats
             wsPlacedWords: ws.placedWordSet.size,
-            wsLevel: ws.level,
+            wsLevel: this.profileMgr.getWordSearchLevel(),
             wsIsPerfectClear: earlyFinish,
             wsClearSeconds: earlyFinish ? (WORD_SEARCH_TIME_LIMIT - timeRemaining) : null,
         });
-        this._syncProfileToCloud();
+        await this._syncProfileToCloud();
 
         // Auto-advance to next level after a brief delay
         ws.gameOver = true;
@@ -20025,7 +20064,7 @@ class Game {
         return antiRepeatPick(weightedPick(letters, weights));
     }
 
-    _wrShowGameOver() {
+    async _wrShowGameOver() {
       try {
         const wr = this._wr;
         if (!wr) return;
@@ -20117,7 +20156,7 @@ class Game {
         this._showScreen("gameover");
 
         // Record to Supabase and sync profile
-        this._recordGameToSupabase({
+        await this._recordGameToSupabase({
             gameMode: GAME_MODES.SANDBOX,
             isChallenge: true,
             challengeType: CHALLENGE_TYPES.WORD_RUNNER,
@@ -20138,7 +20177,7 @@ class Game {
             difficultyMultiplier: 1.0,
             modeMultiplier: 1.0,
         });
-        this._syncProfileToCloud();
+        await this._syncProfileToCloud();
 
         // Animate XP text in after a delay (matches main game flow)
         setTimeout(() => {
@@ -20270,6 +20309,11 @@ document.addEventListener("visibilitychange", () => {
     } else if (document.visibilityState === "visible") {
         const g = window._game;
         if (g && g.music) g.music.resumePlayback();
+        // Reconnect leaderboard realtime if it dropped while backgrounded
+        if (g && g._lbRealtimeChannel) {
+            g._unsubscribeLeaderboardRealtime();
+            g._subscribeLeaderboardRealtime();
+        }
     }
 });
 window.addEventListener("beforeunload", () => {

@@ -273,6 +273,9 @@ export class HowlerMusicPlayer {
         this._shuffledIndex = -1;
         this.repeatMode = localStorage.getItem('wf_music_repeat') || 'all';
 
+        // Track user-initiated pause vs OS-killed audio
+        this._intentionallyPaused = localStorage.getItem('wf_music_paused') === '1';
+
         // Crossfade
         this._crossfadeDuration = 1.5;
         this._crossfadeHowl = null;
@@ -391,13 +394,15 @@ export class HowlerMusicPlayer {
             const j = Math.floor(Math.random() * (i + 1));
             [this._shuffledQueue[i], this._shuffledQueue[j]] = [this._shuffledQueue[j], this._shuffledQueue[i]];
         }
-        if (this.currentTrackId) {
+        // Ensure the track we just finished is NOT first (avoid immediate repeat)
+        if (this.currentTrackId && this._shuffledQueue.length > 1) {
             const idx = this._shuffledQueue.indexOf(this.currentTrackId);
-            if (idx > 0) {
-                [this._shuffledQueue[0], this._shuffledQueue[idx]] = [this._shuffledQueue[idx], this._shuffledQueue[0]];
+            if (idx === 0) {
+                // Move it to the end instead
+                this._shuffledQueue.push(this._shuffledQueue.shift());
             }
-            this._shuffledIndex = 0;
         }
+        this._shuffledIndex = 0;
     }
 
     _getEffectiveQueue() {
@@ -471,6 +476,7 @@ export class HowlerMusicPlayer {
         const track = this.plMgr.getTrack(trackId);
         if (!track) return;
 
+        this._intentionallyPaused = false;
         const q = this._getEffectiveQueue();
         const idx = q.indexOf(trackId);
         if (idx >= 0) this._setEffectiveIndex(idx);
@@ -520,6 +526,7 @@ export class HowlerMusicPlayer {
     }
 
     play() {
+        this._intentionallyPaused = false;
         if (this.currentTrackId && this._currentHowl) {
             // Connect to Web Audio and apply volume (mobile support)
             this._connectHowlToGain(this._currentHowl);
@@ -540,6 +547,7 @@ export class HowlerMusicPlayer {
     }
 
     pause() {
+        this._intentionallyPaused = true;
         if (this._currentHowl) this._currentHowl.pause();
         this._cancelCrossfade();
         this.playing = false;
@@ -554,7 +562,15 @@ export class HowlerMusicPlayer {
     }
 
     resumePlayback() {
-        if (!this.playing || !this.currentTrackId) return;
+        // Check if user was playing before backgrounding
+        // (playing may have been set to false by onend firing during background)
+        if (!this.currentTrackId) return;
+        if (!this.playing && !this._intentionallyPaused) {
+            // OS killed audio while backgrounded — restore playing state
+            this.playing = true;
+        }
+        if (!this.playing) return;  // User actually paused — don't resume
+        this._intentionallyPaused = false;
         // Resume Web Audio contexts (both Howler's and ours)
         // iOS uses 'interrupted' state; other platforms use 'suspended'
         if (Howler.ctx && Howler.ctx.state !== 'running') {
@@ -637,6 +653,8 @@ export class HowlerMusicPlayer {
 
     _audioWatchdog() {
         if (!this.playing || !this.currentTrackId) return;
+        // Don't restart tracks that ended naturally or were intentionally paused
+        if (this._intentionallyPaused) return;
         // Detect AudioContext suspended mid-playback (common on iOS)
         if (Howler.ctx && Howler.ctx.state !== 'running') {
             Howler.ctx.resume().catch(() => {});
@@ -650,12 +668,19 @@ export class HowlerMusicPlayer {
             this._rekindleTrack();
             return;
         }
+        // Only restart if the track has remaining duration (didn't end naturally)
         if (!this._currentHowl.playing()) {
-            try {
-                this._currentHowl.play();
-            } catch {
-                this._rekindleTrack();
+            const dur = this._currentHowl.duration() || 0;
+            const pos = this._currentHowl.seek() || 0;
+            if (dur > 0 && pos < dur - 0.5) {
+                // Track was interrupted mid-play — restart it
+                try {
+                    this._currentHowl.play();
+                } catch {
+                    this._rekindleTrack();
+                }
             }
+            // If pos >= dur - 0.5, the track ended naturally — let _onTrackEnded handle it
         }
     }
 
@@ -664,12 +689,19 @@ export class HowlerMusicPlayer {
         if (q.length === 0) return;
         let newIdx = this._getEffectiveIndex() + 1;
         if (newIdx >= q.length) {
-            if (this.repeatMode === 'off') { this.pause(); return; }
+            if (this.repeatMode === 'off') { this.pause(); this._intentionallyPaused = true; return; }
             newIdx = 0;
             if (this.shuffleOn) this._reshuffleQueue();
         }
+        // Re-read queue after potential reshuffle
+        const currentQ = this._getEffectiveQueue();
+        const nextTrackId = currentQ[newIdx];
+        // Guard against playing the same track we're on (shuffle put it at 0)
+        if (nextTrackId === this.currentTrackId && currentQ.length > 1) {
+            newIdx = (newIdx + 1) % currentQ.length;
+        }
         this._setEffectiveIndex(newIdx);
-        this.playTrackById(q[newIdx]);
+        this.playTrackById(currentQ[newIdx]);
     }
 
     prev() {
@@ -882,6 +914,12 @@ export class HowlerMusicPlayer {
                 const q = this._getEffectiveQueue();
                 const idx = q.indexOf(saved.trackId);
                 if (idx >= 0) this._setEffectiveIndex(idx);
+            }
+            // Remember if the user was playing — resumePlayback uses this
+            if (saved.playing) {
+                this._intentionallyPaused = false;
+            } else {
+                this._intentionallyPaused = true;
             }
         } catch {}
     }

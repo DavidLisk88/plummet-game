@@ -9,4 +9,13 @@ export default defineConfig({
     emptyOutDir: true,
     target: 'safari15',
   },
+  server: {
+    fs: {
+      // Allow serving files from project root
+      allow: ['.'],
+    },
+  },
+  optimizeDeps: {
+    entries: ['index.html'],
+  },
 });

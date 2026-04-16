@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plummet — Push Notifications</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0a; color: #e0e0e0;
+            min-height: 100vh; padding: 2rem;
+        }
+        .container { max-width: 640px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #fff; }
+        h1 span { color: #fbbf24; }
+        .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 2rem; }
+        
+        /* Setup Section */
+        .setup-section {
+            background: #1a1a1a; border-radius: 12px; padding: 1.5rem;
+            margin-bottom: 1.5rem; border: 1px solid #333;
+        }
+        .setup-section h2 { font-size: 1rem; margin-bottom: 1rem; color: #fbbf24; }
+        .setup-section label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 0.25rem; }
+        .setup-section input {
+            width: 100%; padding: 0.6rem 0.8rem; background: #0a0a0a;
+            border: 1px solid #444; border-radius: 8px; color: #fff;
+            font-size: 0.9rem; margin-bottom: 0.75rem;
+        }
+        .setup-section input:focus { outline: none; border-color: #fbbf24; }
+        .btn-save {
+            background: #333; color: #fbbf24; border: 1px solid #fbbf24;
+            padding: 0.5rem 1.2rem; border-radius: 8px; cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .btn-save:hover { background: #fbbf24; color: #000; }
+        
+        /* Stats Bar */
+        .stats-bar {
+            display: flex; gap: 1rem; margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            flex: 1; background: #1a1a1a; border-radius: 12px;
+            padding: 1rem; text-align: center; border: 1px solid #333;
+        }
+        .stat-card .number { font-size: 1.8rem; font-weight: 700; color: #fbbf24; }
+        .stat-card .label { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+        
+        /* Compose */
+        .compose {
+            background: #1a1a1a; border-radius: 12px; padding: 1.5rem;
+            border: 1px solid #333; margin-bottom: 1.5rem;
+        }
+        .compose h2 { font-size: 1rem; margin-bottom: 1rem; }
+        .compose label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 0.25rem; }
+        .compose input, .compose textarea, .compose select {
+            width: 100%; padding: 0.6rem 0.8rem; background: #0a0a0a;
+            border: 1px solid #444; border-radius: 8px; color: #fff;
+            font-size: 0.9rem; margin-bottom: 0.75rem; resize: vertical;
+        }
+        .compose input:focus, .compose textarea:focus { outline: none; border-color: #fbbf24; }
+        .compose textarea { min-height: 80px; }
+        .char-count { font-size: 0.7rem; color: #666; text-align: right; margin-top: -0.5rem; margin-bottom: 0.75rem; }
+        
+        .btn-send {
+            width: 100%; padding: 0.8rem; background: #fbbf24; color: #000;
+            border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
+            cursor: pointer; transition: opacity 0.2s;
+        }
+        .btn-send:hover { opacity: 0.9; }
+        .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+        
+        /* Preview */
+        .preview {
+            background: #1a1a1a; border-radius: 12px; padding: 1rem;
+            border: 1px solid #333; margin-bottom: 1rem;
+        }
+        .preview-label { font-size: 0.7rem; color: #666; margin-bottom: 0.5rem; }
+        .ios-notif {
+            background: #2a2a2a; border-radius: 14px; padding: 0.75rem 1rem;
+            display: flex; gap: 0.75rem; align-items: flex-start;
+        }
+        .ios-notif .app-icon {
+            width: 38px; height: 38px; border-radius: 9px;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; font-weight: 700; color: #000; flex-shrink: 0;
+        }
+        .ios-notif .content { flex: 1; }
+        .ios-notif .app-name { font-size: 0.7rem; color: #999; margin-bottom: 0.15rem; }
+        .ios-notif .notif-title { font-size: 0.85rem; font-weight: 600; color: #fff; }
+        .ios-notif .notif-body { font-size: 0.8rem; color: #ccc; margin-top: 0.15rem; }
+        
+        /* History */
+        .history { margin-top: 1.5rem; }
+        .history h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+        .history-item {
+            background: #1a1a1a; border-radius: 10px; padding: 0.75rem 1rem;
+            border: 1px solid #333; margin-bottom: 0.5rem;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .history-item .hi-content { flex: 1; }
+        .history-item .hi-title { font-size: 0.85rem; font-weight: 600; }
+        .history-item .hi-body { font-size: 0.75rem; color: #999; }
+        .history-item .hi-meta { font-size: 0.7rem; color: #666; text-align: right; }
+        .history-item .hi-sent { color: #4ade80; font-weight: 600; }
+        
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+            padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.85rem;
+            font-weight: 500; z-index: 1000; opacity: 0; transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        .toast.success { background: #166534; color: #4ade80; }
+        .toast.error { background: #7f1d1d; color: #fca5a5; }
+        .toast.show { opacity: 1; }
+        
+        .connected-badge {
+            display: inline-block; padding: 0.2rem 0.6rem; border-radius: 20px;
+            font-size: 0.7rem; font-weight: 600;
+        }
+        .connected-badge.ok { background: #16342a; color: #4ade80; }
+        .connected-badge.err { background: #3b1111; color: #fca5a5; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📬 <span>Plummet</span> Notifications</h1>
+        <p class="subtitle">Send push notifications to all Plummet players</p>
+        
+        <!-- Setup -->
+        <div class="setup-section" id="setup-section">
+            <h2>⚙ Connection Setup</h2>
+            <label>Supabase URL</label>
+            <input id="cfg-url" type="url" placeholder="https://your-project.supabase.co" />
+            <label>Service Role Key <span style="color:#f87171">(keep secret!)</span></label>
+            <input id="cfg-key" type="password" placeholder="eyJhbGci..." />
+            <button class="btn-save" onclick="saveConfig()">Connect</button>
+            <span id="conn-status" style="margin-left:0.75rem"></span>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-bar" id="stats-bar" style="display:none">
+            <div class="stat-card">
+                <div class="number" id="stat-tokens">-</div>
+                <div class="label">Registered Devices</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="stat-sent">-</div>
+                <div class="label">Notifications Sent</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="stat-users">-</div>
+                <div class="label">Total Users</div>
+            </div>
+        </div>
+
+        <!-- Compose -->
+        <div class="compose" id="compose-section" style="display:none">
+            <h2>Compose Notification</h2>
+            <label>Target</label>
+            <select id="notif-target">
+                <option value="all">All Users</option>
+            </select>
+            <label>Title</label>
+            <input id="notif-title" type="text" placeholder="New Update Available!" maxlength="50" oninput="updatePreview()" />
+            <div class="char-count"><span id="title-count">0</span>/50</div>
+            <label>Message</label>
+            <textarea id="notif-body" placeholder="Check out the latest features..." maxlength="200" oninput="updatePreview()"></textarea>
+            <div class="char-count"><span id="body-count">0</span>/200</div>
+            
+            <div class="preview">
+                <div class="preview-label">PREVIEW</div>
+                <div class="ios-notif">
+                    <div class="app-icon">P</div>
+                    <div class="content">
+                        <div class="app-name">PLUMMET · now</div>
+                        <div class="notif-title" id="preview-title">Notification Title</div>
+                        <div class="notif-body" id="preview-body">Notification body text</div>
+                    </div>
+                </div>
+            </div>
+            
+            <button class="btn-send" id="btn-send" onclick="sendNotification()">
+                Send Notification
+            </button>
+        </div>
+
+        <!-- History -->
+        <div class="history" id="history-section" style="display:none">
+            <h2>Recent Notifications</h2>
+            <div id="history-list"></div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let SUPABASE_URL = '';
+        let SERVICE_ROLE_KEY = '';
+
+        // ── Config ──
+        function saveConfig() {
+            SUPABASE_URL = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
+            SERVICE_ROLE_KEY = document.getElementById('cfg-key').value.trim();
+            if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+                showToast('Fill in both fields', 'error');
+                return;
+            }
+            // Persist in sessionStorage (not localStorage for security)
+            sessionStorage.setItem('plummet_notif_url', SUPABASE_URL);
+            sessionStorage.setItem('plummet_notif_key', SERVICE_ROLE_KEY);
+            testConnection();
+        }
+
+        async function testConnection() {
+            const status = document.getElementById('conn-status');
+            try {
+                const res = await sbFetch('/rest/v1/push_tokens?select=token&limit=1');
+                if (res.ok) {
+                    status.innerHTML = '<span class="connected-badge ok">Connected</span>';
+                    document.getElementById('setup-section').style.display = 'none';
+                    document.getElementById('stats-bar').style.display = 'flex';
+                    document.getElementById('compose-section').style.display = '';
+                    document.getElementById('history-section').style.display = '';
+                    loadStats();
+                    loadHistory();
+                    loadUsers();
+                } else {
+                    const err = await res.text();
+                    status.innerHTML = `<span class="connected-badge err">Error: ${res.status}</span>`;
+                }
+            } catch (e) {
+                status.innerHTML = `<span class="connected-badge err">Failed to connect</span>`;
+            }
+        }
+
+        // ── Supabase REST helper ──
+        function sbFetch(path, opts = {}) {
+            return fetch(`${SUPABASE_URL}${path}`, {
+                ...opts,
+                headers: {
+                    'apikey': SERVICE_ROLE_KEY,
+                    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation',
+                    ...(opts.headers || {}),
+                },
+            });
+        }
+
+        // ── Stats ──
+        async function loadStats() {
+            try {
+                // Token count
+                const tokRes = await sbFetch('/rest/v1/push_tokens?select=id', { headers: { 'Prefer': 'count=exact' } });
+                const tokCount = tokRes.headers.get('content-range')?.split('/')[1] || '0';
+                document.getElementById('stat-tokens').textContent = tokCount;
+
+                // Notification count
+                const notifRes = await sbFetch('/rest/v1/notification_log?select=id', { headers: { 'Prefer': 'count=exact' } });
+                const notifCount = notifRes.headers.get('content-range')?.split('/')[1] || '0';
+                document.getElementById('stat-sent').textContent = notifCount;
+
+                // User count
+                const userRes = await sbFetch('/rest/v1/profiles?select=id', { headers: { 'Prefer': 'count=exact' } });
+                const userCount = userRes.headers.get('content-range')?.split('/')[1] || '0';
+                document.getElementById('stat-users').textContent = userCount;
+            } catch (e) {
+                console.error('Stats load failed:', e);
+            }
+        }
+
+        // ── Load users for target dropdown ──
+        async function loadUsers() {
+            try {
+                const res = await sbFetch('/rest/v1/profiles?select=id,username,account_id&order=username.asc');
+                const profiles = await res.json();
+                const select = document.getElementById('notif-target');
+                profiles.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.account_id;
+                    opt.textContent = p.username;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('Users load failed:', e);
+            }
+        }
+
+        // ── Preview ──
+        function updatePreview() {
+            const title = document.getElementById('notif-title').value || 'Notification Title';
+            const body = document.getElementById('notif-body').value || 'Notification body text';
+            document.getElementById('preview-title').textContent = title;
+            document.getElementById('preview-body').textContent = body;
+            document.getElementById('title-count').textContent = document.getElementById('notif-title').value.length;
+            document.getElementById('body-count').textContent = document.getElementById('notif-body').value.length;
+        }
+
+        // ── Send ──
+        async function sendNotification() {
+            const title = document.getElementById('notif-title').value.trim();
+            const body = document.getElementById('notif-body').value.trim();
+            const target = document.getElementById('notif-target').value;
+
+            if (!title || !body) {
+                showToast('Title and message are required', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btn-send');
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+
+            try {
+                const res = await fetch(`${SUPABASE_URL}/functions/v1/send-notification`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ title, body, target }),
+                });
+
+                const result = await res.json();
+
+                if (res.ok && result.sent !== undefined) {
+                    showToast(`Sent to ${result.sent} device(s)`, 'success');
+                    document.getElementById('notif-title').value = '';
+                    document.getElementById('notif-body').value = '';
+                    updatePreview();
+                    loadStats();
+                    loadHistory();
+                } else {
+                    showToast(result.error || 'Send failed', 'error');
+                }
+            } catch (e) {
+                showToast('Network error: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Notification';
+            }
+        }
+
+        // ── History ──
+        async function loadHistory() {
+            try {
+                const res = await sbFetch('/rest/v1/notification_log?select=*&order=sent_at.desc&limit=20');
+                const logs = await res.json();
+                const list = document.getElementById('history-list');
+                
+                if (!logs.length) {
+                    list.innerHTML = '<p style="color:#666;font-size:0.85rem">No notifications sent yet</p>';
+                    return;
+                }
+
+                list.innerHTML = logs.map(log => {
+                    const date = new Date(log.sent_at);
+                    const timeStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const targetStr = log.target === 'all' ? 'All Users' : log.target.substring(0, 8) + '...';
+                    return `
+                        <div class="history-item">
+                            <div class="hi-content">
+                                <div class="hi-title">${esc(log.title)}</div>
+                                <div class="hi-body">${esc(log.body)}</div>
+                            </div>
+                            <div class="hi-meta">
+                                <div class="hi-sent">${log.tokens_sent} sent</div>
+                                <div>${targetStr}</div>
+                                <div>${timeStr}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error('History load failed:', e);
+            }
+        }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        // ── Toast ──
+        function showToast(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = `toast ${type} show`;
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        // ── Auto-restore session ──
+        (function init() {
+            const savedUrl = sessionStorage.getItem('plummet_notif_url');
+            const savedKey = sessionStorage.getItem('plummet_notif_key');
+            if (savedUrl && savedKey) {
+                document.getElementById('cfg-url').value = savedUrl;
+                document.getElementById('cfg-key').value = savedKey;
+                SUPABASE_URL = savedUrl;
+                SERVICE_ROLE_KEY = savedKey;
+                testConnection();
+            }
+        })();
+    </script>
+</body>
+</html>

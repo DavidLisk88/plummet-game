@@ -17,7 +17,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function _getCached(key) {
     const entry = _cache.get(key);
-    if (entry && entry.fetchedAt > Date.now() - CACHE_TTL) return entry.data;
+    if (entry && entry.fetchedAt > Date.now() - CACHE_TTL) return entry;
     return null;
 }
 
@@ -40,7 +40,7 @@ export async function fetchMainLeaderboard({ limit = 50, offset = 0, classFilter
     const cacheKey = `main_${limit}_${offset}_${classFilter}`;
     if (!forceRefresh) {
         const cached = _getCached(cacheKey);
-        if (cached) return cached;
+        if (cached) return cached.data;
     }
 
     const data = await getLeaderboard(limit, offset, classFilter);
@@ -60,7 +60,7 @@ export async function fetchChallengeLeaderboard(challengeType, { limit = 50, off
     const cacheKey = `challenge_${challengeType}_${limit}_${offset}_${classFilter}`;
     if (!forceRefresh) {
         const cached = _getCached(cacheKey);
-        if (cached) return cached;
+        if (cached) return cached.data;
     }
 
     const data = await getChallengeLeaderboard(challengeType, limit, offset, classFilter);
@@ -78,7 +78,7 @@ export async function fetchMyRank(forceRefresh = false) {
     const cacheKey = 'myRank';
     if (!forceRefresh) {
         const cached = _getCached(cacheKey);
-        if (cached !== null) return cached;
+        if (cached !== null) return cached.data;
     }
 
     const data = await getMyRank();
@@ -97,7 +97,7 @@ export async function fetchMyChallengeRank(challengeType, forceRefresh = false) 
     const cacheKey = `myChallengeRank_${challengeType}`;
     if (!forceRefresh) {
         const cached = _getCached(cacheKey);
-        if (cached !== null) return cached;
+        if (cached !== null) return cached.data;
     }
 
     const data = await getMyChallengeRank(challengeType);
@@ -125,7 +125,7 @@ export async function fetchPlayerAnalysis(entry, challengeType = null) {
         ? `analysis_${profileId}_${challengeType}`
         : `analysis_${profileId}`;
     const cachedAnalysis = _getCached(analysisCacheKey);
-    if (cachedAnalysis) return cachedAnalysis;
+    if (cachedAnalysis) return cachedAnalysis.data;
 
     let html = '';
 
