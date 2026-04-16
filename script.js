@@ -4133,6 +4133,7 @@ class ProfileManager {
         }
         const cs = p.challengeStats[challengeType];
         cs.gamesPlayed++;
+        p.gamesPlayed++;  // Count challenges toward total games (matches server)
         cs.totalWords += wordsFound.length;
         if (!Array.isArray(cs.uniqueWordsFound)) cs.uniqueWordsFound = [];
         const uniqueSet = new Set(cs.uniqueWordsFound);
@@ -18664,6 +18665,15 @@ class Game {
             if (result && result.success === false) {
                 console.error('[supabase] record_game server error:', result.error);
                 this._showSyncError('Game not saved: ' + (result.error || 'server error'));
+            }
+
+            // Sync local game count from server's authoritative value
+            if (result && result.games_played && this.profileMgr) {
+                const p = this.profileMgr.getActive();
+                if (p && result.games_played > p.gamesPlayed) {
+                    p.gamesPlayed = result.games_played;
+                    this.profileMgr._save();
+                }
             }
 
             // Clear leaderboard cache and refresh my rank display immediately
