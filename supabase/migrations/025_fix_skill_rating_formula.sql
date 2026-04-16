@@ -262,23 +262,23 @@ BEGIN
         v_progression * 0.05
     );
 
-    -- FIX: EXPAND TO 0-15,000 SCALE using 3.5-power curve (was 8th — too brutal)
-    -- Power 3.5 is more responsive to component improvements:
-    --   Components avg 50/100 → 15000 × 0.50^3.5 = 1,326  (low)
-    --   Components avg 60/100 → 15000 × 0.60^3.5 = 2,507  (medium)
-    --   Components avg 70/100 → 15000 × 0.70^3.5 = 4,118  (medium)
-    --   Components avg 80/100 → 15000 × 0.80^3.5 = 6,144  (high)
-    --   Components avg 90/100 → 15000 × 0.90^3.5 = 10,358 (master)
-    v_skill := 15000.0 * POWER(v_skill / 100.0, 3.5);
+    -- FIX: EXPAND TO 0-15,000 SCALE using 3.0-power curve (was 8th — too brutal)
+    -- Power 3.0 is friendly and responsive to component improvements:
+    --   Components avg 50/100 → 15000 × 0.50^3.0 = 1,875  (low)
+    --   Components avg 60/100 → 15000 × 0.60^3.0 = 3,240  (medium)
+    --   Components avg 70/100 → 15000 × 0.70^3.0 = 5,145  (high)
+    --   Components avg 80/100 → 15000 × 0.80^3.0 = 7,680  (high)
+    --   Components avg 90/100 → 15000 × 0.90^3.0 = 10,935 (master)
+    v_skill := 15000.0 * POWER(v_skill / 100.0, 3.0);
 
     -- FIX: Activity bonus — every game played guarantees a small upward drift.
-    -- LN(1 + games) * 12:  10 games → +29, 50 games → +47, 100 games → +55
+    -- LN(1 + games) * 15:  10 games → +36, 50 games → +59, 100 games → +69
     -- Enough to ensure ratings always increase, too small to dominate.
-    v_skill := v_skill + LN(1 + v_total_games) * 12;
+    v_skill := v_skill + LN(1 + v_total_games) * 15;
 
-    -- FIX: Faster confidence gate — 30 games instead of 50 to reach full potential.
+    -- FIX: Faster confidence gate — 25 games instead of 50 to reach full potential.
     -- New players reach 100% in fewer games, so they see meaningful growth sooner.
-    v_skill := v_skill * LEAST(1.0, v_total_games / 30.0);
+    v_skill := v_skill * LEAST(1.0, v_total_games / 25.0);
 
     -- DETERMINE CLASS
     IF v_skill >= 10000 THEN v_class := 'master';
