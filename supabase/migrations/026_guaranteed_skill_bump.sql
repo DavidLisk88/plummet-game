@@ -55,7 +55,9 @@ DECLARE
     v_completion_rate REAL;
     v_game_entry JSONB;
     v_new_profile_skill REAL;
-    v_min_bump REAL;           -- ← NEW: guaranteed minimum bump per game
+    v_min_bump REAL;           -- guaranteed minimum bump per game
+    v_max_bump REAL;           -- cap per mode
+    v_perf_score REAL;         -- 0-1 performance ratio from score+xp+coins
 BEGIN
     -- Verify ownership
     SELECT account_id INTO v_account_id
@@ -467,10 +469,11 @@ BEGIN
 
     -- ════════════════════════════════════════════════════════════════
     -- D. Compute + store monotonic skill_rating on profile_game_stats
-    --    with GUARANTEED MINIMUM BUMP per game mode
+    --    with PERFORMANCE-SCALED bump per game mode
+    --    Score, XP, and coins earned determine how much rating goes up.
     -- ════════════════════════════════════════════════════════════════
     BEGIN
-        -- Determine guaranteed minimum bump based on game mode
+        -- Determine guaranteed minimum and maximum bump based on game mode
         v_min_bump := CASE
             WHEN p_is_challenge AND p_challenge_type = 'speed-round'    THEN 1.5
             WHEN p_is_challenge AND p_challenge_type = 'target-word'    THEN 1.0
@@ -481,10 +484,35 @@ BEGIN
             ELSE 0.1  -- sandbox (casual, untimed)
         END;
 
+        v_max_bump := CASE
+            WHEN p_is_challenge AND p_challenge_type = 'speed-round'    THEN 30.0
+            WHEN p_is_challenge AND p_challenge_type = 'target-word'    THEN 25.0
+            WHEN p_is_challenge AND p_challenge_type = 'word-search'    THEN 25.0
+            WHEN p_is_challenge AND p_challenge_type = 'word-runner'    THEN 25.0
+            WHEN p_is_challenge AND p_challenge_type = 'word-category'  THEN 20.0
+            WHEN p_game_mode = 'timed'                                  THEN 15.0
+            ELSE 10.0  -- sandbox max
+        END;
+
+        -- Performance score: blend of score, XP, and coins (each normalized)
+        -- score/5000 → good game ~1.0, great game >1.0
+        -- xp/500     → typical xp earn ~1.0
+        -- coins/200  → typical coin earn ~1.0
+        -- Average them, clamp to 0-1 range for interpolation
+        v_perf_score := LEAST(1.0, GREATEST(0.0,
+            (COALESCE(p_score, 0)::REAL / GREATEST(5000, 1)
+             + COALESCE(p_xp_earned, 0)::REAL / GREATEST(500, 1)
+             + COALESCE(p_coins_earned, 0)::REAL / GREATEST(200, 1)
+            ) / 3.0
+        ));
+
+        -- Interpolate between min and max: min_bump + perf * (max - min)
+        v_min_bump := v_min_bump + v_perf_score * (v_max_bump - v_min_bump);
+
         SELECT ps.skill_rating INTO v_new_profile_skill
         FROM compute_profile_skill(p_profile_id) ps;
 
-        -- Ratchet: stored value always goes up by AT LEAST v_min_bump.
+        -- Ratchet: stored value always goes up by AT LEAST the performance-scaled bump.
         -- If the computed value is even higher, it wins.
         UPDATE profile_game_stats SET
             skill_rating = GREATEST(

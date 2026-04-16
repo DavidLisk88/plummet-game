@@ -6686,6 +6686,14 @@ body.touch-input #mobile-controls {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
+/* Games played count in entry row */
+.lb-games {
+    font-size: 0.65rem;
+    color: #888;
+    font-weight: 400;
+    white-space: nowrap;
+    margin-right: 2px;
+}
 .lb-rank-1 { color: #FFD700; font-size: 1.1rem; }
 .lb-rank-2 { color: #C0C0C0; font-size: 1.05rem; }
 .lb-rank-3 { color: #CD7F32; font-size: 1rem; }

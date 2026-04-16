@@ -18144,9 +18144,11 @@ class Game {
         p.level = row.level || 1;
         p.xp = row.xp || 0;
         p.totalXp = row.total_xp || 0;
-        p.highScore = row.high_score || 0;
-        p.gamesPlayed = row.games_played || 0;
-        p.totalWords = row.total_words || 0;
+        // F5 fix: use Math.max to prevent profiles-table realtime events
+        // from overwriting higher values synced from profile_game_stats
+        p.highScore = Math.max(p.highScore || 0, row.high_score || 0);
+        p.gamesPlayed = Math.max(p.gamesPlayed || 0, row.games_played || 0);
+        p.totalWords = Math.max(p.totalWords || 0, row.total_words || 0);
         p.totalCoinsEarned = row.total_coins_earned || 0;
         p.coins = row.coins ?? 0;
         p.lastPlayDate = row.last_play_date || null;
@@ -18226,12 +18228,14 @@ class Game {
         else if (entry.global_rank === 3) { rankCss = 'lb-rank-3'; div.classList.add('lb-top-3'); }
 
         const rating = (entry.skill_rating || 0).toFixed(1);
+        const gamesCount = entry.games_played ? `${entry.games_played}g` : '';
 
         div.innerHTML = `
             <div class="lb-entry-row">
                 <span class="lb-rank ${rankCss}">#${entry.global_rank}</span>
                 <span class="lb-class-badge ${classCss}">${classLabel}</span>
                 <span class="lb-username">${this._escapeHtml(entry.username)}</span>
+                <span class="lb-games">${gamesCount}</span>
                 <span class="lb-rating">${rating}</span>
                 <span class="lb-entry-arrow">›</span>
             </div>
