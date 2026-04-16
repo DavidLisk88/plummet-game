@@ -20321,7 +20321,9 @@ document.addEventListener("visibilitychange", () => {
 // ── Capacitor native app state listener (more reliable than visibilitychange on iOS) ──
 (async () => {
     try {
-        const { App } = await import('@capacitor/app');
+        // Use variable to prevent Vite from statically resolving this import
+        const mod = '@capaci' + 'tor/app';
+        const { App } = await import(/* @vite-ignore */ mod);
         App.addListener('appStateChange', ({ isActive }) => {
             const g = window._game;
             if (!g) return;
