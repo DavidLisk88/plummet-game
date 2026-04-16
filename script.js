@@ -18629,30 +18629,33 @@ class Game {
                 return;
             }
 
+            // Ensure all integer fields are integers (PostgreSQL rejects floats for INT columns)
+            const safeInt = v => v == null ? null : Math.round(v);
+
             const result = await recordGame({
                 profileId: profile.cloudId,
                 gameMode: scoreData.gameMode,
                 isChallenge: scoreData.isChallenge || false,
                 challengeType: scoreData.challengeType || null,
                 categoryKey: scoreData.categoryKey || null,
-                gridSize: scoreData.gridSize,
+                gridSize: safeInt(scoreData.gridSize),
                 difficulty: scoreData.difficulty,
-                timeLimitSeconds: scoreData.timeLimitSeconds ?? null,
-                score: scoreData.score ?? 0,
-                wordsFound: scoreData.wordsFound ?? 0,
-                longestWordLength: scoreData.longestWordLength ?? 0,
-                bestCombo: scoreData.bestCombo ?? 0,
-                targetWordsCompleted: scoreData.targetWordsCompleted ?? 0,
-                bonusWordsCompleted: scoreData.bonusWordsCompleted ?? 0,
-                timeRemainingSeconds: scoreData.timeRemainingSeconds ?? null,
-                xpEarned: scoreData.xpEarned ?? 0,
-                coinsEarned: scoreData.coinsEarned ?? 0,
+                timeLimitSeconds: safeInt(scoreData.timeLimitSeconds),
+                score: safeInt(scoreData.score) ?? 0,
+                wordsFound: safeInt(scoreData.wordsFound) ?? 0,
+                longestWordLength: safeInt(scoreData.longestWordLength) ?? 0,
+                bestCombo: safeInt(scoreData.bestCombo) ?? 0,
+                targetWordsCompleted: safeInt(scoreData.targetWordsCompleted) ?? 0,
+                bonusWordsCompleted: safeInt(scoreData.bonusWordsCompleted) ?? 0,
+                timeRemainingSeconds: safeInt(scoreData.timeRemainingSeconds),
+                xpEarned: safeInt(scoreData.xpEarned) ?? 0,
+                coinsEarned: safeInt(scoreData.coinsEarned) ?? 0,
                 gridFactor: scoreData.gridFactor ?? null,
                 difficultyMultiplier: scoreData.difficultyMultiplier ?? null,
                 modeMultiplier: scoreData.modeMultiplier ?? null,
                 // Word Search specific fields
-                wsPlacedWords: scoreData.wsPlacedWords ?? null,
-                wsLevel: scoreData.wsLevel ?? null,
+                wsPlacedWords: safeInt(scoreData.wsPlacedWords),
+                wsLevel: safeInt(scoreData.wsLevel),
                 wsIsPerfectClear: scoreData.wsIsPerfectClear || false,
                 wsClearSeconds: scoreData.wsClearSeconds ?? null,
             });
