@@ -17580,13 +17580,10 @@ class Game {
             // Load milestone timestamps after profiles are synced
             await this._loadMilestonesFromCloud();
             this._renderMilestonesPage();
-            // Register for push notifications after successful auth
-            try {
-                const { registerPushNotifications } = await import('./src/lib/push-notifications.js');
-                await registerPushNotifications();
-            } catch (e) {
-                console.warn('[push] registration skipped:', e);
-            }
+            // Register for push notifications after successful auth (fire-and-forget, don't block auth)
+            import('./src/lib/push-notifications.js')
+                .then(({ registerPushNotifications }) => registerPushNotifications())
+                .catch(e => console.warn('[push] registration skipped:', e));
         } catch (err) {
             console.error('[auth] failed to load cloud profiles:', err);
             this._initialSyncComplete = true; // Even on error, allow syncing (user may have new data)
