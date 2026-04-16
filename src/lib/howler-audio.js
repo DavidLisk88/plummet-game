@@ -281,6 +281,13 @@ export class HowlerMusicPlayer {
         this._crossfadeHowl = null;
         this._crossfading = false;
 
+        // VBR duration stability tracking (F2)
+        this._lastKnownDuration = 0;
+        this._durationStableSince = 0;
+
+        // Circuit breaker: consecutive load failures across tracks (F3)
+        this._consecutiveTrackFailures = 0;
+
         // Sleep timer
         this.sleepTimerEnd = 0;
         this.sleepTimerInterval = null;
@@ -487,6 +494,9 @@ export class HowlerMusicPlayer {
         }
         this.currentTrackId = trackId;
         this._cancelCrossfade();
+        // Reset duration tracking for crossfade stability (F2)
+        this._lastKnownDuration = 0;
+        this._durationStableSince = 0;
 
         // Stop current track
         if (this._currentHowl) {
@@ -504,6 +514,7 @@ export class HowlerMusicPlayer {
             onend: () => this._onTrackEnded(),
             onload: () => {
                 this._loadRetries = 0;
+                this._consecutiveTrackFailures = 0; // Reset circuit breaker on successful load
                 // Connect to Web Audio GainNode for mobile volume control
                 this._connectHowlToGain(this._currentHowl);
                 this._applyVolume();
@@ -521,7 +532,16 @@ export class HowlerMusicPlayer {
                     }, 500 * this._loadRetries);
                 } else {
                     this._loadRetries = 0;
-                    if (this.playing) this.next();
+                    this._consecutiveTrackFailures++;
+                    // Circuit breaker: stop trying after failing more tracks than the queue has
+                    if (this._consecutiveTrackFailures >= this._getEffectiveQueue().length) {
+                        console.warn('♪ All tracks failed to load — stopping playback');
+                        this._consecutiveTrackFailures = 0;
+                        this.playing = false;
+                        this._notify();
+                    } else if (this.playing) {
+                        this.next();
+                    }
                 }
             },
             onplayerror: (id, err) => {
@@ -805,6 +825,8 @@ export class HowlerMusicPlayer {
             }
             return;
         }
+        // If crossfade already handled the transition, don't double-skip (F1)
+        if (this._crossfading) return;
         this.next();
     }
 
@@ -873,10 +895,25 @@ export class HowlerMusicPlayer {
                     this._currentHowl.duration() || 0
                 );
             }
-            // Check for crossfade trigger
+            // Check for crossfade trigger (with VBR duration stability guard — F2)
             const dur = this._currentHowl.duration();
             const pos = this._currentHowl.seek();
-            if (dur > 0 && pos > 0 && dur - pos < this._crossfadeDuration + 0.5) {
+            const now = Date.now();
+            // Track duration stability: only crossfade if duration hasn't changed recently
+            if (dur > 0) {
+                if (!this._lastKnownDuration || Math.abs(dur - this._lastKnownDuration) > 0.5) {
+                    this._lastKnownDuration = dur;
+                    this._durationStableSince = now;
+                }
+            }
+            const durationStable = this._durationStableSince && (now - this._durationStableSince > 5000);
+            const minPlayTime = Math.max(15, this._crossfadeDuration * 5);
+            if (dur > 0 && pos > 0
+                && durationStable
+                && pos >= minPlayTime
+                && dur - pos < this._crossfadeDuration + 0.5
+                && dur > this._crossfadeDuration * 2
+                && this._getEffectiveQueue().length > 1) {
                 const nextId = this._getNextTrackId();
                 if (nextId && !this._crossfading) {
                     this._startCrossfade(nextId);
@@ -975,6 +1012,10 @@ export class HowlerMusicPlayer {
     destroy() {
         this._stopTimeUpdates();
         this.clearSleepTimer();
+        if (this._watchdogTimer) {
+            clearInterval(this._watchdogTimer);
+            this._watchdogTimer = null;
+        }
         if (this._currentHowl) this._currentHowl.unload();
         if (this._crossfadeHowl) this._crossfadeHowl.unload();
     }

@@ -5097,7 +5097,10 @@ class Game {
 
         // Always start on profiles screen on fresh page load;
         // music starts once a profile is selected.
-        localStorage.setItem("wf_music_paused", "0");
+        // Only clear paused flag if user wasn't explicitly paused (F5)
+        if (localStorage.getItem("wf_music_paused") !== "1") {
+            localStorage.setItem("wf_music_paused", "0");
+        }
         this._loadActiveProfile();
         this._initStartScreen();
         this._highlightSizeButton();
@@ -20303,7 +20306,10 @@ document.addEventListener("touchmove", (e) => {
 
 // Auto-save when the user navigates away or closes the tab
 document.addEventListener("visibilitychange", () => {
+    const resumeOverlay = document.getElementById('resume-overlay');
     if (document.visibilityState === "hidden") {
+        // Show Plummet overlay so iOS snapshots it instead of raw game state
+        if (resumeOverlay) resumeOverlay.classList.remove('resume-overlay--hidden');
         const g = window._game;
         if (g && (g.state === State.PLAYING || g.state === State.PAUSED || g.state === State.CLEARING)) {
             g._saveGameState();
@@ -20318,6 +20324,8 @@ document.addEventListener("visibilitychange", () => {
         }
         if (g && g.music) g.music._saveMusicState();
     } else if (document.visibilityState === "visible") {
+        // Fade out the resume overlay
+        if (resumeOverlay) resumeOverlay.classList.add('resume-overlay--hidden');
         const g = window._game;
         if (g && g.music) g.music.resumePlayback();
         // Reconnect leaderboard realtime if it dropped while backgrounded
@@ -20337,9 +20345,14 @@ document.addEventListener("visibilitychange", () => {
         App.addListener('appStateChange', ({ isActive }) => {
             const g = window._game;
             if (!g) return;
+            const resumeOverlay = document.getElementById('resume-overlay');
             if (isActive) {
+                // Fade out the resume overlay
+                if (resumeOverlay) resumeOverlay.classList.add('resume-overlay--hidden');
                 if (g.music) g.music.resumePlayback();
             } else {
+                // Show Plummet overlay so iOS snapshots it
+                if (resumeOverlay) resumeOverlay.classList.remove('resume-overlay--hidden');
                 if (g.music) g.music._saveMusicState();
             }
         });
