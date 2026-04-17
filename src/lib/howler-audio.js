@@ -592,6 +592,35 @@ export class HowlerMusicPlayer {
         this._notify();
     }
 
+    /**
+     * Pause audio for backgrounding without changing playing state.
+     * Safe to call even if audio is in a broken state.
+     */
+    pauseForBackground() {
+        if (!this.playing) return;
+        this._autoPausedByBackground = true;
+        try { if (this._currentHowl) this._currentHowl.pause(); } catch (e) { console.warn('[Music] pauseForBackground: howl.pause() failed:', e); }
+        this._stopTimeUpdates();
+        // Suspend Web Audio contexts
+        const suspendCtx = (ctx) => {
+            if (ctx && ctx.state === 'running') {
+                ctx.suspend().catch(e => console.warn('[Music] pauseForBackground: ctx.suspend() failed:', e));
+            }
+        };
+        suspendCtx(Howler.ctx);
+        suspendCtx(this._audioCtx);
+    }
+
+    /**
+     * Resume audio after returning from background.
+     * Only resumes if we auto-paused (not user-initiated pause).
+     */
+    resumeFromBackground() {
+        if (!this._autoPausedByBackground) return;
+        this._autoPausedByBackground = false;
+        this.resumePlayback();
+    }
+
     toggle() {
         this.playing ? this.pause() : this.play();
     }
