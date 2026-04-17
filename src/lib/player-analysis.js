@@ -563,14 +563,16 @@ export function generateChallengeAnalysis(data) {
     }
 
     // ── Consistency insight ──
+    // score_consistency from SQL = 1 - min(1, stddev/avg)
+    //   → 1.0 = perfectly consistent, 0.0 = max variance
     if (score_consistency != null && games_played >= 3) {
         html += `<div class="analysis-section">`;
         const cons = score_consistency;
-        if (cons <= 0.15) {
+        if (cons >= 0.85) {
             html += `<p class="analysis-desc">Remarkably consistent — scores barely fluctuate between games.</p>`;
-        } else if (cons <= 0.35) {
+        } else if (cons >= 0.65) {
             html += `<p class="analysis-desc">Solid consistency with tight score ranges across sessions.</p>`;
-        } else if (cons <= 0.55) {
+        } else if (cons >= 0.45) {
             html += `<p class="analysis-desc">Moderate variance — some games pop off while others are more subdued.</p>`;
         } else {
             html += `<p class="analysis-desc">High variance scorer — capable of explosive games but not always hitting that peak.</p>`;
