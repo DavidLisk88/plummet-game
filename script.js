@@ -20460,7 +20460,7 @@ document.addEventListener("visibilitychange", () => {
             // auto-resume on return (vs user-initiated pause which should stick).
             if (g.music.playing) {
                 g.music._autoPausedByBackground = true;
-                g.music.audio.pause();
+                if (g.music.audio && typeof g.music.audio.pause === 'function') g.music.audio.pause();
                 if (g.music._audioCtx && g.music._audioCtx.state === "running") {
                     g.music._audioCtx.suspend().catch(e => console.warn('[Music] visibilitychange: AudioContext.suspend() failed:', e));
                 }
@@ -20506,7 +20506,7 @@ document.addEventListener("visibilitychange", () => {
                 if (g.music) {
                     if (g.music.playing) {
                         g.music._autoPausedByBackground = true;
-                        g.music.audio.pause();
+                        if (g.music.audio && typeof g.music.audio.pause === 'function') g.music.audio.pause();
                         if (g.music._audioCtx && g.music._audioCtx.state === "running") {
                             g.music._audioCtx.suspend().catch(e => console.warn('[Music] appStateChange: AudioContext.suspend() failed:', e));
                         }
