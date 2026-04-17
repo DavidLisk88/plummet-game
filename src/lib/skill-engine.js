@@ -18,10 +18,11 @@
  *   Raw Score            | 5%     | Overall scoring ability (diminishing returns)
  *   Progression          | 5%     | Improvement trend over time
  * 
- * Class thresholds (0-10,000 scale):
- *   High Class:   5000+ skill rating
- *   Medium Class: 1500-4999
- *   Low Class:    0-1499
+ * Class thresholds (0-50,000 scale):
+ *   Master Class: 33000+ skill rating
+ *   High Class:   16500-32999
+ *   Medium Class: 5000-16499
+ *   Low Class:    0-4999
  *
  * Games-played confidence gate:
  *   Rating is scaled by min(1, gamesPlayed / 50).
@@ -40,8 +41,9 @@ const WEIGHTS = {
 };
 
 const CLASS_THRESHOLDS = {
-    HIGH: 5000,
-    MEDIUM: 1500,
+    MASTER: 33000,
+    HIGH: 16500,
+    MEDIUM: 5000,
 };
 
 /**
@@ -220,9 +222,9 @@ export function computeSkillRating(playerData) {
         versatility * WEIGHTS.VERSATILITY +
         progression * WEIGHTS.PROGRESSION;
 
-    // ═══ EXPAND TO 0-10000 SCALE ═══
-    // Square the 0-100 internal score to create a wide competitive range
-    skillRating = skillRating * skillRating / 100;
+    // ═══ EXPAND TO 0-50000 SCALE ═══
+    // Cubic curve matching server-side: 50000 * (x/100)^3
+    skillRating = 50000.0 * Math.pow(skillRating / 100.0, 3.0);
 
     // ═══ GAMES-PLAYED CONFIDENCE GATE ═══
     // Scale down rating for players with few games (full at 50 games)
@@ -236,7 +238,8 @@ export function computeSkillRating(playerData) {
 
     // ═══ DETERMINE CLASS ═══
     let skillClass = 'low';
-    if (skillRating >= CLASS_THRESHOLDS.HIGH) skillClass = 'high';
+    if (skillRating >= CLASS_THRESHOLDS.MASTER) skillClass = 'master';
+    else if (skillRating >= CLASS_THRESHOLDS.HIGH) skillClass = 'high';
     else if (skillRating >= CLASS_THRESHOLDS.MEDIUM) skillClass = 'medium';
 
     return {

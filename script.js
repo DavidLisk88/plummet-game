@@ -3492,7 +3492,10 @@ class MusicManager {
         this.audio.muted = !!this.muted;
         this._ensureGainNode(this.audio);
         this._bindAudioListeners(this.audio);
-        this.audio.play().catch(() => {});
+        this.audio.play().catch(() => {
+            // play() rejected — audio element may be broken after backgrounding
+            this._rebuildAudioPipeline();
+        });
         this.playing = true;
         this._saveMusicState();
         this._notify();
@@ -3502,7 +3505,10 @@ class MusicManager {
     play() {
         if (this.currentTrackId) {
             this._ensureGainNode(this.audio);
-            this.audio.play().catch(() => {});
+            this.audio.play().catch(() => {
+                // play() rejected — audio element may be dead after backgrounding
+                this._rebuildAudioPipeline();
+            });
             this.playing = true;
             localStorage.setItem("wf_music_paused", "0");
             this._preloadNextTrack();
@@ -3531,23 +3537,99 @@ class MusicManager {
 
     resumePlayback() {
         if (!this.playing || !this.currentTrackId) return;
+
+        // After backgrounding, the AudioContext and MediaElementSource chain
+        // is often destroyed by the OS (especially iOS). Detect and rebuild.
+        const ctxDead = this._audioCtx && (
+            this._audioCtx.state === "closed" ||
+            this._audioCtx.state === "interrupted"
+        );
+        if (ctxDead) {
+            this._rebuildAudioPipeline();
+            return;
+        }
         if (this._audioCtx && this._audioCtx.state === "suspended") {
-            this._audioCtx.resume().catch(() => {});
+            this._audioCtx.resume().catch(() => {
+                // resume() failed — pipeline is likely dead, rebuild
+                this._rebuildAudioPipeline();
+            });
         }
         if (this.audio.paused) {
-            this.audio.play().catch(() => {});
+            this.audio.play().catch(() => {
+                // play() rejected — rebuild the pipeline and retry
+                this._rebuildAudioPipeline();
+            });
         }
+    }
+
+    /**
+     * Tear down and rebuild the entire Web Audio pipeline from scratch.
+     * Creates a fresh AudioContext, Audio element, and source→gain chain.
+     * Used when returning from background after the OS killed the audio graph.
+     */
+    _rebuildAudioPipeline() {
+        if (!this.currentTrackId || !this.playing) return;
+        const track = this.plMgr.getTrack(this.currentTrackId);
+        if (!track) return;
+
+        const savedPosition = this.audio.currentTime || 0;
+
+        // Tear down old pipeline completely
+        this._cancelCrossfade();
+        if (this._listenerAborter) this._listenerAborter.abort();
+        if (this._sourceNode) {
+            try { this._sourceNode.disconnect(); } catch (e) { console.warn('[Music] _rebuildAudioPipeline: sourceNode.disconnect() failed:', e); }
+            this._sourceNode = null;
+            this._sourceNodeEl = null;
+        }
+        if (this._gainNode) {
+            try { this._gainNode.disconnect(); } catch (e) { console.warn('[Music] _rebuildAudioPipeline: gainNode.disconnect() failed:', e); }
+            this._gainNode = null;
+        }
+        if (this._audioCtx) {
+            try { this._audioCtx.close(); } catch (e) { console.warn('[Music] _rebuildAudioPipeline: AudioContext.close() failed:', e); }
+            this._audioCtx = null;
+        }
+        this.audio.pause();
+        this.audio.src = "";
+
+        // Build fresh pipeline
+        this.audio = new Audio(track.file);
+        this.audio.volume = 1;
+        this.audio.muted = !!this.muted;
+        this._ensureGainNode(this.audio);
+        this._bindAudioListeners(this.audio);
+
+        // Seek to saved position then play
+        if (savedPosition > 0) {
+            const seekOnce = () => {
+                this.audio.currentTime = savedPosition;
+                this.audio.removeEventListener("canplay", seekOnce);
+            };
+            this.audio.addEventListener("canplay", seekOnce);
+        }
+        this.audio.play().catch(() => {
+            // Even rebuild failed — give up, mark as paused so UI is correct
+            this.playing = false;
+            this._notify();
+        });
+        this._preloadNextTrack();
+        this._notify();
     }
 
     _audioWatchdog() {
         if (!this.playing || !this.currentTrackId) return;
         // Detect AudioContext suspended mid-playback (common on iOS)
         if (this._audioCtx && this._audioCtx.state === "suspended") {
-            this._audioCtx.resume().catch(() => {});
+            this._audioCtx.resume().catch(e => console.warn('[Music] watchdog: AudioContext.resume() failed:', e));
         }
         // Detect audio element paused while we think we're playing
         if (this.audio.paused && !this.audio.ended) {
-            this.audio.play().catch(() => {});
+            this.audio.play().catch(e => console.warn('[Music] watchdog: audio.play() failed:', e));
+        }
+        // Detect track ended but never advanced (crossfade failure recovery)
+        if (this.audio.ended && !this._crossfading && this.repeatMode !== "one") {
+            this.next();
         }
     }
 
@@ -3612,23 +3694,36 @@ class MusicManager {
     // ── Volume (via Web Audio GainNode for iOS compatibility) ──
 
     _ensureGainNode(audioEl) {
+        // Detect dead AudioContext (killed by OS during backgrounding)
+        if (this._audioCtx && (this._audioCtx.state === "closed" || this._audioCtx.state === "interrupted")) {
+            if (this._sourceNode) {
+                try { this._sourceNode.disconnect(); } catch (e) { console.warn('[Music] _ensureGainNode: sourceNode.disconnect() failed:', e); }
+                this._sourceNode = null;
+                this._sourceNodeEl = null;
+            }
+            if (this._gainNode) {
+                try { this._gainNode.disconnect(); } catch (e) { console.warn('[Music] _ensureGainNode: gainNode.disconnect() failed:', e); }
+                this._gainNode = null;
+            }
+            this._audioCtx = null;
+        }
         if (!this._audioCtx) {
             this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             // Listen for iOS-triggered suspensions so we can auto-resume
             this._audioCtx.onstatechange = () => {
-                if (this._audioCtx.state === "suspended" && this.playing) {
-                    this._audioCtx.resume().catch(() => {});
+                if (this._audioCtx && this._audioCtx.state === "suspended" && this.playing) {
+                    this._audioCtx.resume().catch(e => console.warn('[Music] onstatechange: AudioContext.resume() failed:', e));
                 }
             };
         }
         if (this._audioCtx.state === "suspended") {
-            this._audioCtx.resume().catch(() => {});
+            this._audioCtx.resume().catch(e => console.warn('[Music] _ensureGainNode: AudioContext.resume() failed:', e));
         }
         // Only create source node once per audio element
         if (this._sourceNode && this._sourceNodeEl === audioEl) return;
         // Disconnect old source if switching elements
         if (this._sourceNode) {
-            try { this._sourceNode.disconnect(); } catch {}
+            try { this._sourceNode.disconnect(); } catch (e) { console.warn('[Music] _ensureGainNode: old sourceNode.disconnect() failed:', e); }
         }
         try {
             this._sourceNode = this._audioCtx.createMediaElementSource(audioEl);
@@ -3754,11 +3849,22 @@ class MusicManager {
     _onTrackEnded() {
         if (this.repeatMode === "one") {
             this.audio.currentTime = 0;
-            this.audio.play().catch(() => {});
+            this.audio.play().catch(e => console.warn('[Music] repeat-one replay failed:', e));
             return;
         }
-        // If crossfade already handled the transition, skip
-        if (this._crossfading) return;
+        // If crossfade already handled the transition, skip — but schedule
+        // a safety check in case crossfade fails asynchronously.
+        if (this._crossfading) {
+            setTimeout(() => {
+                // If still stuck after crossfade should have finished/failed,
+                // force advance. _crossfading would be false if it completed
+                // properly, or if the catch handler cleared it.
+                if (!this._crossfading && this.audio.ended && this.playing) {
+                    this.next();
+                }
+            }, (this._crossfadeDuration + 2) * 1000);
+            return;
+        }
         this.next();
     }
 
@@ -3781,8 +3887,9 @@ class MusicManager {
         this._crossfadeAudio.volume = this.muted ? 0 : 1;
         this._crossfadeAudio.muted = !!this.muted;
         this._crossfadeAudio.play().catch(() => {
-            // Crossfade audio failed to start — abort crossfade so
-            // the normal ended → next() path can handle advancement
+            // Crossfade audio failed to start — abort crossfade and
+            // advance manually since the 'ended' handler was likely
+            // already swallowed (it saw _crossfading=true and returned).
             this._crossfading = false;
             if (this._crossfadeTimer) clearInterval(this._crossfadeTimer);
             this._crossfadeTimer = null;
@@ -3795,6 +3902,11 @@ class MusicManager {
                 this._gainNode.gain.value = this.muted ? 0 : this._volume;
             }
             this.audio.volume = this.muted ? 0 : 1;
+            // If the main track already ended while we were trying to crossfade,
+            // advance to next track now (the ended handler was skipped).
+            if (this.audio.ended && this.playing) {
+                this.next();
+            }
         });
 
         // Create a separate gain node for the crossfade audio
@@ -3807,7 +3919,7 @@ class MusicManager {
                 crossfadeGain.gain.value = 0;
                 crossfadeGain.connect(this._audioCtx.destination);
                 crossfadeSource.connect(crossfadeGain);
-            } catch { crossfadeGain = null; crossfadeSource = null; }
+            } catch (e) { console.warn('[Music] crossfade: createMediaElementSource failed:', e); crossfadeGain = null; crossfadeSource = null; }
         }
 
         const fadeStep = 50; // ms
@@ -3834,7 +3946,7 @@ class MusicManager {
                 this.audio.pause();
                 // Disconnect old source from gain
                 if (this._sourceNode) {
-                    try { this._sourceNode.disconnect(); } catch {}
+                    try { this._sourceNode.disconnect(); } catch (e) { console.warn('[Music] crossfade swap: sourceNode.disconnect() failed:', e); }
                 }
                 // Swap audio elements
                 const oldAudio = this.audio;
@@ -3845,7 +3957,7 @@ class MusicManager {
                 // Swap gain nodes: crossfade gain becomes the main gain
                 if (crossfadeGain && crossfadeSource) {
                     if (this._gainNode) {
-                        try { this._gainNode.disconnect(); } catch {}
+                        try { this._gainNode.disconnect(); } catch (e) { console.warn('[Music] crossfade swap: gainNode.disconnect() failed:', e); }
                     }
                     this._gainNode = crossfadeGain;
                     this._sourceNode = crossfadeSource;
@@ -3959,7 +4071,7 @@ class MusicManager {
 
             this.playing = false;
             this._notify();
-        } catch {}
+        } catch (e) { console.warn('[Music] _restoreMusicState failed:', e); }
     }
 
     _notify() {
@@ -20342,12 +20454,27 @@ document.addEventListener("visibilitychange", () => {
         if (g && g._wrGame) {
             try { g._wrSaveState(); } catch(e) {}
         }
-        if (g && g.music) g.music._saveMusicState();
+        if (g && g.music) {
+            // Pause audio pipeline on background to prevent OS from killing it
+            // in an unrecoverable state. Track that we auto-paused so we can
+            // auto-resume on return (vs user-initiated pause which should stick).
+            if (g.music.playing) {
+                g.music._autoPausedByBackground = true;
+                g.music.audio.pause();
+                if (g.music._audioCtx && g.music._audioCtx.state === "running") {
+                    g.music._audioCtx.suspend().catch(e => console.warn('[Music] visibilitychange: AudioContext.suspend() failed:', e));
+                }
+            }
+            g.music._saveMusicState();
+        }
     } else if (document.visibilityState === "visible") {
         // Fade out the resume overlay
         if (resumeOverlay) resumeOverlay.classList.add('resume-overlay--hidden');
         const g = window._game;
-        if (g && g.music) g.music.resumePlayback();
+        if (g && g.music && g.music._autoPausedByBackground) {
+            g.music._autoPausedByBackground = false;
+            g.music.resumePlayback();
+        }
         // Reconnect leaderboard realtime if it dropped while backgrounded
         if (g && g._lbRealtimeChannel) {
             g._unsubscribeLeaderboardRealtime();
@@ -20369,11 +20496,23 @@ document.addEventListener("visibilitychange", () => {
             if (isActive) {
                 // Fade out the resume overlay
                 if (resumeOverlay) resumeOverlay.classList.add('resume-overlay--hidden');
-                if (g.music) g.music.resumePlayback();
+                if (g.music && g.music._autoPausedByBackground) {
+                    g.music._autoPausedByBackground = false;
+                    g.music.resumePlayback();
+                }
             } else {
                 // Show Plummet overlay so iOS snapshots it
                 if (resumeOverlay) resumeOverlay.classList.remove('resume-overlay--hidden');
-                if (g.music) g.music._saveMusicState();
+                if (g.music) {
+                    if (g.music.playing) {
+                        g.music._autoPausedByBackground = true;
+                        g.music.audio.pause();
+                        if (g.music._audioCtx && g.music._audioCtx.state === "running") {
+                            g.music._audioCtx.suspend().catch(e => console.warn('[Music] appStateChange: AudioContext.suspend() failed:', e));
+                        }
+                    }
+                    g.music._saveMusicState();
+                }
             }
         });
     } catch (_) {
