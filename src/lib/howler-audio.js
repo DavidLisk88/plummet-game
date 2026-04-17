@@ -562,7 +562,36 @@ export class HowlerMusicPlayer {
 
     play() {
         this._intentionallyPaused = false;
+
+        // Always ensure audio contexts are running before attempting playback
+        if (Howler.ctx && Howler.ctx.state !== 'running') {
+            Howler.ctx.resume().catch(() => {});
+        }
+        if (this._audioCtx && this._audioCtx.state !== 'running') {
+            this._audioCtx.resume().catch(() => {});
+        }
+
         if (this.currentTrackId && this._currentHowl) {
+            // Check if the Howl is still alive — OS can destroy it during background
+            const howlState = this._currentHowl.state();
+            if (howlState === 'unloaded') {
+                console.warn('♪ play(): Howl unloaded, rekindling');
+                this._rekindleTrack();
+                return;
+            }
+
+            // Check if underlying audio element is in error state
+            try {
+                const sounds = this._currentHowl._sounds || [];
+                for (const s of sounds) {
+                    if (s._node && s._node.error) {
+                        console.warn('♪ play(): audio element has error, rekindling');
+                        this._rekindleTrack();
+                        return;
+                    }
+                }
+            } catch (_) {}
+
             // Connect to Web Audio and apply volume (mobile support)
             this._connectHowlToGain(this._currentHowl);
             this._applyVolume();
@@ -572,6 +601,18 @@ export class HowlerMusicPlayer {
             localStorage.setItem('wf_music_paused', '0');
             this._startTimeUpdates();
             this._notify();
+
+            // Verify playback actually produces sound after a short delay
+            setTimeout(() => {
+                if (this.playing && this._currentHowl && !this._currentHowl.playing()) {
+                    console.warn('♪ play(): started but not actually playing, rekindling');
+                    this._rekindleTrack();
+                }
+            }, 600);
+        } else if (this.currentTrackId && !this._currentHowl) {
+            // Howl was garbage collected — rekindle from current track
+            console.warn('♪ play(): no Howl instance, rekindling');
+            this._rekindleTrack();
         } else {
             const q = this._getEffectiveQueue();
             if (q.length > 0) {
@@ -616,13 +657,14 @@ export class HowlerMusicPlayer {
 
     /**
      * Resume audio contexts after returning from background.
-     * Does NOT auto-play — user taps the play button when ready.
-     * Just ensures audio contexts are alive so play() works cleanly.
+     * Proactively checks audio health, rekindles dead Howls,
+     * and auto-resumes playback if the user was playing before backgrounding.
      */
     resumeFromBackground() {
         if (!this._autoPausedByBackground) return;
         this._autoPausedByBackground = false;
-        // Wake up audio contexts so the play button works immediately
+
+        // Wake up audio contexts so audio can produce sound
         const resumeCtx = (ctx) => {
             if (ctx && ctx.state !== 'running') {
                 ctx.resume().catch(() => {});
@@ -630,6 +672,38 @@ export class HowlerMusicPlayer {
         };
         resumeCtx(Howler.ctx);
         resumeCtx(this._audioCtx);
+
+        // Proactively check if the Howl is still alive
+        if (this.currentTrackId && this._currentHowl) {
+            const howlState = this._currentHowl.state();
+            if (howlState === 'unloaded') {
+                console.warn('♪ resumeFromBackground: Howl was destroyed by OS, rekindling');
+                this._rekindleTrack();
+                return;
+            }
+            // Check for broken audio elements
+            try {
+                const sounds = this._currentHowl._sounds || [];
+                for (const s of sounds) {
+                    if (s._node && s._node.error) {
+                        console.warn('♪ resumeFromBackground: audio element error, rekindling');
+                        this._rekindleTrack();
+                        return;
+                    }
+                }
+            } catch (_) {}
+            // Reconnect gain node in case Web Audio graph was torn down
+            this._connectHowlToGain(this._currentHowl);
+            this._applyVolume();
+        } else if (this.currentTrackId && !this._currentHowl) {
+            // Howl was garbage collected during background
+            console.warn('♪ resumeFromBackground: Howl gone, rekindling');
+            this._rekindleTrack();
+            return;
+        }
+
+        // Auto-resume playback — the user was playing before we paused for background
+        this.play();
     }
 
     toggle() {
