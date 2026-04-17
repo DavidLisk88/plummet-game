@@ -41,8 +41,9 @@ const WEIGHTS = {
 };
 
 const CLASS_THRESHOLDS = {
-    MASTER: 33000,
-    HIGH: 16500,
+    EXPERT: 50000,
+    MASTER: 20000,
+    HIGH: 10000,
     MEDIUM: 5000,
 };
 
@@ -222,9 +223,9 @@ export function computeSkillRating(playerData) {
         versatility * WEIGHTS.VERSATILITY +
         progression * WEIGHTS.PROGRESSION;
 
-    // ═══ EXPAND TO 0-50000 SCALE ═══
-    // Cubic curve matching server-side: 50000 * (x/100)^3
-    skillRating = 50000.0 * Math.pow(skillRating / 100.0, 3.0);
+    // ═══ EXPAND TO 0-15000 SCALE ═══
+    // Cubic curve matching server-side: 15000 * (x/100)^3
+    skillRating = 15000.0 * Math.pow(skillRating / 100.0, 3.0);
 
     // ═══ GAMES-PLAYED CONFIDENCE GATE ═══
     // Scale down rating for players with few games (full at 50 games)
@@ -238,7 +239,8 @@ export function computeSkillRating(playerData) {
 
     // ═══ DETERMINE CLASS ═══
     let skillClass = 'low';
-    if (skillRating >= CLASS_THRESHOLDS.MASTER) skillClass = 'master';
+    if (skillRating >= CLASS_THRESHOLDS.EXPERT) skillClass = 'expert';
+    else if (skillRating >= CLASS_THRESHOLDS.MASTER) skillClass = 'master';
     else if (skillRating >= CLASS_THRESHOLDS.HIGH) skillClass = 'high';
     else if (skillRating >= CLASS_THRESHOLDS.MEDIUM) skillClass = 'medium';
 
