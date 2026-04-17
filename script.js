@@ -3523,12 +3523,35 @@ class MusicManager {
     }
 
     pause() {
-        this.audio.pause();
+        try { this.audio.pause(); } catch (e) { console.warn('[Music] pause: audio.pause() failed:', e); }
         this._cancelCrossfade();
         this.playing = false;
         this._saveMusicState();
         localStorage.setItem("wf_music_paused", "1");
         this._notify();
+    }
+
+    /**
+     * Pause audio for backgrounding without changing playing state.
+     * Suspends AudioContext too. Safe to call even if audio is broken.
+     */
+    pauseForBackground() {
+        if (!this.playing) return;
+        this._autoPausedByBackground = true;
+        try { this.audio.pause(); } catch (e) { console.warn('[Music] pauseForBackground: audio.pause() failed:', e); }
+        if (this._audioCtx && this._audioCtx.state === "running") {
+            this._audioCtx.suspend().catch(e => console.warn('[Music] pauseForBackground: AudioContext.suspend() failed:', e));
+        }
+    }
+
+    /**
+     * Resume audio after returning from background.
+     * Only resumes if we auto-paused (not user-initiated pause).
+     */
+    resumeFromBackground() {
+        if (!this._autoPausedByBackground) return;
+        this._autoPausedByBackground = false;
+        this.resumePlayback();
     }
 
     toggle() {
@@ -3554,11 +3577,16 @@ class MusicManager {
                 this._rebuildAudioPipeline();
             });
         }
-        if (this.audio.paused) {
-            this.audio.play().catch(() => {
-                // play() rejected — rebuild the pipeline and retry
-                this._rebuildAudioPipeline();
-            });
+        try {
+            if (this.audio && this.audio.paused) {
+                this.audio.play().catch(() => {
+                    // play() rejected — rebuild the pipeline and retry
+                    this._rebuildAudioPipeline();
+                });
+            }
+        } catch (e) {
+            console.warn('[Music] resumePlayback: audio access failed, rebuilding:', e);
+            this._rebuildAudioPipeline();
         }
     }
 
@@ -20458,22 +20486,15 @@ document.addEventListener("visibilitychange", () => {
             // Pause audio pipeline on background to prevent OS from killing it
             // in an unrecoverable state. Track that we auto-paused so we can
             // auto-resume on return (vs user-initiated pause which should stick).
-            if (g.music.playing) {
-                g.music._autoPausedByBackground = true;
-                if (g.music.audio && typeof g.music.audio.pause === 'function') g.music.audio.pause();
-                if (g.music._audioCtx && g.music._audioCtx.state === "running") {
-                    g.music._audioCtx.suspend().catch(e => console.warn('[Music] visibilitychange: AudioContext.suspend() failed:', e));
-                }
-            }
+            g.music.pauseForBackground();
             g.music._saveMusicState();
         }
     } else if (document.visibilityState === "visible") {
         // Fade out the resume overlay
         if (resumeOverlay) resumeOverlay.classList.add('resume-overlay--hidden');
         const g = window._game;
-        if (g && g.music && g.music._autoPausedByBackground) {
-            g.music._autoPausedByBackground = false;
-            g.music.resumePlayback();
+        if (g && g.music) {
+            g.music.resumeFromBackground();
         }
         // Reconnect leaderboard realtime if it dropped while backgrounded
         if (g && g._lbRealtimeChannel) {
@@ -20496,21 +20517,14 @@ document.addEventListener("visibilitychange", () => {
             if (isActive) {
                 // Fade out the resume overlay
                 if (resumeOverlay) resumeOverlay.classList.add('resume-overlay--hidden');
-                if (g.music && g.music._autoPausedByBackground) {
-                    g.music._autoPausedByBackground = false;
-                    g.music.resumePlayback();
+                if (g.music) {
+                    g.music.resumeFromBackground();
                 }
             } else {
                 // Show Plummet overlay so iOS snapshots it
                 if (resumeOverlay) resumeOverlay.classList.remove('resume-overlay--hidden');
                 if (g.music) {
-                    if (g.music.playing) {
-                        g.music._autoPausedByBackground = true;
-                        if (g.music.audio && typeof g.music.audio.pause === 'function') g.music.audio.pause();
-                        if (g.music._audioCtx && g.music._audioCtx.state === "running") {
-                            g.music._audioCtx.suspend().catch(e => console.warn('[Music] appStateChange: AudioContext.suspend() failed:', e));
-                        }
-                    }
+                    g.music.pauseForBackground();
                     g.music._saveMusicState();
                 }
             }
