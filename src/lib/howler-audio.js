@@ -593,14 +593,17 @@ export class HowlerMusicPlayer {
     }
 
     /**
-     * Pause audio for backgrounding without changing playing state.
-     * Safe to call even if audio is in a broken state.
+     * Pause audio when app is backgrounded.
+     * Uses the real pause() so the UI button updates to "play" state.
+     * Suspends Web Audio contexts to prevent OS from killing them.
      */
     pauseForBackground() {
         if (!this.playing) return;
         this._autoPausedByBackground = true;
-        try { if (this._currentHowl) this._currentHowl.pause(); } catch (e) { console.warn('[Music] pauseForBackground: howl.pause() failed:', e); }
-        this._stopTimeUpdates();
+        // Use the real pause so UI reflects paused state
+        this.pause();
+        // Also mark as NOT intentionally paused so we know it was backgrounding
+        this._intentionallyPaused = false;
         // Suspend Web Audio contexts
         const suspendCtx = (ctx) => {
             if (ctx && ctx.state === 'running') {
@@ -612,13 +615,21 @@ export class HowlerMusicPlayer {
     }
 
     /**
-     * Resume audio after returning from background.
-     * Only resumes if we auto-paused (not user-initiated pause).
+     * Resume audio contexts after returning from background.
+     * Does NOT auto-play — user taps the play button when ready.
+     * Just ensures audio contexts are alive so play() works cleanly.
      */
     resumeFromBackground() {
         if (!this._autoPausedByBackground) return;
         this._autoPausedByBackground = false;
-        this.resumePlayback();
+        // Wake up audio contexts so the play button works immediately
+        const resumeCtx = (ctx) => {
+            if (ctx && ctx.state !== 'running') {
+                ctx.resume().catch(() => {});
+            }
+        };
+        resumeCtx(Howler.ctx);
+        resumeCtx(this._audioCtx);
     }
 
     toggle() {
