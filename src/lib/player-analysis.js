@@ -248,7 +248,9 @@ export function generatePlayerAnalysis(data) {
 
     // ── Opening line (class-aware + master) ──
     html += `<div class="analysis-section">`;
-    if (skill_class === 'master') {
+    if (skill_class === 'expert') {
+        html += `<p class="analysis-lead">A legendary player who has transcended mastery — an absolute force of nature across every dimension.</p>`;
+    } else if (skill_class === 'master') {
         html += `<p class="analysis-lead">A master-class player at the absolute pinnacle — near-perfect across every dimension.</p>`;
     } else if (skill_class === 'high') {
         html += `<p class="analysis-lead">An elite-level player demonstrating mastery across multiple dimensions of the game.</p>`;

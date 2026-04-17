@@ -71,6 +71,7 @@ function _extractComponents(data) {
  */
 function _getClassColor(skillClass) {
     switch (skillClass) {
+        case 'expert': return { bg: 'rgba(245, 158, 11, 0.08)', border: '#fbbf24', point: '#fde68a' };
         case 'master': return { bg: 'rgba(94, 234, 212, 0.08)', border: '#5eead4', point: '#99f6e4' };
         case 'high': return { bg: 'rgba(251, 191, 36, 0.08)', border: '#fbbf24', point: '#fde68a' };
         case 'medium': return { bg: 'rgba(148, 163, 184, 0.08)', border: '#94a3b8', point: '#cbd5e1' };

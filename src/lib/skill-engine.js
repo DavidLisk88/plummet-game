@@ -265,6 +265,10 @@ export function computeSkillRating(playerData) {
  */
 export function getClassInfo(skillClass) {
     switch (skillClass) {
+        case 'expert':
+            return { label: 'Expert Class', color: '#fbbf24', icon: '🌟', bgColor: 'rgba(245,158,11,0.15)' };
+        case 'master':
+            return { label: 'Master Class', color: '#c084fc', icon: '💎', bgColor: 'rgba(168,85,247,0.15)' };
         case 'high':
             return { label: 'High Class', color: '#FFD700', icon: '👑', bgColor: 'rgba(255,215,0,0.15)' };
         case 'medium':

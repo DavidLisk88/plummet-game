@@ -12343,7 +12343,7 @@ class Game {
                     },
                     {
                         title: 'Classes & Tabs',
-                        desc: 'Players are grouped into Master, High, Medium, and Low classes based on skill rating. Filter by class to compare with similar players. Separate tabs show rankings for Overall and each challenge mode, each with its own skill rating.',
+                        desc: 'Players are grouped into Expert, Master, High, Medium, and Low classes based on skill rating. Filter by class to compare with similar players. Separate tabs show rankings for Overall and each challenge mode, each with its own skill rating.',
                         draw(ctx, w, h, t) {
                             ctx.fillStyle = '#0d1117';
                             ctx.fillRect(0, 0, w, h);
@@ -18334,8 +18334,8 @@ class Game {
         const div = document.createElement("div");
         div.className = "lb-entry";
 
-        const classMap = { master: 'class-master', high: 'class-high', medium: 'class-medium', low: 'class-low' };
-        const classLabels = { master: 'MASTER', high: 'HIGH', medium: 'MED', low: 'LOW' };
+        const classMap = { expert: 'class-expert', master: 'class-master', high: 'class-high', medium: 'class-medium', low: 'class-low' };
+        const classLabels = { expert: 'EXPERT', master: 'MASTER', high: 'HIGH', medium: 'MED', low: 'LOW' };
         const classCss = classMap[entry.skill_class] || 'class-low';
         const classLabel = classLabels[entry.skill_class] || 'LOW';
 
@@ -18485,7 +18485,7 @@ class Game {
     _updateMyRankDisplay(myRank) {
         // Update the rank card on the menu page 2
         if (myRank) {
-            const classInfo = { master: { icon: '💎', label: 'Master Class' }, high: { icon: '👑', label: 'High Class' }, medium: { icon: '⚔️', label: 'Medium Class' }, low: { icon: '🛡️', label: 'Low Class' } };
+            const classInfo = { expert: { icon: '🌟', label: 'Expert Class' }, master: { icon: '💎', label: 'Master Class' }, high: { icon: '👑', label: 'High Class' }, medium: { icon: '⚔️', label: 'Medium Class' }, low: { icon: '🛡️', label: 'Low Class' } };
             const info = classInfo[myRank.skill_class] || classInfo.low;
 
             if (this.els.myRankCard) {
