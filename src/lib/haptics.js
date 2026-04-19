@@ -26,7 +26,10 @@ _init();
 
 function _fire(fn) {
     if (!_enabled || !_isNative || !_Haptics) return;
-    try { fn(); } catch { /* ignore */ }
+    try {
+        const r = fn();
+        if (r && typeof r.catch === 'function') r.catch(() => {});
+    } catch { /* ignore */ }
 }
 
 /** Light tap — block lock, UI buttons */
