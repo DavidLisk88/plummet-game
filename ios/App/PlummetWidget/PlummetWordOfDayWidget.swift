@@ -24,23 +24,23 @@ struct WotdSmallView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "book.closed.fill")
                         .font(.caption2)
-                        .foregroundColor(purpleAccent)
+                        .foregroundStyle(purpleAccent)
                     Text("Word of the Day")
                         .font(.caption2.weight(.semibold))
-                        .foregroundColor(purpleAccent)
+                        .foregroundStyle(purpleAccent)
                 }
                 Spacer()
                 Text(entry.word)
                     .font(.title2.weight(.black))
-                    .foregroundColor(textPrimary)
+                    .foregroundStyle(textPrimary)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
                 Text(entry.pos)
                     .font(.caption2.italic())
-                    .foregroundColor(textSecondary)
+                    .foregroundStyle(textSecondary)
                 Text(entry.definition)
                     .font(.caption2)
-                    .foregroundColor(textSecondary)
+                    .foregroundStyle(textSecondary)
                     .lineLimit(3)
                     .minimumScaleFactor(0.8)
             }
@@ -65,19 +65,19 @@ struct WotdMediumView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "book.closed.fill")
                             .font(.caption2)
-                            .foregroundColor(purpleAccent)
+                            .foregroundStyle(purpleAccent)
                         Text("Word of the Day")
                             .font(.caption2.weight(.semibold))
-                            .foregroundColor(purpleAccent)
+                            .foregroundStyle(purpleAccent)
                     }
                     Text(entry.word)
                         .font(.title.weight(.black))
-                        .foregroundColor(textPrimary)
+                        .foregroundStyle(textPrimary)
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                     Text(entry.pos)
                         .font(.caption.italic())
-                        .foregroundColor(textSecondary)
+                        .foregroundStyle(textSecondary)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
@@ -85,10 +85,10 @@ struct WotdMediumView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Definition")
                         .font(.caption2.weight(.semibold))
-                        .foregroundColor(purpleAccent)
+                        .foregroundStyle(purpleAccent)
                     Text(entry.definition)
                         .font(.caption)
-                        .foregroundColor(textSecondary)
+                        .foregroundStyle(textSecondary)
                         .lineLimit(5)
                         .minimumScaleFactor(0.8)
                 }
@@ -203,21 +203,21 @@ struct ChallengeSmallView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "timer")
                         .font(.caption2)
-                        .foregroundColor(purpleAccent)
+                        .foregroundStyle(purpleAccent)
                     Text(entry.challengeMode.isEmpty ? "Challenge" : entry.challengeMode)
                         .font(.caption2.weight(.semibold))
-                        .foregroundColor(purpleAccent)
+                        .foregroundStyle(purpleAccent)
                         .lineLimit(1)
                 }
                 Spacer()
                 Text(endDate, style: .timer)
                     .font(.title.weight(.black).monospacedDigit())
-                    .foregroundColor(textPrimary)
+                    .foregroundStyle(textPrimary)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                 Text("Score: \(entry.challengeScore)")
                     .font(.caption2)
-                    .foregroundColor(textSecondary)
+                    .foregroundStyle(textSecondary)
             }
             .padding(14)
         }
@@ -236,15 +236,15 @@ struct ChallengeMediumView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "timer")
                             .font(.caption2)
-                            .foregroundColor(purpleAccent)
+                            .foregroundStyle(purpleAccent)
                         Text(entry.challengeMode.isEmpty ? "Challenge" : entry.challengeMode)
                             .font(.caption2.weight(.semibold))
-                            .foregroundColor(purpleAccent)
+                            .foregroundStyle(purpleAccent)
                             .lineLimit(1)
                     }
                     Text(endDate, style: .timer)
                         .font(.title.weight(.black).monospacedDigit())
-                        .foregroundColor(textPrimary)
+                        .foregroundStyle(textPrimary)
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
                 }
@@ -253,13 +253,13 @@ struct ChallengeMediumView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Score")
                         .font(.caption2.weight(.semibold))
-                        .foregroundColor(purpleAccent)
+                        .foregroundStyle(purpleAccent)
                     Text("\(entry.challengeScore)")
                         .font(.title2.weight(.black))
-                        .foregroundColor(textPrimary)
+                        .foregroundStyle(textPrimary)
                     Text("Time remaining")
                         .font(.caption2)
-                        .foregroundColor(textSecondary)
+                        .foregroundStyle(textSecondary)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
