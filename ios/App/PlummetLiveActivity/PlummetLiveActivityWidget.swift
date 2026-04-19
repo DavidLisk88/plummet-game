@@ -6,7 +6,7 @@ import WidgetKit
 // MARK: - Helpers
 // ---------------------------------------------------------------------------
 
-private var accentColor: Color { Color(red: 0.56, green: 0.27, blue: 0.99) } // Plummet purple
+private var plummetPurple: Color { Color(red: 0.56, green: 0.27, blue: 0.99) } // Plummet purple
 
 // ---------------------------------------------------------------------------
 // MARK: - Lock Screen / Notification view (also used for StandBy)
@@ -18,21 +18,21 @@ struct PlummetLockScreenView: View {
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: "timer")
-                .foregroundStyle(accentColor)
+                .foregroundColor(plummetPurple)
                 .font(.title2)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(context.attributes.challengeMode)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
                 if context.state.isFinished {
                     Text("Finished!")
                         .font(.title2.weight(.bold))
-                        .foregroundStyle(.primary)
+                        .foregroundColor(.primary)
                 } else {
                     Text(context.state.endDate, style: .timer)
                         .font(.title2.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.primary)
+                        .foregroundColor(.primary)
                 }
             }
 
@@ -41,10 +41,10 @@ struct PlummetLockScreenView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("Score")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
                 Text("\(context.state.score)")
                     .font(.title2.monospacedDigit().weight(.bold))
-                    .foregroundStyle(accentColor)
+                    .foregroundColor(plummetPurple)
             }
         }
         .padding(.horizontal, 16)
@@ -60,7 +60,7 @@ struct PlummetCompactLeading: View {
     let context: ActivityViewContext<PlummetActivityAttributes>
     var body: some View {
         Image(systemName: "timer")
-            .foregroundStyle(accentColor)
+            .foregroundColor(plummetPurple)
             .font(.caption.weight(.semibold))
     }
 }
@@ -71,11 +71,11 @@ struct PlummetCompactTrailing: View {
         if context.state.isFinished {
             Text("Done")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundColor(.white)
         } else {
             Text(context.state.endDate, style: .timer)
                 .font(.caption.monospacedDigit().weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundColor(.white)
         }
     }
 }
@@ -90,11 +90,11 @@ struct PlummetMinimalView: View {
         if context.state.isFinished {
             Text("✓")
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(accentColor)
+                .foregroundColor(plummetPurple)
         } else {
             Text(context.state.endDate, style: .timer)
                 .font(.caption2.monospacedDigit().weight(.bold))
-                .foregroundStyle(accentColor)
+                .foregroundColor(plummetPurple)
         }
     }
 }
@@ -110,39 +110,39 @@ struct PlummetExpandedView: View {
         VStack(spacing: 8) {
             HStack {
                 Image(systemName: "timer")
-                    .foregroundStyle(accentColor)
+                    .foregroundColor(plummetPurple)
                 Text(context.attributes.challengeMode)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundColor(.primary)
                 Spacer()
                 if context.state.isFinished {
                     Text("Challenge Complete!")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(accentColor)
+                        .foregroundColor(plummetPurple)
                 }
             }
 
             HStack {
                 VStack(alignment: .leading) {
                     Text("Time Left")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundColor(.secondary)
                     if context.state.isFinished {
                         Text("—")
                             .font(.title.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundColor(.white)
                     } else {
                         Text(context.state.endDate, style: .timer)
                             .font(.title.monospacedDigit().weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundColor(.white)
                     }
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
                     Text("Score")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundColor(.secondary)
                     Text("\(context.state.score)")
                         .font(.title.monospacedDigit().weight(.bold))
-                        .foregroundStyle(accentColor)
+                        .foregroundColor(plummetPurple)
                 }
             }
         }
@@ -166,7 +166,7 @@ struct PlummetLiveActivityWidget: Widget {
                 // Expanded regions
                 DynamicIslandExpandedRegion(.leading) {
                     Image(systemName: "timer")
-                        .foregroundStyle(accentColor)
+                        .foregroundColor(plummetPurple)
                         .font(.title3)
                         .padding(.leading, 8)
                 }
@@ -174,12 +174,12 @@ struct PlummetLiveActivityWidget: Widget {
                     if context.state.isFinished {
                         Text("Done")
                             .font(.title3.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundColor(.white)
                             .padding(.trailing, 8)
                     } else {
                         Text(context.state.endDate, style: .timer)
                             .font(.title3.monospacedDigit().weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundColor(.white)
                             .padding(.trailing, 8)
                     }
                 }
