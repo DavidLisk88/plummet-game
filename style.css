@@ -878,10 +878,11 @@ html, body {
     min-width: 0;
 }
 .gameover-share-link {
-    width: 40px;
-    min-width: 40px;
-    max-width: 40px;
-    padding: 0;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    flex: 0 0 44px;
+    padding: 0 !important;
     display: flex;
     align-items: center;
     justify-content: center;
