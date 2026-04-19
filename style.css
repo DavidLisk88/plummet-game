@@ -870,13 +870,17 @@ html, body {
     display: flex;
     gap: 8px;
     align-self: center;
+    max-width: 280px;
+    width: 100%;
 }
 .gameover-share-main {
     flex: 1;
+    min-width: 0;
 }
 .gameover-share-link {
     width: 40px;
     min-width: 40px;
+    max-width: 40px;
     padding: 0;
     display: flex;
     align-items: center;
