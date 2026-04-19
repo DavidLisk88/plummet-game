@@ -7125,6 +7125,9 @@ class Game {
     _enterMainMenuAndMaybeStartGuidedTour() {
         this._showScreen("menu");
         this._goToMenuPage(3); // Snap to Home first.
+        // Scroll the home page to the very top so guided tour targets are visible
+        const homePage = this.els.menuSlideStrip?.children[3];
+        if (homePage) homePage.scrollTop = 0;
 
         if (this._pendingFirstGameMenuTour) {
             this._pendingFirstGameMenuTour = false;
@@ -15530,6 +15533,9 @@ class Game {
         this._teardownGuidedSceneState();
         this._showScreen('menu');
         this._goToMenuPage(pageIndex);
+        // Scroll the target page to the top so guided tour highlights are visible
+        const page = this.els.menuSlideStrip?.children[pageIndex];
+        if (page) page.scrollTop = 0;
     }
 
     _setupGuidedChallengeSelectScene() {
