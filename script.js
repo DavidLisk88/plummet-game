@@ -36,6 +36,8 @@ import {
 import {
     ScreenShake, scorePop, flashEffect, wordCelebration, failureEffect,
 } from './src/lib/juice-effects.js';
+import * as haptics from './src/lib/haptics.js';
+import * as liveActivity from './src/lib/live-activity.js';
 import {
     screenTransition, scorePopup as gsapScorePopup, chainBannerEntrance, chainBannerExit,
     letterAssemble, wordPopupExit, bonusUnlockSequence,
@@ -366,6 +368,50 @@ const CHALLENGE_TYPES = Object.freeze({
     WORD_SEARCH: "word-search",
     WORD_RUNNER: "word-runner",
 });
+
+const DAILY_CHALLENGE_TARGET_RANGES = Object.freeze({
+    [CHALLENGE_TYPES.TARGET_WORD]: { min: 2500, max: 8000, rewardRate: 0.17 },
+    [CHALLENGE_TYPES.SPEED_ROUND]: { min: 3200, max: 9000, rewardRate: 0.18 },
+    [CHALLENGE_TYPES.WORD_CATEGORY]: { min: 2800, max: 8500, rewardRate: 0.17 },
+    [CHALLENGE_TYPES.WORD_SEARCH]: { min: 2200, max: 7000, rewardRate: 0.19 },
+    [CHALLENGE_TYPES.WORD_RUNNER]: { min: 1800, max: 6500, rewardRate: 0.20 },
+});
+
+function _seedHash(input) {
+    // FNV-1a 32-bit hash: compact and stable for deterministic daily challenge seeding.
+    let h = 2166136261;
+    for (let i = 0; i < input.length; i++) {
+        h ^= input.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+function _generateDailyChallenge(profileId, dateStr) {
+    const seedBase = _seedHash(`${profileId || "guest"}|${dateStr}|daily-v1`);
+    let seed = seedBase;
+    const rand = () => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed / 4294967296;
+    };
+
+    const challengeTypes = Object.keys(DAILY_CHALLENGE_TARGET_RANGES);
+    const challengeType = challengeTypes[Math.floor(rand() * challengeTypes.length)] || CHALLENGE_TYPES.TARGET_WORD;
+    const range = DAILY_CHALLENGE_TARGET_RANGES[challengeType] || DAILY_CHALLENGE_TARGET_RANGES[CHALLENGE_TYPES.TARGET_WORD];
+    const rawTarget = range.min + Math.floor(rand() * (range.max - range.min + 1));
+    const targetScore = Math.max(range.min, Math.round(rawTarget / 100) * 100);
+    const rewardCoins = Math.max(500, Math.round((targetScore * range.rewardRate) / 50) * 50);
+
+    return {
+        date: dateStr,
+        challengeType,
+        targetScore,
+        rewardCoins,
+        claimed: false,
+        claimedAt: null,
+        seedVersion: 1,
+    };
+}
 
 // ─── Username validation ───────────────────────────────────────────
 const MAX_PROFILES_PER_ACCOUNT = 3;
@@ -3488,6 +3534,7 @@ class MusicManager {
         // Use preloaded audio if available for instant playback
         const preloaded = this._consumePreloaded(trackId);
         this.audio = preloaded || new Audio(track.file);
+        this.audio.loop = false;
         this.audio.volume = 1;
         this.audio.muted = !!this.muted;
         this._ensureGainNode(this.audio);
@@ -3623,6 +3670,7 @@ class MusicManager {
 
         // Build fresh pipeline
         this.audio = new Audio(track.file);
+        this.audio.loop = false;
         this.audio.volume = 1;
         this.audio.muted = !!this.muted;
         this._ensureGainNode(this.audio);
@@ -3657,7 +3705,14 @@ class MusicManager {
         }
         // Detect track ended but never advanced (crossfade failure recovery)
         if (this.audio.ended && !this._crossfading && this.repeatMode !== "one") {
-            this.next();
+            // Don't auto-advance past the last track when repeat is off
+            const q = this._getEffectiveQueue();
+            const idx = this._getEffectiveIndex();
+            if (this.repeatMode === "off" && idx >= q.length - 1) {
+                this.pause();
+            } else {
+                this.next();
+            }
         }
     }
 
@@ -3672,6 +3727,7 @@ class MusicManager {
         const track = this.plMgr.getTrack(nextId);
         if (!track) return;
         this._preloadedAudio = new Audio();
+        this._preloadedAudio.loop = false;
         this._preloadedAudio.preload = "auto";
         this._preloadedAudio.src = track.file;
         this._preloadedTrackId = nextId;
@@ -3801,7 +3857,7 @@ class MusicManager {
         // When unmuting, if the player thinks it's playing but audio actually
         // stopped (e.g. a track ended while muted and next() silently failed),
         // restart playback so the user hears music again.
-        if (!muted && this.playing && (this.audio.paused || this.audio.ended)) {
+        if (!muted && this.playing && this.audio.paused && !this.audio.ended) {
             this.audio.play().catch(() => {
                 // Current audio truly dead — advance to next track
                 if (this.currentTrackId) this.next();
@@ -3912,6 +3968,7 @@ class MusicManager {
         this._crossfading = true;
         const preloadedCF = this._consumePreloaded(q[nextIdx]);
         this._crossfadeAudio = preloadedCF || new Audio(nextTrack.file);
+        this._crossfadeAudio.loop = false;
         this._crossfadeAudio.volume = this.muted ? 0 : 1;
         this._crossfadeAudio.muted = !!this.muted;
         this._crossfadeAudio.play().catch(() => {
@@ -4161,7 +4218,7 @@ class ProfileManager {
             uniqueWordsFound: [],
             gridSize: 5,
             difficulty: "casual",
-            gameMode: GAME_MODES.SANDBOX,
+            gameMode: GAME_MODES.TIMED,
             createdAt: Date.now(),
             level: 1,
             xp: 0,
@@ -4182,6 +4239,12 @@ class ProfileManager {
             lastPlayDate: null,      // YYYY-MM-DD
             playStreak: 0,
             claimedMilestones: [],   // milestone IDs already paid out
+            dailyChallenge: null,
+            // Legacy onboarding migration (for accounts that existed before tutorial update)
+            legacyOnboardingPending: false,
+            legacyIntroShown: false,
+            legacyBonusShown: false,
+            legacyGuidedShown: false,
         };
         this.profiles.push(profile);
         this.activeId = id;
@@ -4364,6 +4427,28 @@ class ProfileManager {
         if (p.lastPlayDate === undefined) p.lastPlayDate = null;
         if (p.playStreak === undefined) p.playStreak = 0;
         if (!Array.isArray(p.claimedMilestones)) p.claimedMilestones = [];
+        if (p.dailyChallenge === undefined) p.dailyChallenge = null;
+        this._ensureOnboardingFields(p);
+    }
+
+    _profileHasAnyHistory(p) {
+        if (!p) return false;
+        if ((p.gamesPlayed || 0) > 0) return true;
+        if (p.challengeStats) {
+            for (const cs of Object.values(p.challengeStats)) {
+                if ((cs?.gamesPlayed || 0) > 0) return true;
+            }
+        }
+        return false;
+    }
+
+    _ensureOnboardingFields(p) {
+        if (!p) return;
+        const hasHistory = this._profileHasAnyHistory(p);
+        if (p.legacyOnboardingPending === undefined) p.legacyOnboardingPending = hasHistory;
+        if (p.legacyIntroShown === undefined) p.legacyIntroShown = false;
+        if (p.legacyBonusShown === undefined) p.legacyBonusShown = false;
+        if (p.legacyGuidedShown === undefined) p.legacyGuidedShown = false;
     }
 
     /** Build a key for bestScores lookup. */
@@ -4677,6 +4762,47 @@ class ProfileManager {
         return { isFirstGameToday: true, playStreak: p.playStreak };
     }
 
+    _ensureDailyChallenge(p) {
+        if (!p) return null;
+        this._ensureCoinFields(p);
+        const today = this._todayStr();
+        if (!p.dailyChallenge || p.dailyChallenge.date !== today) {
+            p.dailyChallenge = _generateDailyChallenge(p.id, today);
+            this._save();
+        }
+        return p.dailyChallenge;
+    }
+
+    getDailyChallenge() {
+        const p = this.getActive();
+        if (!p) return null;
+        const challenge = this._ensureDailyChallenge(p);
+        return challenge ? { ...challenge } : null;
+    }
+
+    completeDailyChallenge(challengeType, score) {
+        const p = this.getActive();
+        if (!p) return { completed: false, alreadyCompleted: false, rewardCoins: 0, challenge: null };
+        const daily = this._ensureDailyChallenge(p);
+        if (!daily) return { completed: false, alreadyCompleted: false, rewardCoins: 0, challenge: null };
+        if (daily.challengeType !== challengeType) {
+            return { completed: false, alreadyCompleted: false, rewardCoins: 0, challenge: { ...daily } };
+        }
+        if (daily.claimed) {
+            return { completed: false, alreadyCompleted: true, rewardCoins: 0, challenge: { ...daily } };
+        }
+        if ((score || 0) < (daily.targetScore || 0)) {
+            return { completed: false, alreadyCompleted: false, rewardCoins: 0, challenge: { ...daily } };
+        }
+
+        daily.claimed = true;
+        daily.claimedAt = new Date().toISOString();
+        p.coins += daily.rewardCoins;
+        p.totalCoinsEarned += daily.rewardCoins;
+        this._save();
+        return { completed: true, alreadyCompleted: false, rewardCoins: daily.rewardCoins, challenge: { ...daily } };
+    }
+
     // ── Milestone checking ──
 
     /** Check and pay out any unclaimed milestones. Returns array of newly claimed milestones. */
@@ -4845,6 +4971,8 @@ class Game {
             // Words Found
             wordsFoundScreen: document.getElementById("words-found-screen"),
             wordsFoundBtn:    document.getElementById("words-found-btn"),
+            shareScoreBtn:    document.getElementById("share-score-btn"),
+            copyLinkBtn:      document.getElementById("copy-link-btn"),
             wordsFoundBackBtn: document.getElementById("words-found-back-btn"),
             wordsFoundTitle:  document.getElementById("words-found-title"),
             wordsFoundCount:  document.getElementById("words-found-count"),
@@ -4862,6 +4990,11 @@ class Game {
             milestonesProgressFill: document.getElementById("milestones-progress-fill"),
             milestonesProgressText: document.getElementById("milestones-progress-text"),
             wotdToggle: document.getElementById("wotd-toggle"),
+            widgetSettingsBtn: document.getElementById("widget-settings-btn"),
+            widgetHowtoBtn: document.getElementById("widget-howto-btn"),
+            widgetHowtoModal: document.getElementById("widget-howto-modal"),
+            widgetHowtoOpenSettingsBtn: document.getElementById("widget-howto-open-settings-btn"),
+            widgetHowtoCloseBtn: document.getElementById("widget-howto-close-btn"),
             bonusWordsCount:  document.getElementById("bonus-words-count"),
             bonusWordsList:   document.getElementById("bonus-words-list"),
             gameModeSelector: document.getElementById("game-mode-selector"),
@@ -4957,6 +5090,7 @@ class Game {
             shopTabs: document.querySelectorAll(".shop-tab"),
             menuCoins: document.getElementById("menu-coins"),
             // Auth
+            welcomeScreen: document.getElementById("welcome-screen"),
             authScreen: document.getElementById("auth-screen"),
             authSubtitle: document.getElementById("auth-subtitle"),
             authError: document.getElementById("auth-error"),
@@ -5037,6 +5171,12 @@ class Game {
             wsLevelNum: document.getElementById("ws-level-num"),
             wsCoins: document.getElementById("ws-coins"),
             wsWordsFoundCount: document.getElementById("ws-words-found-count"),
+            wsWordsFoundBtn: document.getElementById("ws-words-found-btn"),
+            wsHintBtn: document.getElementById("ws-hint-btn"),
+            wsHintsLeft: document.getElementById("ws-hints-left"),
+            wsHintBar: document.getElementById("ws-hint-bar"),
+            wsHintWord: document.getElementById("ws-hint-word"),
+            wsPauseWordsBtn: document.getElementById("ws-pause-words-btn"),
             wsWordPopup: document.getElementById("ws-word-popup"),
             wsPauseBtn: document.getElementById("ws-pause-btn"),
             wsPauseOverlay: document.getElementById("ws-pause-overlay"),
@@ -5211,10 +5351,13 @@ class Game {
         this._bindRowDrag();
         this._bindLevelUpUI();
         this._bindAuth();
+        this._bindWelcome();
+        this._bindSignUpPrompt();
         this._bindLeaderboard();
         this._bindWordSearch();
         this._bindWordRunner();
         this._initMutePref();
+        this._lockPortrait();
         this._menuPage = 3;
         this._activeScreen = "menu";
         this._guidedTour = {
@@ -5230,6 +5373,9 @@ class Game {
             restoreMenuPage: 2,
             resizeHandler: null,
         };
+        this._firstGameTourQueued = false;
+        this._firstGameTourTimer = null;
+        this._pendingFirstGameMenuTour = false;
         this._bindMenuSwipe();
         this._goToMenuPage(3);
         this.hintsEnabled = localStorage.getItem("wf_hints_enabled") === "1";
@@ -5348,6 +5494,7 @@ class Game {
 
         document.querySelectorAll(".game-mode-btn").forEach(btn => {
             btn.addEventListener("click", () => {
+                if (btn.classList.contains('locked')) return;
                 this.gameMode = btn.dataset.mode || GAME_MODES.SANDBOX;
                 this.profileMgr.setGameMode(this.gameMode);
                 this._debouncedSyncProfileToCloud();
@@ -5376,6 +5523,14 @@ class Game {
             }
         });
         this.els.menuBtn.addEventListener("click", () => {
+            if (this._pendingFirstGameMenuTour) {
+                this._gameOverChallenge = null;
+                this._gameOverCategoryKey = null;
+                delete this.els.restartBtn.dataset.challenge;
+                delete this.els.restartBtn.dataset.categoryKey;
+                this._enterMainMenuAndMaybeStartGuidedTour();
+                return;
+            }
             const challenge = this._gameOverChallenge || this.els.restartBtn.dataset.challenge || null;
             if (challenge) {
                 this._gameOverChallenge = null;
@@ -5384,7 +5539,7 @@ class Game {
                 delete this.els.restartBtn.dataset.categoryKey;
                 this._openChallengeSetup(challenge);
             } else {
-                this._showScreen("menu");
+                this._enterMainMenuAndMaybeStartGuidedTour();
             }
         });
         this.els.pauseBtn.addEventListener("click", () => this._togglePause());
@@ -5709,6 +5864,69 @@ class Game {
             });
         }
 
+        // Word Widget setup actions (open settings + in-app walkthrough modal)
+        const openWidgetHowtoModal = () => {
+            if (!this.els.widgetHowtoModal) return;
+            this.els.widgetHowtoModal.classList.add("active");
+            this.els.widgetHowtoModal.setAttribute("aria-hidden", "false");
+        };
+        const closeWidgetHowtoModal = () => {
+            if (!this.els.widgetHowtoModal) return;
+            this.els.widgetHowtoModal.classList.remove("active");
+            this.els.widgetHowtoModal.setAttribute("aria-hidden", "true");
+        };
+
+        if (this.els.widgetHowtoBtn) {
+            this.els.widgetHowtoBtn.addEventListener("click", () => openWidgetHowtoModal());
+        }
+        if (this.els.widgetHowtoCloseBtn) {
+            this.els.widgetHowtoCloseBtn.addEventListener("click", () => closeWidgetHowtoModal());
+        }
+        if (this.els.widgetHowtoModal) {
+            this.els.widgetHowtoModal.addEventListener("click", (e) => {
+                if (e.target === this.els.widgetHowtoModal) closeWidgetHowtoModal();
+            });
+        }
+
+        const launchWidgetSettings = async () => {
+            try {
+                const { canConfigureWidgetFromApp, openWidgetSettings } = await import('./src/lib/widget-preferences.js');
+                if (!canConfigureWidgetFromApp()) {
+                    openWidgetHowtoModal();
+                    return false;
+                }
+                return await openWidgetSettings();
+            } catch (e) {
+                console.warn('[WidgetSetup] Error:', e);
+                return false;
+            }
+        };
+
+        if (this.els.widgetSettingsBtn) {
+            import('./src/lib/widget-preferences.js').then(({ canConfigureWidgetFromApp }) => {
+                const canConfigure = canConfigureWidgetFromApp();
+                this.els.widgetSettingsBtn.disabled = !canConfigure;
+                this.els.widgetSettingsBtn.textContent = canConfigure ? 'Set Up' : 'iOS Only';
+            }).catch(() => {});
+
+            this.els.widgetSettingsBtn.addEventListener("click", async () => {
+                const opened = await launchWidgetSettings();
+                openWidgetHowtoModal();
+                if (!opened && this.els.widgetSettingsBtn && !this.els.widgetSettingsBtn.disabled) {
+                    alert('Could not open iPhone Settings automatically. You can still add the widget manually from the Home Screen widget gallery.');
+                }
+            });
+        }
+
+        if (this.els.widgetHowtoOpenSettingsBtn) {
+            this.els.widgetHowtoOpenSettingsBtn.addEventListener("click", async () => {
+                const opened = await launchWidgetSettings();
+                if (!opened) {
+                    alert('Could not open iPhone Settings automatically. Open Settings manually, then add the Plummet widget from the Home Screen widget gallery.');
+                }
+            });
+        }
+
         // Main Menu buttons on Connect and Rankings pages
         if (this.els.connectMainMenuBtn) {
             this.els.connectMainMenuBtn.addEventListener("click", () => this._goToMenuPage(3));
@@ -5730,6 +5948,8 @@ class Game {
         this.els.wordsFoundBtn.addEventListener("click", () => {
             this._openWordsFound("gameover");
         });
+        this.els.shareScoreBtn?.addEventListener("click", () => this._shareScore());
+        this.els.copyLinkBtn?.addEventListener("click", () => this._copyScoreLink());
         this.els.wordsFoundBackBtn.addEventListener("click", () => this._closeWordsFound());
 
         this.els.bonusBtn.addEventListener("click", () => {
@@ -5896,6 +6116,7 @@ class Game {
         this.els.timeSelectCancelBtn.addEventListener("click", () => this._closeTimeSelectModal());
         document.querySelectorAll(".time-select-btn").forEach(btn => {
             btn.addEventListener("click", () => {
+                if (btn.classList.contains('locked')) return;
                 const minutes = parseInt(btn.dataset.minutes, 10);
                 if (!Number.isFinite(minutes)) return;
                 this._closeTimeSelectModal();
@@ -6436,6 +6657,8 @@ class Game {
         this.els.guidedTourContinueBtn.addEventListener('click', () => this._advanceGuidedTour('continue'));
         this.els.guidedTourBackBtn.addEventListener('click', () => this._backGuidedTour());
         this.els.guidedTourExitBtn.addEventListener('click', () => this._stopGuidedTour(true));
+        // Tap on dim backdrop to advance (for continue-mode steps)
+        this.els.guidedTourDim.addEventListener('click', () => this._advanceGuidedTour('continue'));
     }
 
     _setMusicControlButton(button, iconName, label) {
@@ -6637,8 +6860,14 @@ class Game {
     }
 
     _highlightGameModeButton() {
+        const level = this.profileMgr.getActive()?.level || 1;
         document.querySelectorAll(".game-mode-btn").forEach(btn => {
+            const isSandbox = btn.dataset.mode === GAME_MODES.SANDBOX;
+            const locked = isSandbox && level < 2;
             btn.classList.toggle("selected", btn.dataset.mode === this.gameMode);
+            btn.classList.toggle("locked", locked);
+            btn.disabled = locked;
+            this._updateUnlockLabel(btn, locked ? 2 : 0);
         });
     }
 
@@ -6694,6 +6923,14 @@ class Game {
 
     _openTimeSelectModal() {
         this.pendingStartMode = this._getSelectedGameMode();
+        const level = this.profileMgr.getActive()?.level || 1;
+        document.querySelectorAll('.time-select-btn').forEach(btn => {
+            const minutes = parseInt(btn.dataset.minutes, 10);
+            const locked = minutes > 1 && level < 2;
+            btn.classList.toggle('locked', locked);
+            btn.disabled = locked;
+            this._updateUnlockLabel(btn, locked ? 2 : 0);
+        });
         this.els.timeSelectModal.classList.add("active");
     }
 
@@ -6710,6 +6947,7 @@ class Game {
 
     _showScreen(name) {
         this._activeScreen = name;
+        if (this.els.welcomeScreen) this.els.welcomeScreen.classList.toggle("active", name === "welcome");
         if (this.els.authScreen) this.els.authScreen.classList.toggle("active", name === "auth");
         this.els.profilesScreen.classList.toggle("active", name === "profiles");
         this.els.menuScreen.classList.toggle("active", name === "menu");
@@ -6724,16 +6962,27 @@ class Game {
         if (this.els.wsScreen) this.els.wsScreen.classList.toggle("active", name === "ws");
         if (this.els.wrScreen) this.els.wrScreen.classList.toggle("active", name === "wr");
         if (this.els.dictScreen) this.els.dictScreen.classList.toggle("active", name === "dict");
+        if (name === "auth") {
+            // Show back button when coming from welcome screen OR when anonymous user navigates from in-game
+            const authBackBtn = document.getElementById('auth-back-btn');
+            if (authBackBtn) {
+                const showBack = this._authOrigin === 'welcome' || this._isAnonymous;
+                authBackBtn.classList.toggle('hidden', !showBack);
+                authBackBtn.textContent = this._authOrigin === 'welcome' ? '← Back' : '← Back to game';
+            }
+        }
         if (name === "menu") {
             this._updateHighScoreDisplay();
             this._updateMenuStats();
             this._highlightSizeButton();
+            this._highlightGameModeButton();
             this._updateDifficultySelector();
             this._updateLevelDisplay();
             this._refreshMyRankOnMenu();
             this._renderMilestonesPage();
             this._renderChallengesGrid();
             this._ensureDictTabReady();
+            this._updateAnonymousUI();
             const hasSaved = this._hasSavedGame(null);
             this.els.resumeGameBtn.classList.toggle("hidden", !hasSaved);
         }
@@ -6817,6 +7066,10 @@ class Game {
         const target = this.wordsFoundBackTarget || "gameover";
         if (target === "wr-pause") {
             this._wrResumePause();
+        } else if (target === "ws") {
+            this._showScreen("ws");
+            // Resume if it was paused just for the words-found view
+            if (this._ws && this._ws.paused) this._wsTogglePause();
         } else {
             this._showScreen(target === "pause" ? "play" : target);
             if (target === "pause") {
@@ -6828,6 +7081,55 @@ class Game {
             }
         }
         this.wordsFoundResumeState = null;
+    }
+
+    _getLegacyOnboardingState() {
+        const p = this.profileMgr.getActive();
+        if (!p) return null;
+        this.profileMgr._ensureOnboardingFields(p);
+        return p;
+    }
+
+    _isLegacyOnboardingPending() {
+        const p = this._getLegacyOnboardingState();
+        return !!(p && p.legacyOnboardingPending && !p.legacyGuidedShown);
+    }
+
+    _shouldRunLegacyRegularOnboardingThisGame() {
+        // Regular grid games only (timed / sandbox), not challenge modes.
+        return !this.activeChallenge && this._isLegacyOnboardingPending();
+    }
+
+    _markLegacyIntroShown() {
+        const p = this._getLegacyOnboardingState();
+        if (!p || p.legacyIntroShown) return;
+        p.legacyIntroShown = true;
+        this.profileMgr._save();
+    }
+
+    _markLegacyBonusShown() {
+        const p = this._getLegacyOnboardingState();
+        if (!p || p.legacyBonusShown) return;
+        p.legacyBonusShown = true;
+        this.profileMgr._save();
+    }
+
+    _markLegacyGuidedShown() {
+        const p = this._getLegacyOnboardingState();
+        if (!p) return;
+        p.legacyGuidedShown = true;
+        p.legacyOnboardingPending = false;
+        this.profileMgr._save();
+    }
+
+    _enterMainMenuAndMaybeStartGuidedTour() {
+        this._showScreen("menu");
+        this._goToMenuPage(3); // Snap to Home first.
+
+        if (this._pendingFirstGameMenuTour) {
+            this._pendingFirstGameMenuTour = false;
+            this._queueFirstGameGuidedTour();
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -6871,13 +7173,23 @@ class Game {
     }
 
     _dictBuildWordList() {
-        // Build sorted array from the full game dictionary, enriching with definitions where available
+        // Build sorted array from the full enriched dictionary (UI should show all enriched words).
+        // Also merge gameplay dictionary words as a fallback in case any enriched entry is missing.
         const arr = [];
         const enriched = ENRICHED_DICT || {};
-        const source = DICTIONARY && DICTIONARY.size > 0 ? DICTIONARY : new Set(Object.keys(enriched).map(k => k.toUpperCase()));
+        const source = new Set();
+
+        for (const key of Object.keys(enriched)) {
+            if (typeof key === "string" && key.length) source.add(key.toUpperCase());
+        }
+        if (DICTIONARY && DICTIONARY.size > 0) {
+            for (const upper of DICTIONARY) source.add(upper);
+        }
+
         for (const upper of source) {
+            if (typeof upper !== "string" || upper.length === 0) continue;
             const lower = upper.toLowerCase();
-            const entry = enriched[lower];
+            const entry = enriched[lower] || null;
             arr.push({
                 word: lower,
                 upper: upper,
@@ -7826,6 +8138,20 @@ class Game {
         // Update coin count in HUD
         this._updatePlayCoins();
 
+        const legacyBonusPending = this._shouldRunLegacyRegularOnboardingThisGame() && !this._getLegacyOnboardingState()?.legacyBonusShown;
+
+        // First-game bonus tutorial OR legacy onboarding bonus tutorial (regular grid only)
+        if (!this._shownBonusTutorial && (this.profileMgr.isFirstGameEver() || legacyBonusPending) &&
+            prevScore < 1000 && this.score >= 1000 && this.state === State.PLAYING) {
+            this._shownBonusTutorial = true;
+            if (legacyBonusPending) this._markLegacyBonusShown();
+            this.state = State.PAUSED;
+            this._initTutorialSlides();
+            this._onTutorialClose = () => { this.state = State.PLAYING; };
+            this._openTutorialCategory(1, 'root');
+            this.els.tutorialOverlay.classList.add('active');
+        }
+
         // ── Sync to Preact store ──
         const comboMult = Math.min(COMBO_MAX_MULTIPLIER, 1 + (this.comboCount - 1) * COMBO_MULTIPLIER_STEP);
         gameStore.set({
@@ -8212,6 +8538,7 @@ class Game {
             this._startRowDragMode();
             this._closeLetterChoiceModal(false);
         } else if (type === BONUS_TYPES.FREEZE) {
+            haptics.tapMedium();
             this.freezeActive = true;
             this.freezeTimeRemaining = FREEZE_DURATION;
             this.els.freezeIndicator.classList.remove("hidden");
@@ -8432,6 +8759,7 @@ class Game {
 
     _executeLineClear(cellsToClear) {
         if (cellsToClear.size === 0) return;
+        haptics.tapHeavy();
 
         this.clearing = true;
         this.clearPhase = "flash";
@@ -8840,6 +9168,7 @@ class Game {
         this.totalWordsInChain = 0;
         this.totalLettersInChain = 0;
         this._chainWords = [];
+        this._shownBonusTutorial = false;
         this._wordPopupActive = false;
         this._wordPopupCount = 0;
         this.els.wordPopup.innerHTML = "";
@@ -8984,11 +9313,74 @@ class Game {
         // Start or resume music from the player's start-game action.
         this._autoplayMusicFromUserAction();
 
-        // Resize canvas
+        // Keep screen awake during gameplay
+        this._keepAwake(true);
+
+        // Resize canvas immediately
         requestAnimationFrame(() => {
             this.renderer.resize(this.gridSize, this.gridSize);
-            this._spawnBlock();
         });
+
+        const shouldShowLegacyIntro = this._shouldRunLegacyRegularOnboardingThisGame() && !this._getLegacyOnboardingState()?.legacyIntroShown;
+
+        // First game ever → show "How to Play" tutorial + 3-2-1 countdown
+        const isFirstGame = this.profileMgr.isFirstGameEver();
+        if (isFirstGame || shouldShowLegacyIntro) {
+            if (shouldShowLegacyIntro) this._markLegacyIntroShown();
+            this.state = State.PAUSED; // pause until tutorial + countdown finish
+            this._initTutorialSlides();
+            this._onTutorialClose = () => this._showGameCountdown();
+            // Open tutorial directly on "How to Play" slides (category 0)
+            this._openTutorialCategory(0, 'root');
+            this.els.tutorialOverlay.classList.add('active');
+        } else {
+            this._spawnBlock();
+        }
+    }
+
+    /**
+     * Show 3-2-1 countdown then start the game by spawning the first block.
+     */
+    _showGameCountdown() {
+        const overlay = document.getElementById('countdown-overlay');
+        const numEl = document.getElementById('countdown-number');
+        if (!overlay || !numEl) {
+            // Fallback: no overlay, just start
+            this.state = State.PLAYING;
+            this._spawnBlock();
+            return;
+        }
+
+        this.state = State.PAUSED;
+        let count = 3;
+        numEl.textContent = count;
+        overlay.classList.remove('hidden');
+        // Re-trigger animation
+        numEl.style.animation = 'none';
+        numEl.offsetHeight; // force reflow
+        numEl.style.animation = '';
+
+        const tick = () => {
+            count--;
+            if (count > 0) {
+                numEl.textContent = count;
+                numEl.style.animation = 'none';
+                numEl.offsetHeight;
+                numEl.style.animation = '';
+                setTimeout(tick, 800);
+            } else {
+                numEl.textContent = 'GO!';
+                numEl.style.animation = 'none';
+                numEl.offsetHeight;
+                numEl.style.animation = '';
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    this.state = State.PLAYING;
+                    this._spawnBlock();
+                }, 500);
+            }
+        };
+        setTimeout(tick, 800);
     }
 
     _spawnBlock() {
@@ -9053,6 +9445,7 @@ class Game {
         if (landedKind === "bomb") {
             this.audio.bomb();
             this.renderer.triggerShake(6);
+            haptics.tapHeavy();
             this._triggerBombClear(landedRow, landedCol);
             return;
         }
@@ -9062,8 +9455,10 @@ class Game {
             this.audio.land(true);
             this.renderer.triggerShake(1.5);
             this.renderer.triggerImpact(landedRow, landedCol);
+            haptics.tapMedium();
         } else {
             this.audio.land(false);
+            haptics.tapLight();
         }
 
         // Start word detection chain
@@ -9505,6 +9900,8 @@ class Game {
         this.block = null;
         this._clearAllWordPopups();  // Clean up any pending popups
         this.audio.gameOver();
+        haptics.notifyWarning();
+        this._keepAwake(false);
         this.renderer.hintCells = new Set();
         this.renderer.validatedCells = new Set();
         this.renderer.rowDragCells.clear();
@@ -9610,9 +10007,18 @@ class Game {
                 levelUpCoins += COIN_LEVEL_UP_BASE + lv * COIN_LEVEL_UP_PER_LEVEL;
             }
         }
-        const finalCoins = totalCoins + levelUpCoins;
+        let finalCoins = totalCoins + levelUpCoins;
         this.profileMgr.addCoins(finalCoins);
+        const dailyBonusCoins = this._checkAndAwardDailyChallenge(this.activeChallenge, this.score);
+        if (dailyBonusCoins > 0) finalCoins += dailyBonusCoins;
         this._lastGameCoins = finalCoins;
+
+        // End Live Activity showing final score
+        liveActivity.end({ score: this.score });
+        // Revert widget back to Word of the Day
+        import('./src/lib/app-group.js').then(({ clearChallengeState }) => {
+            clearChallengeState();
+        }).catch(() => {});
 
         // Check milestones
         const newMilestones = this.profileMgr.checkMilestones();
@@ -9677,8 +10083,16 @@ class Game {
         // Reset challenge state
         this.activeChallenge = null;
 
-        // Update gameover buttons based on whether this was a challenge game
-        this.els.menuBtn.textContent = this._gameOverChallenge ? "Back to Challenges" : "Main Menu";
+        // Queue guided tour for legacy accounts after their next completed game.
+        if (this._isLegacyOnboardingPending()) {
+            this._pendingFirstGameMenuTour = true;
+        }
+
+        // Update gameover buttons based on whether this was a challenge game.
+        // If a guided tour is pending, force Main Menu so we can snap home and start it.
+        this.els.menuBtn.textContent = this._pendingFirstGameMenuTour
+            ? "Main Menu"
+            : (this._gameOverChallenge ? "Back to Challenges" : "Main Menu");
         this.els.restartBtn.textContent = this._gameOverChallenge ? "Play Again" : "Play Again";
         // Tag restart button with challenge type for robust detection on Play Again
         if (this._gameOverChallenge) {
@@ -9691,6 +10105,10 @@ class Game {
 
         // ── Show gameover screen with XP animation ──
         this._showGameOverXP(xpEarned, xpResult, wasFirstGame);
+
+        if (wasFirstGame) {
+            this._pendingFirstGameMenuTour = true;
+        }
 
         // ── Record to Supabase and update ranking — await before profile sync ──
         await this._recordGameToSupabase({
@@ -9733,6 +10151,12 @@ class Game {
         // ── Sync profile state (level, xp, coins, stats) to cloud ──
         this._syncProfileToCloud();
 
+        // ── Check if we should prompt anonymous user to sign up ──
+        this._checkSignUpPrompt();
+
+        // ── Maybe prompt for App Store review (iOS native only) ──
+        this._maybeRequestReview();
+
         // ── Sync game-over state to Preact store ──
         gameStore.set({
             gameState: State.GAMEOVER,
@@ -9744,6 +10168,243 @@ class Game {
             difficultyLevel: this._difficultyLevel,
             wordsFound: (this.wordsFound || []).slice(),
         });
+    }
+
+    /**
+     * Prompt the user for an App Store review via iOS SKStoreReviewController.
+     * - Only on native iOS
+     * - After the player's 5th game
+     * - Max 3 attempts total (stored in localStorage), spaced 10+ games apart
+     * - Once per session
+     * Apple controls whether the dialog actually shows (~3x/year max).
+     */
+    async _maybeRequestReview() {
+        if (this._reviewPrompted) return;
+        const profile = this.profileMgr.getActive();
+        if (!profile || profile.gamesPlayed < 5) return;
+
+        const key = 'wf_review_prompts';
+        const raw = localStorage.getItem(key);
+        const data = raw ? JSON.parse(raw) : { count: 0, lastAt: 0 };
+
+        // Stop after 3 lifetime attempts
+        if (data.count >= 3) return;
+        // Space prompts at least 10 games apart
+        if (profile.gamesPlayed - data.lastAt < 10 && data.count > 0) return;
+
+        try {
+            const { Capacitor } = await import('@capacitor/core');
+            if (!Capacitor.isNativePlatform()) return;
+            const { InAppReview } = await import('@capacitor-community/in-app-review');
+            this._reviewPrompted = true;
+            data.count++;
+            data.lastAt = profile.gamesPlayed;
+            localStorage.setItem(key, JSON.stringify(data));
+            await InAppReview.requestReview();
+        } catch (e) {
+            // Silently ignore — not on native or plugin unavailable
+        }
+    }
+
+    /** Show a centered confirmation popup that auto-dismisses */
+    _showSaveToast(msg) {
+        const existing = document.querySelector('.save-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.className = 'save-toast';
+        toast.innerHTML = `<span class="save-toast-icon">✅</span><span>${msg}</span>`;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            toast.classList.add('visible');
+            setTimeout(() => {
+                toast.classList.remove('visible');
+                setTimeout(() => toast.remove(), 300);
+            }, 1500);
+        });
+    }
+
+    /** Get a human-readable label for the current game mode / challenge */
+    _getGameModeLabel() {
+        const ch = this._gameOverChallenge;
+        if (ch === CHALLENGE_TYPES.WORD_SEARCH) return 'Word Search';
+        if (ch === CHALLENGE_TYPES.WORD_RUNNER) return 'Word Runner';
+        if (ch === CHALLENGE_TYPES.SPEED_ROUND) return `Speed Round · ${this.gridSize}×${this.gridSize}`;
+        if (ch === CHALLENGE_TYPES.WORD_CATEGORY) {
+            const cat = this._gameOverCategoryKey && WORD_CATEGORIES[this._gameOverCategoryKey];
+            const catName = cat ? cat.label : 'Category';
+            return `${catName} · ${this.gridSize}×${this.gridSize}`;
+        }
+        if (ch === CHALLENGE_TYPES.TARGET_WORD) return `Target Word · ${this.gridSize}×${this.gridSize}`;
+        // Regular game
+        const parts = [`${this.gridSize}×${this.gridSize}`];
+        if (this.timeLimitSeconds > 0) {
+            const mins = Math.floor(this.timeLimitSeconds / 60);
+            const secs = this.timeLimitSeconds % 60;
+            parts.push(secs > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : `${mins} min`);
+        } else {
+            parts.push('Endless');
+        }
+        const diffLabel = this.difficulty === 'hard' ? 'Hard' : this.difficulty === 'normal' ? 'Normal' : 'Casual';
+        parts.push(diffLabel);
+        return parts.join(' · ');
+    }
+
+    /** Build an offscreen share card, capture it, return dataUrl */
+    async _buildShareCard() {
+        const html2canvas = (await import('html2canvas')).default;
+        const profile = this.profileMgr.getActive();
+        const name = profile?.username || 'Player';
+        const levelInfo = this.profileMgr.getLevelInfo();
+        const wordsCount = this.wordsFound ? this.wordsFound.length : 0;
+        const bestCombo = this.bestCombo || 0;
+        const isNewHigh = this._lastGameNewHighScore || false;
+        const xpText = document.getElementById('xp-earned-text')?.textContent || '';
+        const coinsText = document.getElementById('coins-earned-text')?.textContent || '';
+        const modeLabel = this._getGameModeLabel();
+
+        const card = document.createElement('div');
+        card.className = 'share-card';
+        card.innerHTML = `
+            <div class="sc-glow"></div>
+            <div class="sc-header">
+                <div class="sc-logo">PLUMMET</div>
+                <div class="sc-subtitle">WORD FALL</div>
+            </div>
+            <div class="sc-mode">${this._escHtml(modeLabel)}</div>
+            <div class="sc-player">${this._escHtml(name)}</div>
+            <div class="sc-score-section">
+                <div class="sc-score-label">SCORE</div>
+                <div class="sc-score">${this.score.toLocaleString()}</div>
+                ${isNewHigh ? '<div class="sc-new-high">★ NEW HIGH SCORE ★</div>' : ''}
+            </div>
+            <div class="sc-stats">
+                <div class="sc-stat">
+                    <span class="sc-stat-val">${wordsCount}</span>
+                    <span class="sc-stat-lbl">Words</span>
+                </div>
+                ${bestCombo >= 2 ? `<div class="sc-stat">
+                    <span class="sc-stat-val">${bestCombo}×</span>
+                    <span class="sc-stat-lbl">Best Combo</span>
+                </div>` : ''}
+                <div class="sc-stat">
+                    <span class="sc-stat-val">Lv ${levelInfo.level}</span>
+                    <span class="sc-stat-lbl">${xpText || 'XP'}</span>
+                </div>
+                ${coinsText ? `<div class="sc-stat">
+                    <span class="sc-stat-val">${this._escHtml(coinsText)}</span>
+                    <span class="sc-stat-lbl">Coins</span>
+                </div>` : ''}
+            </div>
+            <div class="sc-footer">plummetgame.com</div>
+        `;
+
+        document.body.appendChild(card);
+
+        // Give the browser a frame to render
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+        const canvas = await html2canvas(card, {
+            backgroundColor: null,
+            scale: 2,
+            useCORS: true,
+            logging: false,
+        });
+
+        card.remove();
+        return canvas.toDataURL('image/png');
+    }
+
+    /** Simple HTML escape */
+    _escHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    /** Capture game-over screenshot → save to Camera Roll on iOS, download on web */
+    async _shareScore() {
+        const btn = this.els.shareScoreBtn;
+        const origText = btn.textContent;
+        btn.textContent = '📸 Capturing…';
+        btn.disabled = true;
+
+        try {
+            const dataUrl = await this._buildShareCard();
+
+            // iOS: save directly to Camera Roll
+            try {
+                const { Capacitor } = await import('@capacitor/core');
+                if (Capacitor.isNativePlatform()) {
+                    const { Media } = await import('@capacitor-community/media');
+                    await Media.savePhoto({
+                        path: dataUrl,
+                        albumIdentifier: null,
+                    });
+                    this._showSaveToast('Screenshot saved to Photos!');
+                    btn.textContent = origText;
+                    return;
+                }
+            } catch (nativeErr) {
+                console.warn('Native photo save failed:', nativeErr);
+            }
+
+            // Web: download the screenshot as PNG
+            const blob = await (await fetch(dataUrl)).blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `plummet-score-${Date.now()}.png`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            this._showSaveToast('Screenshot saved!');
+            btn.textContent = origText;
+        } catch (err) {
+            console.warn('Screenshot share failed:', err);
+            btn.textContent = origText;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    /** Copy the App Store link + score text to clipboard */
+    async _copyScoreLink() {
+        const profile = this.profileMgr.getActive();
+        const name = profile?.username || 'Someone';
+        const modeLabel = this._getGameModeLabel();
+        const text = `${name} scored ${this.score.toLocaleString()} in ${modeLabel} on Plummet: Word Fall! Can you beat it? 🎯\nhttps://apps.apple.com/app/plummet-word-fall/id6670594498`;
+        const btn = this.els.copyLinkBtn;
+        try {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = '✅';
+            setTimeout(() => { btn.textContent = '🔗'; }, 2000);
+        } catch {
+            prompt('Copy your score:', text);
+        }
+    }
+
+    /** Keep screen awake during gameplay, release when done */
+    async _keepAwake(on) {
+        try {
+            const { Capacitor } = await import('@capacitor/core');
+            if (!Capacitor.isNativePlatform()) return;
+            const { KeepAwake } = await import('@capacitor-community/keep-awake');
+            if (on) {
+                await KeepAwake.keepAwake();
+            } else {
+                await KeepAwake.allowSleep();
+            }
+        } catch { /* web or plugin unavailable */ }
+    }
+
+    /** Lock screen orientation to portrait (called once at init) */
+    async _lockPortrait() {
+        try {
+            const { Capacitor } = await import('@capacitor/core');
+            if (!Capacitor.isNativePlatform()) return;
+            const { ScreenOrientation } = await import('@capacitor/screen-orientation');
+            await ScreenOrientation.lock({ orientation: 'portrait' });
+        } catch { /* web or plugin unavailable */ }
     }
 
     // ── Level / XP display methods ──
@@ -9787,11 +10448,16 @@ class Game {
             this.els.xpEarnedText.classList.add("visible");
         }, 300);
 
-        // Show milestone toasts after a delay, one at a time
+        // Show milestone toasts after a delay.
+        // If multiple milestones are earned at once, show a single summary toast.
         const milestones = this._lastMilestones || [];
         if (milestones.length > 0) {
-            this._milestoneQueue = milestones.slice();
-            setTimeout(() => this._showNextMilestone(), 1500);
+            if (milestones.length >= 2) {
+                setTimeout(() => this._showMilestoneSummaryToast(milestones), 1500);
+            } else {
+                this._milestoneQueue = milestones.slice();
+                setTimeout(() => this._showNextMilestone(), 1500);
+            }
         }
 
         setTimeout(() => {
@@ -9835,12 +10501,49 @@ class Game {
         this._updateLevelDisplay();
     }
 
+    _queueFirstGameGuidedTour() {
+        const seenKey = 'plummet_first_game_tour_seen';
+        const p = this._getLegacyOnboardingState();
+        if (p?.legacyGuidedShown) return;
+        if (!p?.legacyOnboardingPending && localStorage.getItem(seenKey) === '1') return;
+
+        this._firstGameTourQueued = true;
+        if (this._firstGameTourTimer) {
+            clearTimeout(this._firstGameTourTimer);
+            this._firstGameTourTimer = null;
+        }
+
+        const attemptStart = () => {
+            if (!this._firstGameTourQueued) return;
+
+            const blocked =
+                this._guidedTour.active ||
+                this.els.levelUpOverlay?.classList.contains('active') ||
+                this.els.xpTutorialOverlay?.classList.contains('active') ||
+                document.getElementById('signup-prompt-overlay')?.classList.contains('active');
+
+            if (blocked) {
+                this._firstGameTourTimer = setTimeout(attemptStart, 350);
+                return;
+            }
+
+            this._firstGameTourQueued = false;
+            this._firstGameTourTimer = null;
+            localStorage.setItem(seenKey, '1');
+            this._markLegacyGuidedShown();
+            this._startGuidedTour('guided-first-game');
+        };
+
+        this._firstGameTourTimer = setTimeout(attemptStart, 700);
+    }
+
     _showLevelUpPopup(newLevel, newXp, newXpReq) {
         this.els.levelUpLevel.textContent = `Level ${newLevel}`;
         const pct = newXpReq > 0 ? Math.min(100, (newXp / newXpReq) * 100) : 0;
         this.els.levelUpBarFill.style.transition = "none";
         this.els.levelUpBarFill.style.width = "0%";
         this.els.levelUpOverlay.classList.add("active");
+        haptics.notifySuccess();
 
         // GSAP: animate the progress bar fill
         gsap.fromTo(this.els.levelUpBarFill, { width: '0%' }, {
@@ -9955,8 +10658,13 @@ class Game {
 
     _bindProfiles() {
         this.els.newProfileBtn.addEventListener("click", () => {
-            if (this.profileMgr.getAll().length >= MAX_PROFILES_PER_ACCOUNT) {
-                alert(`You can have up to ${MAX_PROFILES_PER_ACCOUNT} profiles.`);
+            const maxProfiles = this._isAnonymous ? 1 : MAX_PROFILES_PER_ACCOUNT;
+            if (this.profileMgr.getAll().length >= maxProfiles) {
+                if (this._isAnonymous) {
+                    this._showSignUpPrompt('profile_limit');
+                } else {
+                    alert(`You can have up to ${MAX_PROFILES_PER_ACCOUNT} profiles.`);
+                }
                 return;
             }
             this._openProfileModal('create');
@@ -10120,7 +10828,7 @@ class Game {
         try {
             const { isLocalMode, createProfile } = await import('./src/lib/supabase.js');
             if (isLocalMode || !this._authUser) return;
-            const cloud = await createProfile(this._authUser.id, localProfile.username);
+            const cloud = await createProfile(this._authUser.id, localProfile.username, this._isAnonymous);
             if (cloud?.id) {
                 localProfile.cloudId = cloud.id;
                 this.profileMgr._save();
@@ -10250,8 +10958,9 @@ class Game {
         ];
         keysToRemove.forEach(k => localStorage.removeItem(k));
         this._authUser = null;
+        this._isAnonymous = false;
         this._unsubscribeProfileRealtime();
-        this._showScreen("auth");
+        this._showScreen("welcome");
     }
 
     _loadActiveProfile() {
@@ -10265,7 +10974,12 @@ class Game {
             this.gridSize = 6;
             this.profileMgr.setGridSize(this.gridSize);
         }
-        this.gameMode = profile.gameMode || GAME_MODES.SANDBOX;
+        this.gameMode = profile.gameMode || GAME_MODES.TIMED;
+        // Enforce: level 1 cannot use sandbox
+        if (this.gameMode === GAME_MODES.SANDBOX && (profile.level || 1) < 2) {
+            this.gameMode = GAME_MODES.TIMED;
+            this.profileMgr.setGameMode(this.gameMode);
+        }
         this.highScore = profile.highScore || 0;
         this._highlightSizeButton();
         this._highlightGameModeButton();
@@ -10282,10 +10996,17 @@ class Game {
         list.innerHTML = "";
         const profiles = this.profileMgr.getAll();
 
-        // Disable "New Profile" button when at limit
-        const atLimit = profiles.length >= MAX_PROFILES_PER_ACCOUNT;
+        // Disable "New Profile" button when at limit (1 for anon, 3 for real accounts)
+        const maxProfiles = this._isAnonymous ? 1 : MAX_PROFILES_PER_ACCOUNT;
+        const atLimit = profiles.length >= maxProfiles;
         this.els.newProfileBtn.disabled = atLimit;
-        this.els.newProfileBtn.title = atLimit ? `Max ${MAX_PROFILES_PER_ACCOUNT} profiles` : 'Create a new profile';
+        this.els.newProfileBtn.title = atLimit
+            ? (this._isAnonymous ? 'Sign up to create more profiles!' : `Max ${MAX_PROFILES_PER_ACCOUNT} profiles`)
+            : 'Create a new profile';
+
+        // Toggle auth buttons based on anonymous status
+        if (this.els.authLogoutBtn) this.els.authLogoutBtn.classList.toggle("hidden", !!this._isAnonymous);
+        if (this.els.deleteAccountBtn) this.els.deleteAccountBtn.classList.toggle("hidden", !!this._isAnonymous);
 
         if (profiles.length === 0) {
             list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">No profiles yet. Create one to get started!</p>';
@@ -10869,6 +11590,40 @@ class Game {
                 }, 500);
             }, 2500);
         });
+    }
+
+    _showMilestoneSummaryToast(milestones) {
+        if (!Array.isArray(milestones) || milestones.length < 2) return;
+        const totalCoins = milestones.reduce((sum, m) => sum + (m?.coins || 0), 0);
+        const count = milestones.length;
+        const toast = document.createElement("div");
+        toast.className = "milestone-toast";
+        toast.innerHTML = `
+            <div class="milestone-toast-icon">🏆</div>
+            <div class="milestone-toast-body">
+                <div class="milestone-toast-title">Earned ${count} achievements!</div>
+                <div class="milestone-toast-desc">Multiple milestones unlocked this game</div>
+                <div class="milestone-toast-coins">+${totalCoins} Coins</div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+            toast.classList.add("visible");
+            setTimeout(() => {
+                toast.classList.remove("visible");
+                setTimeout(() => toast.remove(), 500);
+            }, 2500);
+        });
+    }
+
+    _checkAndAwardDailyChallenge(challengeType, score) {
+        if (!challengeType) return 0;
+        const result = this.profileMgr.completeDailyChallenge(challengeType, score);
+        if (result && result.completed) {
+            this._showShopToast(`Daily Challenge Complete! +${result.rewardCoins} Coins`);
+            return result.rewardCoins || 0;
+        }
+        return 0;
     }
 
     // ── Words Found rendering ──
@@ -14306,6 +15061,79 @@ class Game {
                     },
                 ],
             },
+            'guided-first-game': {
+                label: 'Welcome Tour',
+                steps: [
+                    {
+                        title: '🎵 Music Player',
+                        body: 'Control your background music right here — play, pause, skip tracks, and adjust volume.',
+                        mode: 'continue',
+                        target: '#global-music-dropdown',
+                        onEnter: [call('_setupGuidedMenuPage', 3), call('_guidedOpenMusicDropdown')],
+                        focusPadding: 8,
+                        hideArrow: true,
+                        cardYOffset: 26,
+                    },
+                    {
+                        title: '📖 Dictionary',
+                        body: 'Look up any word in the game. Browse definitions, synonyms, and filter by length or category.',
+                        mode: 'continue',
+                        target: '#dict-btn-menu',
+                        onEnter: [call('_guidedCloseMusicDropdown')],
+                        focusPadding: 10,
+                        hideArrow: true,
+                        cardYOffset: 26,
+                    },
+                    {
+                        title: '❓ How to Play',
+                        body: 'Tap here anytime for tutorials on every game mode — rules, tips, and strategies.',
+                        mode: 'continue',
+                        target: '#tutorial-btn-menu',
+                        focusPadding: 10,
+                        hideArrow: true,
+                        cardYOffset: 26,
+                    },
+                    {
+                        title: '⚔️ Challenges',
+                        body: 'Test your skills with special modes — Target Word, Speed Round, Word Category, Word Search, and Word Runner.',
+                        mode: 'continue',
+                        target: '#challenges-grid',
+                        onEnter: [call('_setupGuidedMenuPage', 4)],
+                        focusPadding: 12,
+                        hideArrow: true,
+                        cardYOffset: 26,
+                    },
+                    {
+                        title: '🏆 Rankings',
+                        body: 'See how you stack up against other players. Climb the leaderboard by playing well and completing challenges.',
+                        mode: 'continue',
+                        target: '#leaderboard-btn',
+                        onEnter: [call('_setupGuidedMenuPage', 5)],
+                        focusPadding: 10,
+                        hideArrow: true,
+                        cardYOffset: 26,
+                    },
+                    {
+                        title: '⬡ Bonus Slots',
+                        body: 'Buy extra bonus slots in the shop to save power-ups during games. Look for the ⬡ icon on the play screen!',
+                        mode: 'continue',
+                        target: '.shop-tab[data-tab="bonus_slots"]',
+                        onEnter: [call('_setupGuidedShopScene'), call('_guidedSwitchToSlotsTab')],
+                        focusPadding: 8,
+                        hideArrow: true,
+                        cardYOffset: 26,
+                    },
+                    {
+                        title: 'Welcome to Plummet!',
+                        body: 'You\'re all set. Go play, discover words, and have fun!',
+                        mode: 'continue',
+                        target: '#menu-profile-name',
+                        onEnter: [call('_setupGuidedMenuPage', 3)],
+                        hideArrow: true,
+                        continueLabel: 'Finish',
+                    },
+                ],
+            },
         };
     }
 
@@ -14347,6 +15175,12 @@ class Game {
     _showGuidedTourCard(step) {
         if (Array.isArray(step.onEnter)) this._runGuidedTourCommands(step.onEnter);
 
+        // Clear any auto-dismiss timer from previous step
+        if (this._guidedTour.autoDismissTimer) {
+            clearTimeout(this._guidedTour.autoDismissTimer);
+            this._guidedTour.autoDismissTimer = null;
+        }
+
         // Hide card first for transition
         this.els.guidedTourCard.classList.remove('visible');
         this.els.guidedTourCard.classList.remove('hidden');
@@ -14354,12 +15188,26 @@ class Game {
         this.els.guidedTourTitle.textContent = step.title || this._guidedTour.tour.label;
         this.els.guidedTourBody.textContent = step.body || '';
         this.els.guidedTourCounter.textContent = `${this._guidedTour.stepIndex + 1} / ${this._guidedTour.tour.steps.length}`;
-        this.els.guidedTourContinueBtn.textContent = step.continueLabel || 'Tap to Continue';
-        this.els.guidedTourContinueBtn.classList.toggle('hidden', step.mode === 'tap-target');
+        this.els.guidedTourContinueBtn.textContent = step.continueLabel || 'Next';
+        this.els.guidedTourContinueBtn.classList.toggle('hidden', step.mode === 'tap-target' || step.hideContinue === true);
         this.els.guidedTourBackBtn.classList.toggle('hidden', this._guidedTour.stepIndex === 0);
         this.els.guidedTourHint.textContent = step.mode === 'tap-target'
-            ? 'Tap the highlighted area to continue.'
-            : 'Tap to Continue when you are ready.';
+            ? 'Tap the highlighted area'
+            : '';
+        this.els.guidedTourHint.classList.toggle('hidden', step.mode !== 'tap-target');
+
+        // Render progress dots
+        const dotsEl = document.getElementById('guided-tour-dots');
+        if (dotsEl && this._guidedTour.tour) {
+            const total = this._guidedTour.tour.steps.length;
+            const current = this._guidedTour.stepIndex;
+            dotsEl.innerHTML = '';
+            for (let i = 0; i < total; i++) {
+                const dot = document.createElement('span');
+                dot.className = 'gt-dot' + (i === current ? ' active' : i < current ? ' visited' : '');
+                dotsEl.appendChild(dot);
+            }
+        }
 
         // Position everything, then reveal card with transition
         requestAnimationFrame(() => {
@@ -14367,6 +15215,14 @@ class Game {
             // Trigger the card entrance after positioning
             requestAnimationFrame(() => {
                 this.els.guidedTourCard.classList.add('visible');
+
+                // Auto-dismiss support (e.g. final welcome step)
+                if (step.autoDismissMs && step.autoDismissMs > 0) {
+                    this._guidedTour.autoDismissTimer = setTimeout(() => {
+                        this._guidedTour.autoDismissTimer = null;
+                        this._advanceGuidedTour('continue');
+                    }, step.autoDismissMs);
+                }
             });
         });
     }
@@ -14438,13 +15294,13 @@ class Game {
                     this.els.guidedTourHotspot.addEventListener('click', handler, true);
                     this._guidedTour.cleanupHotspotHandler = () => this.els.guidedTourHotspot.removeEventListener('click', handler, true);
                 } else if (target.type === 'selector' && target.element) {
-                    target.element.classList.add('guided-tour-focus-target');
-                    this._guidedTour.activeTargetEl = target.element;
                     const handler = (event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         this._advanceGuidedTour('target');
                     };
+                    target.element.classList.add('guided-tour-focus-target');
+                    this._guidedTour.activeTargetEl = target.element;
                     target.element.addEventListener('click', handler, true);
                     this._guidedTour.cleanupTargetHandler = () => target.element.removeEventListener('click', handler, true);
                 }
@@ -14480,9 +15336,9 @@ class Game {
         this.els.guidedTourFocus.style.borderRadius = target.radius;
 
         if (target.type === 'selector' && target.element) {
-            target.element.classList.add('guided-tour-focus-target');
-            this._guidedTour.activeTargetEl = target.element;
             if (step.mode === 'tap-target') {
+                target.element.classList.add('guided-tour-focus-target');
+                this._guidedTour.activeTargetEl = target.element;
                 const handler = (event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -14561,6 +15417,7 @@ class Game {
 
     _positionGuidedTourCard(targetRect) {
         const card = this.els.guidedTourCard;
+        const step = this._guidedTour.tour?.steps?.[this._guidedTour.stepIndex] || {};
         const margin = 24;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
@@ -14574,6 +15431,10 @@ class Game {
             const preferredBelow = targetRect.bottom + margin * 1.5;
             const preferredAbove = targetRect.top - card.offsetHeight - margin * 1.5;
             top = spaceBelow > card.offsetHeight + 40 ? preferredBelow : Math.max(margin, preferredAbove);
+        }
+
+        if (Number.isFinite(step.cardYOffset)) {
+            top += step.cardYOffset;
         }
 
         card.style.left = `${left}px`;
@@ -14618,6 +15479,13 @@ class Game {
 
     _stopGuidedTour(restoreUi) {
         if (!this._guidedTour.active && !this.els.guidedTourOverlay.classList.contains('active')) return;
+        // Clear auto-dismiss timer
+        if (this._guidedTour.autoDismissTimer) {
+            clearTimeout(this._guidedTour.autoDismissTimer);
+            this._guidedTour.autoDismissTimer = null;
+        }
+        // Close music dropdown if open from tour
+        this._guidedCloseMusicDropdown();
         this._cleanupGuidedTourStep();
         this._teardownGuidedSceneState();
         // Reset all overlay states
@@ -14705,6 +15573,30 @@ class Game {
         if (this.els.lbMyRankClass) this.els.lbMyRankClass.textContent = 'Medium Class';
         if (this.els.lbMyRankPos) this.els.lbMyRankPos.textContent = '#15';
         if (this.els.lbMyStats) this.els.lbMyStats.classList.remove('hidden');
+    }
+
+    _guidedOpenMusicDropdown() {
+        const dd = this.els.globalMusicDropdown;
+        if (dd && !dd.classList.contains('open')) {
+            dd.classList.add('open');
+            this._syncGlobalMusicPanel();
+        }
+    }
+
+    _guidedCloseMusicDropdown() {
+        const dd = this.els.globalMusicDropdown;
+        if (dd && dd.classList.contains('open')) {
+            dd.classList.remove('open');
+        }
+    }
+
+    _guidedSwitchToSlotsTab() {
+        const tab = document.querySelector('.shop-tab[data-tab="bonus_slots"]');
+        if (tab) {
+            this._shopCurrentTab = 'bonus_slots';
+            this.els.shopTabs.forEach(t => t.classList.toggle('active', t.dataset.tab === 'bonus_slots'));
+            this._renderShopTab('bonus_slots');
+        }
     }
 
     _setupGuidedPlummetScene(config = {}) {
@@ -15026,6 +15918,13 @@ class Game {
             this.els.wrPauseOverlay.classList.add('active');
         }
         this._tutorialReturnToPauseMenu = null;
+
+        // Fire one-time callback (used by first-game tutorial → countdown)
+        if (this._onTutorialClose) {
+            const cb = this._onTutorialClose;
+            this._onTutorialClose = null;
+            cb();
+        }
     }
 
     _goToTutorialSlide(index) {
@@ -15801,6 +16700,12 @@ class Game {
         this.comboCount += toClaim.length;
         this._totalWordsThisGame += toClaim.length;
         if (this.comboCount > this.bestCombo) this.bestCombo = this.comboCount;
+        // Haptic feedback for word found / combo
+        if (this.comboCount >= 3) {
+            haptics.tapHeavy();
+        } else {
+            haptics.tapMedium();
+        }
         this.comboTimer = COMBO_WINDOW_SECONDS + (this._activePerks && this._activePerks.comboext ? 4 : 0); // reset combo timer
 
         // PixiJS: star burst for combo streaks
@@ -16002,10 +16907,39 @@ class Game {
         grid.innerHTML = "";
         this._stopChallengePreviewAnimations();
 
+        const profileLevel = this.profileMgr.getActive()?.level || 1;
+        const challengesLocked = profileLevel < 2;
+
+        const daily = this.profileMgr.getDailyChallenge();
+        if (daily) {
+            const dailyMeta = CHALLENGE_META[daily.challengeType] || CHALLENGE_META[CHALLENGE_TYPES.TARGET_WORD];
+            const dailyCard = document.createElement("div");
+            dailyCard.className = "challenge-card daily-coming-soon" + (challengesLocked ? " locked" : "");
+            dailyCard.dataset.challenge = "daily";
+            dailyCard.innerHTML = `
+                <div class="challenge-preview"><canvas></canvas></div>
+                <div class="challenge-card-title">☀ Daily Challenge <span class="challenge-level-badge">SOON</span></div>
+                <div class="challenge-card-desc">${dailyMeta.icon} ${dailyMeta.title} · Score ${daily.targetScore.toLocaleString()}+</div>
+                <div class="challenge-card-stats">
+                    <span>◎ ${daily.targetScore.toLocaleString()}</span>
+                    <span>◉ +${daily.rewardCoins} coins</span>
+                    <span>Preview</span>
+                </div>
+                <div class="challenge-coming-soon-overlay">Daily Challenges coming soon</div>
+            `;
+            grid.appendChild(dailyCard);
+
+            const dailyPreviewOvl = challengePreviewOverlay(dailyCard, daily.challengeType);
+            if (dailyPreviewOvl) this._challengePreviewAnimations.push(dailyPreviewOvl);
+
+            const dailyCanvas = dailyCard.querySelector("canvas");
+            this._startChallengePreview(dailyCanvas, daily.challengeType);
+        }
+
         for (const [key, meta] of Object.entries(CHALLENGE_META)) {
             const stats = this.profileMgr.getChallengeStats(key);
             const card = document.createElement("div");
-            card.className = "challenge-card";
+            card.className = "challenge-card" + (challengesLocked ? " locked" : "");
             card.dataset.challenge = key;
             const levelInfo = (key === CHALLENGE_TYPES.TARGET_WORD || key === CHALLENGE_TYPES.WORD_SEARCH)
                 ? `<span class="challenge-level-badge">Lv.${(key === CHALLENGE_TYPES.WORD_SEARCH ? this.profileMgr.getWordSearchLevel() : stats.targetWordLevel) || 1}</span>` : '';
@@ -16013,16 +16947,18 @@ class Game {
                 <div class="challenge-preview"><canvas></canvas></div>
                 <div class="challenge-card-title">${meta.icon} ${meta.title} ${levelInfo}</div>
                 <div class="challenge-card-desc">${meta.description}</div>
-                <div class="challenge-card-stats">
+                ${challengesLocked ? '<div class="challenge-lock-label">🔒 Level 2</div>' : `<div class="challenge-card-stats">
                     <span>◎ ${stats.highScore}</span>
                     <span>▷ ${stats.gamesPlayed}</span>
                     <span>≡ ${(stats.uniqueWordsFound || []).length}</span>
-                </div>
+                </div>`}
             `;
-            card.addEventListener("click", () => {
-                this._stopChallengePreviewAnimations();
-                this._openChallengeSetup(key);
-            });
+            if (!challengesLocked) {
+                card.addEventListener("click", () => {
+                    this._stopChallengePreviewAnimations();
+                    this._openChallengeSetup(key);
+                });
+            }
             grid.appendChild(card);
 
             // GSAP overlay effect for challenge card preview
@@ -16752,7 +17688,13 @@ class Game {
 
         // Word Runner uses its own screen and game flow
         if (this.activeChallenge === CHALLENGE_TYPES.WORD_RUNNER) {
-            this._wrStartGame();
+            const seenKey = "plummet_wr_tutorial_seen";
+            if (!localStorage.getItem(seenKey)) {
+                localStorage.setItem(seenKey, "1");
+                this._wrShowTutorial(() => this._wrStartGame());
+            } else {
+                this._wrStartGame();
+            }
             return;
         }
 
@@ -16762,6 +17704,23 @@ class Game {
         const timeLimit = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND
             ? 3 * 60 : CHALLENGE_TIME_LIMIT;
         this._beginNewGame(timeLimit);
+
+        // Start Live Activity for timed challenges (iOS Dynamic Island / Lock Screen)
+        const _laModeName = {
+            [CHALLENGE_TYPES.SPEED_ROUND]:   'Speed Round',
+            [CHALLENGE_TYPES.TARGET_WORD]:   'Target Word',
+            [CHALLENGE_TYPES.WORD_CATEGORY]: 'Word Category',
+        }[this.activeChallenge] ?? 'Challenge';
+        const _laEndTimestamp = Date.now() + timeLimit * 1000;
+        liveActivity.start({
+            mode: _laModeName,
+            endTimestamp: _laEndTimestamp,
+            score: 0,
+        });
+        // Mirror challenge state to widget so home-screen widget shows timer
+        import('./src/lib/app-group.js').then(({ setChallengeState }) => {
+            setChallengeState({ endTimestamp: _laEndTimestamp, mode: _laModeName, score: 0 });
+        }).catch(() => {});
 
         // After _beginNewGame sets up state, apply challenge specifics
         if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD) {
@@ -16878,6 +17837,13 @@ class Game {
 
     _openChallengeTutorial() {
         if (!this.activeChallenge) return;
+
+        // Word Runner uses its own dedicated tutorial overlay
+        if (this.activeChallenge === CHALLENGE_TYPES.WORD_RUNNER) {
+            this._wrShowTutorial(() => {}); // no-op callback, just dismiss
+            return;
+        }
+
         const meta = CHALLENGE_META[this.activeChallenge];
         if (!meta) return;
         this.els.challengeTutorialTitle.textContent = `${meta.icon} ${meta.title}`;
@@ -17266,9 +18232,9 @@ class Game {
 
     _initStartScreen() {
         // In local mode (no Supabase), go straight to profiles
-        // When Supabase is configured, check for existing session
+        // When Supabase is configured, check for existing session or sign in anonymously
         // Returns a promise so loading screen can wait for auth check
-        this._authReady = import('./src/lib/supabase.js').then(async ({ isLocalMode, getSession, getUser, onAuthStateChange }) => {
+        this._authReady = import('./src/lib/supabase.js').then(async ({ isLocalMode, getSession, getUser, onAuthStateChange, signInAnonymously, isAnonymousUser }) => {
             if (isLocalMode) {
                 this._showScreen("profiles");
                 return;
@@ -17295,20 +18261,69 @@ class Game {
                 if (this._isPasswordRecovery) {
                     // PASSWORD_RECOVERY already fired — stay on reset form, don't navigate away
                 } else if (session?.user) {
-                    // Already authenticated — load profiles and go to profile select
+                    // Already authenticated (real or anonymous) — load profiles
+                    this._isAnonymous = session.user.is_anonymous === true;
                     await this._onAuthSuccess(session.user);
                     this._showScreen("profiles");
                 } else {
-                    this._showScreen("auth");
+                    // No session — show welcome screen (Start Playing / Make an Account)
+                    this._showScreen("welcome");
                 }
             } catch (err) {
                 console.error('[auth] session check failed:', err);
-                this._showScreen("auth");
+                this._showScreen("welcome");
             }
         }).catch(() => {
             this._showScreen("profiles");
         });
         return this._authReady;
+    }
+
+    _bindWelcome() {
+        const startBtn = document.getElementById('welcome-start-btn');
+        const signupBtn = document.getElementById('welcome-signup-btn');
+
+        startBtn?.addEventListener('click', async () => {
+            startBtn.disabled = true;
+            signupBtn.disabled = true;
+            const welcomeError = document.getElementById('welcome-error');
+            if (welcomeError) welcomeError.classList.add('hidden');
+            try {
+                const { signInAnonymously } = await import('./src/lib/supabase.js');
+                const anonResult = await signInAnonymously();
+                const user = anonResult.session?.user || anonResult.user;
+                if (user) {
+                    this._isAnonymous = true;
+                    await this._onAuthSuccess(user);
+                    this._showScreen("profiles");
+                } else {
+                    if (welcomeError) {
+                        welcomeError.textContent = 'Could not start. Please try again or create an account.';
+                        welcomeError.classList.remove('hidden');
+                    }
+                }
+            } catch (err) {
+                console.warn('[auth] anonymous sign-in failed:', err);
+                if (welcomeError) {
+                    welcomeError.textContent = 'Could not start. Please try again or create an account.';
+                    welcomeError.classList.remove('hidden');
+                }
+            } finally {
+                startBtn.disabled = false;
+                signupBtn.disabled = false;
+            }
+        });
+
+        signupBtn?.addEventListener('click', () => {
+            this._authOrigin = 'welcome';
+            // Show auth screen with sign-up form visible
+            this._showScreen("auth");
+            if (this.els.authSignin) this.els.authSignin.classList.add('hidden');
+            if (this.els.authSignup) this.els.authSignup.classList.remove('hidden');
+            if (this.els.authSubtitle) this.els.authSubtitle.textContent = 'Create an account';
+            this._clearAuthError();
+            this._resetSignupSteps();
+        });
     }
 
     _bindAuth() {
@@ -17359,6 +18374,29 @@ class Game {
         // Forgot password
         this.els.authForgotBtn?.addEventListener("click", () => this._handleForgotPassword());
 
+        // Back button — navigates differently depending on origin
+        const authBackBtn = document.getElementById('auth-back-btn');
+        if (authBackBtn) {
+            authBackBtn.addEventListener('click', () => {
+                this._resetSignupSteps();
+                this._clearAuthError();
+                // Reset auth form to default state
+                if (this.els.authSignin) this.els.authSignin.classList.remove('hidden');
+                if (this.els.authSignup) this.els.authSignup.classList.add('hidden');
+                if (this.els.authSubtitle) this.els.authSubtitle.textContent = 'Sign in to play';
+
+                if (this._authOrigin === 'welcome') {
+                    // Came from welcome screen — go back there
+                    this._showScreen('welcome');
+                } else {
+                    // Came from in-game sign-up prompt — go back to game
+                    const hasProfile = this.profileMgr.getAll().length > 0;
+                    this._showScreen(hasProfile ? 'menu' : 'profiles');
+                }
+                this._authOrigin = null;
+            });
+        }
+
         // Reset password (after clicking email link)
         this.els.resetPasswordBtn?.addEventListener("click", () => this._handleResetPassword());
         this.els.resetConfirmPassword?.addEventListener("keydown", (e) => {
@@ -17382,8 +18420,9 @@ class Game {
             this.profileMgr.activeId = null;
             this.profileMgr._save();
             this._authUser = null;
+            this._isAnonymous = false;
             localStorage.removeItem("wf_auth_user_id");
-            this._showScreen("auth");
+            this._showScreen("welcome");
         });
 
         this.els.deleteAccountBtn?.addEventListener("click", async () => {
@@ -17573,6 +18612,14 @@ class Game {
         }
         this._setAuthLoading(true);
         try {
+            // If user is anonymous, upgrade the existing account instead of creating a new one
+            if (this._isAnonymous) {
+                await this._handleAnonymousUpgrade(this._signupEmail, password);
+                this._showScreen("profiles");
+                this._resetSignupSteps();
+                return;
+            }
+
             const { signUp } = await import('./src/lib/supabase.js');
             const result = await signUp(this._signupEmail, password);
             // Supabase may auto-confirm since we already verified email client-side
@@ -17593,8 +18640,15 @@ class Game {
                 this._resetSignupSteps();
             }
         } catch (err) {
-            if (err.message?.toLowerCase().includes("already registered")) {
+            const msg = err.message?.toLowerCase() || '';
+            if (msg.includes("already registered") || msg.includes("already in use") || msg.includes("email_exists")) {
                 this._showAuthError("This email is already registered. Try signing in instead.");
+            } else if (msg.includes("manual linking") || msg.includes("identity_not_found")) {
+                this._showAuthError("Account upgrade failed. Please contact support.");
+                console.error('[auth] Enable "Manual Linking" in Supabase Dashboard → Auth → Settings');
+            } else if (msg.includes("secure email change") || msg.includes("pending")) {
+                this._showAuthError("Email confirmation pending. Please contact support.");
+                console.error('[auth] Disable "Secure email change" in Supabase Dashboard → Auth → Settings');
             } else {
                 this._showAuthError(err.message || "Could not create account.");
             }
@@ -17682,7 +18736,141 @@ class Game {
         }
     }
 
+    // ════════════════════════════════════════
+    // ANONYMOUS → SIGN UP PROMPT SYSTEM
+    // ════════════════════════════════════════
+
+    /**
+     * Check if we should show the sign-up prompt after a game ends.
+     * Triggers at 5 games and again at 20 games.
+     */
+    _checkSignUpPrompt() {
+        if (!this._isAnonymous) return;
+        const profile = this.profileMgr.getActive();
+        if (!profile) return;
+        const gamesPlayed = profile.gamesPlayed || 0;
+        const prompted5 = localStorage.getItem('wf_signup_prompted_5');
+        const prompted20 = localStorage.getItem('wf_signup_prompted_20');
+
+        if (gamesPlayed >= 5 && !prompted5) {
+            localStorage.setItem('wf_signup_prompted_5', '1');
+            // Delay slightly so game-over screen settles first
+            setTimeout(() => this._showSignUpPrompt('milestone_5'), 1500);
+        } else if (gamesPlayed >= 20 && !prompted20) {
+            localStorage.setItem('wf_signup_prompted_20', '1');
+            setTimeout(() => this._showSignUpPrompt('milestone_20'), 1500);
+        }
+    }
+
+    /**
+     * Show the sign-up prompt modal.
+     * @param {string} reason - 'milestone_5', 'milestone_20', 'profile_limit', 'manual'
+     */
+    _showSignUpPrompt(reason = 'manual') {
+        const overlay = document.getElementById('signup-prompt-overlay');
+        if (!overlay) return;
+
+        // Customize message based on reason
+        const msgEl = document.getElementById('signup-prompt-message');
+        if (msgEl) {
+            if (reason === 'profile_limit') {
+                msgEl.textContent = 'Create an account to unlock up to 3 profiles and save your progress across devices!';
+            } else if (reason === 'milestone_5') {
+                msgEl.textContent = "You're on a roll! Sign up to save your progress across devices and unlock up to 3 profiles.";
+            } else if (reason === 'milestone_20') {
+                msgEl.textContent = "You've played 20+ games — don't lose your progress! Sign up to keep your stats safe across devices.";
+            } else {
+                msgEl.textContent = 'Sign up to save your progress across devices and unlock up to 3 profiles!';
+            }
+        }
+
+        overlay.classList.add('active');
+    }
+
+    _hideSignUpPrompt() {
+        const overlay = document.getElementById('signup-prompt-overlay');
+        if (overlay) overlay.classList.remove('active');
+    }
+
+    _bindSignUpPrompt() {
+        const overlay = document.getElementById('signup-prompt-overlay');
+        if (!overlay) return;
+
+        // "Not right now" button
+        const dismissBtn = document.getElementById('signup-prompt-dismiss');
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', () => this._hideSignUpPrompt());
+        }
+
+        // "Sign Up with Email" button
+        const emailBtn = document.getElementById('signup-prompt-email');
+        if (emailBtn) {
+            emailBtn.addEventListener('click', () => {
+                this._hideSignUpPrompt();
+                this._authOrigin = 'game';
+                this._showScreen('auth');
+                // Show the sign-up form directly, not sign-in
+                if (this.els.authSignin) this.els.authSignin.classList.add('hidden');
+                if (this.els.authSignup) this.els.authSignup.classList.remove('hidden');
+                if (this.els.authSubtitle) this.els.authSubtitle.textContent = 'Create an account';
+                this._clearAuthError();
+            });
+        }
+
+        // "Sign in with Apple" button (placeholder — requires native plugin in future build)
+        const appleBtn = document.getElementById('signup-prompt-apple');
+        if (appleBtn) {
+            appleBtn.addEventListener('click', () => {
+                // TODO: Implement native Sign in with Apple in next App Store build
+                alert('Sign in with Apple will be available in the next update!');
+            });
+        }
+
+        // Home screen SIGN UP button
+        const homeSignUpBtn = document.getElementById('home-signup-btn');
+        if (homeSignUpBtn) {
+            homeSignUpBtn.addEventListener('click', () => this._showSignUpPrompt('manual'));
+        }
+    }
+
+    /**
+     * After successful sign-up from the prompt, convert anonymous account to real account.
+     */
+    async _handleAnonymousUpgrade(email, password) {
+        try {
+            const { linkEmailPassword, getUser } = await import('./src/lib/supabase.js');
+            await linkEmailPassword(email, password);
+            // Refresh the auth user object so _isAnonymous and _authUser are accurate
+            const updatedUser = await getUser();
+            if (updatedUser) {
+                this._authUser = updatedUser;
+                this._isAnonymous = updatedUser.is_anonymous === true;
+            } else {
+                this._isAnonymous = false;
+            }
+            // Update UI — hide SIGN UP button, show Sign Out, etc.
+            this._updateAnonymousUI();
+            this._renderProfilesList();
+        } catch (err) {
+            console.error('[auth] anonymous upgrade failed:', err);
+            throw err;
+        }
+    }
+
+    /**
+     * Update all UI elements based on anonymous vs real account status.
+     */
+    _updateAnonymousUI() {
+        const homeSignUpBtn = document.getElementById('home-signup-btn');
+        if (homeSignUpBtn) homeSignUpBtn.classList.toggle('hidden', !this._isAnonymous);
+        if (this.els.authLogoutBtn) this.els.authLogoutBtn.classList.toggle('hidden', !!this._isAnonymous);
+        if (this.els.deleteAccountBtn) this.els.deleteAccountBtn.classList.toggle('hidden', !!this._isAnonymous);
+    }
+
     async _onAuthSuccess(user) {
+        // Always sync anonymous status from the authoritative user object
+        this._isAnonymous = user.is_anonymous === true;
+
         // If a different user logged in, clear local profiles from previous account
         const prevUserId = localStorage.getItem("wf_auth_user_id");
         if (prevUserId && prevUserId !== user.id) {
@@ -17693,6 +18881,15 @@ class Game {
         localStorage.setItem("wf_auth_user_id", user.id);
 
         this._authUser = user;
+
+        // Ensure accounts row exists (backfill for returning sessions that missed it)
+        try {
+            const { ensureAccountRow } = await import('./src/lib/supabase.js');
+            await ensureAccountRow(user.id, user.email || null);
+        } catch (e) {
+            console.error('[auth] ensureAccountRow in _onAuthSuccess failed:', e);
+        }
+
         this._initialSyncComplete = false; // Block cloud pushes until we've loaded cloud data
         // Load profiles from Supabase and sync with local ProfileManager
         try {
@@ -18151,7 +19348,7 @@ class Game {
 
             if (tab === "main") {
                 entries = await fetchMainLeaderboard({
-                    limit: 50,
+                    limit: 1000,
                     offset: this._lbOffset || 0,
                     classFilter: this._lbClassFilter || null,
                     forceRefresh,
@@ -18159,7 +19356,7 @@ class Game {
                 this.els.lbTitle.textContent = "Leaderboards";
             } else {
                 entries = await fetchChallengeLeaderboard(tab, {
-                    limit: 50,
+                    limit: 1000,
                     offset: this._lbOffset || 0,
                     classFilter: this._lbClassFilter || null,
                     forceRefresh,
@@ -18188,7 +19385,7 @@ class Game {
             }
 
             // Show/hide load more
-            this.els.lbLoadMore?.classList.toggle("hidden", entries.length < 50);
+            this.els.lbLoadMore?.classList.toggle("hidden", entries.length < 1000);
 
         } catch (err) {
             console.error('[leaderboard] load error:', err);
@@ -18812,8 +20009,6 @@ class Game {
                 wsIsPerfectClear: scoreData.wsIsPerfectClear || false,
                 wsClearSeconds: scoreData.wsClearSeconds ?? null,
                 // T2: Server-side level sync
-                level: safeInt(profile.level),
-                totalXp: safeInt(profile.totalXp),
             });
 
             // Check if server reported failure
@@ -18888,6 +20083,14 @@ class Game {
         this.els.wsEndGameBtn?.addEventListener("click", () => {
             this._wsEndGame("endgame");
         });
+
+        // Words Found + Hint buttons
+        this.els.wsWordsFoundBtn?.addEventListener("click", () => this._wsOpenWordsFound());
+        this.els.wsPauseWordsBtn?.addEventListener("click", () => {
+            this.els.wsPauseOverlay.classList.remove("active");
+            this._wsOpenWordsFound();
+        });
+        this.els.wsHintBtn?.addEventListener("click", () => this._wsUseHint());
 
         // Touch/mouse input on canvas
         const canvas = this.els.wsCanvas;
@@ -19116,6 +20319,7 @@ class Game {
 
         this._showScreen("ws");
         this._wsUpdateMiniPlayer();
+        this._wsInitHints();
 
         // Delay canvas resize until layout is computed (screen must be visible first)
         requestAnimationFrame(() => {
@@ -19359,6 +20563,9 @@ class Game {
         // Show word popup — mark bonus words
         this._wsShowPopup(word, pts, !isPlacedWord);
 
+        // Check if a hinted word was found
+        this._wsCheckHintFound(word);
+
         // Check if all PLACED words have been found — early completion!
         const placedFound = [...this._ws.placedWordSet].filter(w => this._ws.foundWords.has(w)).length;
         if (placedFound >= this._ws.placedWordSet.size) {
@@ -19400,7 +20607,8 @@ class Game {
         if (!this._ws) return;
         this.els.wsScore.textContent = this._ws.score;
         this.els.wsLevelNum.textContent = this._ws.level;
-        this.els.wsCoins.textContent = this._ws.coins;
+        // Coin HUD should always reflect universal profile total + coins earned this WS run.
+        this.els.wsCoins.textContent = this.profileMgr.getCoins() + (this._ws.coins || 0);
         this.els.wsWordsFoundCount.textContent = `Words Remaining: ${Math.max(0, this._ws.placedWordSet.size - [...this._ws.placedWordSet].filter(w => this._ws.foundWords.has(w)).length)}`;
         this.els.wsTimer.textContent = this._formatCountdownTime(this._ws.timeRemaining);
 
@@ -19591,8 +20799,10 @@ class Game {
                 levelUpCoins += COIN_LEVEL_UP_BASE + lv * COIN_LEVEL_UP_PER_LEVEL;
             }
         }
-        const finalCoins = totalCoins + levelUpCoins;
+        let finalCoins = totalCoins + levelUpCoins;
         this.profileMgr.addCoins(finalCoins);
+        const dailyBonusCoins = this._checkAndAwardDailyChallenge(CHALLENGE_TYPES.WORD_SEARCH, ws.score);
+        if (dailyBonusCoins > 0) finalCoins += dailyBonusCoins;
 
         // Check milestones
         const wsNewMilestones = this.profileMgr.checkMilestones();
@@ -19640,49 +20850,94 @@ class Game {
     }
 
     _wsShowLevelComplete(wordsFound, score, xpEarned, coins, earlyFinish = false, timeBonusScore = 0, timeBonusCoins = 0, levelAdvanced = true, xpResult = null) {
+        // Set game-over state so share card / copy link work correctly
+        this.score = score;
+        this._gameOverChallenge = CHALLENGE_TYPES.WORD_SEARCH;
+        this._gameOverCategoryKey = null;
+        this.wordsFound = this._ws ? [...this._ws.foundWords] : [];
+        this.bestCombo = 0;
+        this._lastGameNewHighScore = false; // word search doesn't track high scores per-level
+
         const overlay = document.createElement("div");
         overlay.className = "ws-level-complete-overlay";
         const currentLevel = this._ws ? this._ws.level : "?";
         const totalWords = this._ws ? this._ws.placedWordSet.size : wordsFound;
         const earlyBonusHtml = earlyFinish ? `
-                    <div class="ws-early-bonus">🌟 All Words Found! 🌟</div>
-                    <div>Time Bonus: <strong>+${timeBonusScore} pts, +${timeBonusCoins} coins</strong></div>
+            <p class="ws-go-new-high">🌟 All Words Found! 🌟</p>
+            <p class="ws-go-time-bonus">Time Bonus: +${timeBonusScore} pts, +${timeBonusCoins} coins</p>
         ` : '';
-        const title = levelAdvanced ? `Level ${currentLevel} Complete!` : `Game Over — Level ${currentLevel}`;
+        const title = levelAdvanced ? `LEVEL ${currentLevel} COMPLETE` : `GAME OVER`;
         const nextLevelBtn = levelAdvanced
             ? `<button class="primary-btn ws-next-level-btn">Next Level →</button>`
             : '';
+
+        // XP bar: start from old position, animate to new
+        const oldLevel = xpResult ? xpResult.oldLevel : (this.profileMgr ? this.profileMgr.getLevel() : 1);
+        const startPct = xpResult && xpResult.oldXpReq > 0
+            ? Math.min(100, (xpResult.oldXp / xpResult.oldXpReq) * 100) : 0;
+
         overlay.innerHTML = `
-            <div class="ws-level-complete-card">
-                <h2>${title}</h2>
-                <div class="ws-level-stats">
-                    ${earlyBonusHtml}
-                    <div>Words Found: <strong>${wordsFound} / ${totalWords}</strong></div>
-                    <div>Score: <strong>${score}</strong></div>
-                    <div>XP Earned: <strong>+${xpEarned}</strong></div>
-                    <div>Coins: <strong>+${coins}</strong></div>
-                </div>
-                ${nextLevelBtn}
-                <button class="secondary-btn ws-quit-to-challenges-btn">Back to Challenges</button>
+            <h1 class="title">${title}</h1>
+            <p class="ws-go-score">Score: ${score}</p>
+            ${earlyBonusHtml}
+            <div class="ws-go-stats">
+                <div>Words Found: <strong>${wordsFound} / ${totalWords}</strong></div>
             </div>
+            <div class="ws-go-xp-display">
+                <div class="ws-go-xp-text">+${xpEarned} XP</div>
+                <div class="ws-go-coins">+${coins} Coins</div>
+                <div class="ws-go-level-text">Level ${oldLevel}</div>
+                <div class="ws-go-xp-bar-track"><div class="ws-go-xp-bar-fill" style="width:${startPct}%"></div></div>
+            </div>
+            ${nextLevelBtn}
+            <div class="gameover-share-row">
+                <button class="secondary-btn btn-blue gameover-share-main ws-share-btn">📸 Share Score</button>
+                <button class="secondary-btn btn-blue gameover-share-link ws-copy-link-btn" title="Copy link">🔗</button>
+            </div>
+            <button class="secondary-btn btn-blue ws-view-words-btn">📋 Words Found</button>
+            <button class="secondary-btn btn-orange ws-quit-to-challenges-btn">Main Menu</button>
         `;
 
         const wsScreen = this.els.wsScreen;
         wsScreen.appendChild(overlay);
 
         // Prevent phantom clicks from the touch event that triggered completion
-        const card = overlay.querySelector(".ws-level-complete-card");
-        if (card) card.style.pointerEvents = "none";
-        setTimeout(() => {
-            if (card) card.style.pointerEvents = "";
-        }, 600);
+        overlay.style.pointerEvents = "none";
+        setTimeout(() => { overlay.style.pointerEvents = ""; }, 600);
 
-        // Show level-up popup if player leveled up
-        if (xpResult && xpResult.leveled) {
-            setTimeout(() => {
-                this._showLevelUpPopup(xpResult.newLevel, xpResult.newXp, xpResult.newXpReq);
-            }, 800);
-        }
+        // Animate XP text
+        const xpText = overlay.querySelector(".ws-go-xp-text");
+        setTimeout(() => { if (xpText) xpText.classList.add("visible"); }, 300);
+
+        // Animate XP bar after a delay, matching main game-over pattern
+        const fill = overlay.querySelector(".ws-go-xp-bar-fill");
+        const levelText = overlay.querySelector(".ws-go-level-text");
+        setTimeout(() => {
+            if (!fill) return;
+            fill.style.transition = "width 1.2s cubic-bezier(0.22,1,0.36,1)";
+
+            if (xpResult && xpResult.leveled) {
+                fill.style.width = "100%";
+                setTimeout(() => {
+                    if (levelText) levelText.textContent = `Level ${xpResult.newLevel}`;
+                    fill.style.transition = "none";
+                    fill.style.width = "0%";
+                    setTimeout(() => {
+                        const endPct = xpResult.newXpReq > 0
+                            ? Math.min(100, (xpResult.newXp / xpResult.newXpReq) * 100) : 0;
+                        fill.style.transition = "width 0.6s cubic-bezier(0.22,1,0.36,1)";
+                        fill.style.width = endPct + "%";
+                        setTimeout(() => {
+                            this._showLevelUpPopup(xpResult.newLevel, xpResult.newXp, xpResult.newXpReq);
+                        }, 700);
+                    }, 50);
+                }, 1250);
+            } else {
+                const endPct = xpResult && xpResult.newXpReq > 0
+                    ? Math.min(100, (xpResult.newXp / xpResult.newXpReq) * 100) : 0;
+                fill.style.width = endPct + "%";
+            }
+        }, 600);
 
         const nextBtn = overlay.querySelector(".ws-next-level-btn");
         if (nextBtn) {
@@ -19694,11 +20949,173 @@ class Game {
             });
         }
 
+        const viewWordsBtn = overlay.querySelector(".ws-view-words-btn");
+        if (viewWordsBtn) {
+            viewWordsBtn.addEventListener("click", () => {
+                this._wsOpenWordsFound();
+            });
+        }
+
+        const shareBtn = overlay.querySelector(".ws-share-btn");
+        if (shareBtn) {
+            shareBtn.addEventListener("click", () => this._shareScore());
+        }
+
+        const copyBtn = overlay.querySelector(".ws-copy-link-btn");
+        if (copyBtn) {
+            copyBtn.addEventListener("click", async () => {
+                try {
+                    const profile = this.profileMgr.getActive();
+                    const name = profile?.username || 'Someone';
+                    const modeLabel = this._getGameModeLabel();
+                    const text = `${name} scored ${this.score.toLocaleString()} in ${modeLabel} on Plummet: Word Fall! Can you beat it? 🎯\nhttps://apps.apple.com/app/plummet-word-fall/id6670594498`;
+                    await navigator.clipboard.writeText(text);
+                    copyBtn.textContent = '✅';
+                    setTimeout(() => { copyBtn.textContent = '🔗'; }, 2000);
+                } catch {
+                    // fallback handled silently
+                }
+            });
+        }
+
         overlay.querySelector(".ws-quit-to-challenges-btn").addEventListener("click", () => {
             overlay.remove();
             this._ws = null;
-            this._openChallengeSetup(CHALLENGE_TYPES.WORD_SEARCH);
+            if (this._pendingFirstGameMenuTour || this._isLegacyOnboardingPending()) {
+                this._pendingFirstGameMenuTour = true;
+                this._enterMainMenuAndMaybeStartGuidedTour();
+            } else {
+                this._openChallengeSetup(CHALLENGE_TYPES.WORD_SEARCH);
+            }
         });
+    }
+
+    // ── Word Search: Words Found Viewer ──
+
+    _wsOpenWordsFound() {
+        if (!this._ws) return;
+        // Pause if not already paused and game is still running
+        if (!this._ws.paused && !this._ws.gameOver) this._wsTogglePause();
+
+        // Build the words list using the shared words-found screen
+        const list = this.els.wordsFoundList;
+        if (!list) return;
+        list.innerHTML = '';
+
+        // Sort: placed words first, then accidental (bonus) words
+        const items = [...this._ws.wordsFound];
+        items.sort((a, b) => {
+            const aPlaced = this._ws.placedWordSet.has(a.word) ? 0 : 1;
+            const bPlaced = this._ws.placedWordSet.has(b.word) ? 0 : 1;
+            return aPlaced - bPlaced || b.pts - a.pts;
+        });
+
+        if (items.length === 0) {
+            list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No words found yet</div>';
+        } else {
+            for (const { word, pts } of items) {
+                const isBonus = !this._ws.placedWordSet.has(word);
+                const hasDetail = ENRICHED_DICT && ENRICHED_DICT[word.toLowerCase()];
+                const item = document.createElement('div');
+                item.className = 'word-found-item' + (isBonus ? ' bonus-word' : '') + (hasDetail ? ' wf-expandable' : '');
+                const detailHtml = this._buildWordFoundDetail(word);
+                item.innerHTML = `
+                    <span class="word-found-text">${word}</span>
+                    <span class="word-found-pts">+${pts}${isBonus ? ' ✨' : ''}</span>
+                    ${detailHtml}
+                `;
+                if (detailHtml) {
+                    item.addEventListener('click', () => item.classList.toggle('wf-expanded'));
+                }
+                list.appendChild(item);
+            }
+        }
+
+        // Update title and count
+        if (this.els.wordsFoundTitle) this.els.wordsFoundTitle.textContent = 'Words Found';
+        if (this.els.wordsFoundCount) this.els.wordsFoundCount.textContent = `${items.length} word${items.length !== 1 ? 's' : ''}`;
+
+        // Hide bonus page dots (not applicable here)
+        if (this.els.wfDots) this.els.wfDots.classList.add('hidden');
+
+        this.wordsFoundBackTarget = "ws";
+        this._showScreen("wordsfound");
+    }
+
+    // ── Word Search: Hint System ──
+
+    _wsInitHints() {
+        if (!this._ws) return;
+        if (this._ws.hintsUsed === undefined) this._ws.hintsUsed = 0;
+        this._ws.activeHint = null;
+        this._wsUpdateHintUI();
+        if (this.els.wsHintBar) this.els.wsHintBar.classList.add('hidden');
+    }
+
+    _wsUpdateHintUI() {
+        if (!this._ws) return;
+        const remaining = 3 - (this._ws.hintsUsed || 0);
+        if (this.els.wsHintsLeft) this.els.wsHintsLeft.textContent = remaining;
+        if (this.els.wsHintBtn) {
+            this.els.wsHintBtn.disabled = remaining <= 0;
+            this.els.wsHintBtn.classList.toggle('ws-hint-exhausted', remaining <= 0);
+        }
+    }
+
+    _wsUseHint() {
+        if (!this._ws || this._ws.paused || this._ws.gameOver) return;
+        if ((this._ws.hintsUsed || 0) >= 3) {
+            this._showShopToast('No hints remaining this level!');
+            return;
+        }
+
+        // Find an unfound placed word to hint
+        const unfound = [...this._ws.placedWordSet].filter(w => !this._ws.foundWords.has(w));
+        if (unfound.length === 0) {
+            this._showShopToast('All placed words already found!');
+            return;
+        }
+
+        // Check coins
+        const HINT_COST = 500;
+        const coins = this.profileMgr.getCoins();
+        if (coins < HINT_COST) {
+            this._showShopToast(`Not enough coins! Need ${HINT_COST}`);
+            return;
+        }
+
+        // Spend coins
+        this.profileMgr.spendCoins(HINT_COST);
+
+        // Pick a random unfound word
+        const hintWord = unfound[Math.floor(Math.random() * unfound.length)];
+        this._ws.hintsUsed++;
+        this._ws.activeHint = hintWord;
+
+        // Show hint bar
+        if (this.els.wsHintWord) this.els.wsHintWord.textContent = hintWord;
+        if (this.els.wsHintBar) this.els.wsHintBar.classList.remove('hidden');
+
+        this._wsUpdateHintUI();
+        this._wsUpdateUI();
+
+        // Update menu coin display too so all screens stay aligned.
+        if (this.els.menuCoins) this.els.menuCoins.textContent = this.profileMgr.getCoins();
+    }
+
+    _wsCheckHintFound(word) {
+        if (!this._ws || !this._ws.activeHint) return;
+        if (word === this._ws.activeHint) {
+            this._ws.activeHint = null;
+            // Fade out hint bar
+            if (this.els.wsHintBar) {
+                this.els.wsHintBar.classList.add('ws-hint-found');
+                setTimeout(() => {
+                    this.els.wsHintBar.classList.add('hidden');
+                    this.els.wsHintBar.classList.remove('ws-hint-found');
+                }, 600);
+            }
+        }
     }
 
     _wsSaveState() {
@@ -19720,6 +21137,7 @@ class Game {
             coins: ws.coins,
             timeRemaining: ws.timeRemaining,
             wordsFound: ws.wordsFound,
+            hintsUsed: ws.hintsUsed || 0,
         };
         localStorage.setItem(key, JSON.stringify(state));
     }
@@ -19807,10 +21225,12 @@ class Game {
             cellSize: 0,
             padding: 0,
             wordsFound: saved.wordsFound || [],
+            hintsUsed: saved.hintsUsed || 0,
         };
 
         this._showScreen("ws");
         this._wsUpdateMiniPlayer();
+        this._wsInitHints();
 
         requestAnimationFrame(() => {
             this._wsResizeCanvas();
@@ -19942,6 +21362,49 @@ class Game {
         });
 
         this._wrGame.start(savedState);
+    }
+
+    /** Show a one-time tutorial for Word Runner before the first game */
+    _wrShowTutorial(onDone) {
+        const overlay = document.createElement("div");
+        overlay.className = "wr-tutorial-overlay";
+        overlay.innerHTML = `
+            <div class="wr-tutorial-card">
+                <h2>HOW TO PLAY</h2>
+                <div class="wr-tutorial-section">
+                    <div class="wr-tutorial-icon">🏃</div>
+                    <p>Your character runs automatically. <strong>Tap to jump</strong> and collect floating letters.</p>
+                </div>
+                <div class="wr-tutorial-section">
+                    <div class="wr-tutorial-icon">🔤</div>
+                    <p>Collected letters fill the <strong>8 boxes</strong> at the bottom. When you spot a word, tap the <strong>green ✅ button</strong> on the side to submit it.</p>
+                </div>
+                <div class="wr-tutorial-section">
+                    <div class="wr-tutorial-icon">💡</div>
+                    <p>You <strong>don't need to use every letter</strong> in the boxes. If a valid word exists anywhere in the boxes, it counts! No need to clear letters first.</p>
+                </div>
+                <div class="wr-tutorial-section">
+                    <div class="wr-tutorial-icon">⚡</div>
+                    <p>Form words quickly to build <strong>combos</strong> for bonus coins. The run speeds up over time — survive as long as you can!</p>
+                </div>
+                <button class="primary-btn wr-tutorial-start-btn">Let's Go!</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // Prevent phantom clicks
+        const card = overlay.querySelector(".wr-tutorial-card");
+        if (card) card.style.pointerEvents = "none";
+        setTimeout(() => { if (card) card.style.pointerEvents = ""; }, 400);
+
+        overlay.querySelector(".wr-tutorial-start-btn").addEventListener("click", () => {
+            overlay.classList.add("closing");
+            setTimeout(() => {
+                overlay.remove();
+                onDone();
+            }, 300);
+        });
     }
 
     _wrStartGame() {
@@ -20277,7 +21740,10 @@ class Game {
         const xpBase = Math.floor(score / 10) + wordsFound.length * 150;
         const xpEarned = wordsFound.length > 0 ? Math.max(1, xpBase) : 0;
         const xpResult = this.profileMgr.awardXP(xpEarned);
-        this.profileMgr.addCoins(totalCoins);
+        let finalCoins = totalCoins;
+        this.profileMgr.addCoins(finalCoins);
+        const dailyBonusCoins = this._checkAndAwardDailyChallenge(CHALLENGE_TYPES.WORD_RUNNER, score);
+        if (dailyBonusCoins > 0) finalCoins += dailyBonusCoins;
 
         // Update game over screen
         if (this.els.finalScore) this.els.finalScore.textContent = `Score: ${score}`;
@@ -20289,7 +21755,7 @@ class Game {
             xpDisplay.classList.remove("visible");
         }
         const coinsDisplay = document.getElementById("coins-earned-text");
-        if (coinsDisplay) coinsDisplay.textContent = `+${totalCoins} Coins`;
+        if (coinsDisplay) coinsDisplay.textContent = `+${finalCoins} Coins`;
 
         const gameoverLevel = document.getElementById("gameover-level-text");
         if (gameoverLevel) gameoverLevel.textContent = `Level ${xpResult.newLevel}`;
@@ -20346,7 +21812,7 @@ class Game {
             bonusWordsCompleted: 0,
             timeRemainingSeconds: null,
             xpEarned,
-            coinsEarned: totalCoins,
+            coinsEarned: finalCoins,
             gridFactor: 1.0,
             difficultyMultiplier: 1.0,
             modeMultiplier: 1.0,
@@ -20402,7 +21868,8 @@ class Game {
         if (!state) return;
         if (this.els.wrScore) this.els.wrScore.textContent = state.score;
         if (this.els.wrDistance) this.els.wrDistance.textContent = Math.floor((state.distance || 0) / 10) + "m";
-        if (this.els.wrCoins) this.els.wrCoins.textContent = state.coins || 0;
+        // Coin HUD should always reflect universal profile total + coins earned this WR run.
+        if (this.els.wrCoins) this.els.wrCoins.textContent = this.profileMgr.getCoins() + (state.coins || 0);
 
         // Level/XP display
         const info = this.profileMgr.getLevelInfo();

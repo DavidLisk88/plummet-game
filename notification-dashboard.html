@@ -201,6 +201,19 @@
         let SUPABASE_URL = '';
         let SERVICE_ROLE_KEY = '';
 
+        function buildAuthHeaders() {
+            const key = (SERVICE_ROLE_KEY || '').trim();
+            const headers = {
+                'apikey': key,
+                'Content-Type': 'application/json',
+            };
+            // Only set Bearer if the key looks like a JWT (legacy service_role key).
+            if (key.split('.').length === 3) {
+                headers['Authorization'] = `Bearer ${key}`;
+            }
+            return headers;
+        }
+
         // ── Config ──
         function saveConfig() {
             SUPABASE_URL = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
@@ -242,9 +255,7 @@
             return fetch(`${SUPABASE_URL}${path}`, {
                 ...opts,
                 headers: {
-                    'apikey': SERVICE_ROLE_KEY,
-                    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-                    'Content-Type': 'application/json',
+                    ...buildAuthHeaders(),
                     'Prefer': 'return=representation',
                     ...(opts.headers || {}),
                 },
@@ -319,8 +330,7 @@
                 const res = await fetch(`${SUPABASE_URL}/functions/v1/send-notification`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-                        'Content-Type': 'application/json',
+                        ...buildAuthHeaders(),
                     },
                     body: JSON.stringify({ title, body, target }),
                 });

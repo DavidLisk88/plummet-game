@@ -34,7 +34,7 @@ function _setCache(key, data) {
  * @param {boolean} opts.forceRefresh
  * @returns {Promise<Array>}
  */
-export async function fetchMainLeaderboard({ limit = 50, offset = 0, classFilter = null, forceRefresh = false } = {}) {
+export async function fetchMainLeaderboard({ limit = 1000, offset = 0, classFilter = null, forceRefresh = false } = {}) {
     if (isLocalMode) return [];
 
     const cacheKey = `main_${limit}_${offset}_${classFilter}`;
@@ -54,7 +54,7 @@ export async function fetchMainLeaderboard({ limit = 50, offset = 0, classFilter
  * @param {Object} opts
  * @returns {Promise<Array>}
  */
-export async function fetchChallengeLeaderboard(challengeType, { limit = 50, offset = 0, classFilter = null, forceRefresh = false } = {}) {
+export async function fetchChallengeLeaderboard(challengeType, { limit = 1000, offset = 0, classFilter = null, forceRefresh = false } = {}) {
     if (isLocalMode) return [];
 
     const cacheKey = `challenge_${challengeType}_${limit}_${offset}_${classFilter}`;

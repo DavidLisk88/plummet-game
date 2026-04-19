@@ -143,8 +143,19 @@
                 </div>
             </div>
         </div>
+        <!-- WELCOME SCREEN (shown on first launch / after sign-out) -->
+        <div id="welcome-screen" class="screen">
+            <h1 class="title">PLUMMET</h1>
+            <p class="subtitle">Word Fall</p>
+            <div class="welcome-buttons">
+                <button id="welcome-start-btn" class="primary-btn" style="width:100%;max-width:280px">Start Playing</button>
+                <button id="welcome-signup-btn" class="secondary-btn" style="width:100%;max-width:280px">Make an Account</button>
+                <p id="welcome-error" class="auth-error hidden"></p>
+            </div>
+        </div>
+
         <!-- AUTH SCREEN (shown on launch when not logged in) -->
-        <div id="auth-screen" class="screen active">
+        <div id="auth-screen" class="screen">
             <h1 class="title">PLUMMET</h1>
             <p class="subtitle auth-subtitle" id="auth-subtitle">Sign in to play</p>
             <div id="auth-error" class="auth-error hidden"></div>
@@ -198,6 +209,9 @@
                 </div>
                 <p class="auth-switch">Already have an account? <button id="auth-goto-signin" class="link-btn">Sign In</button></p>
             </div>
+
+            <!-- Back button for anonymous users navigating from sign-up prompt -->
+            <button id="auth-back-btn" class="link-btn auth-back hidden">← Back to game</button>
         </div>
 
         <!-- PROFILES SCREEN (shown after auth, select/create profile) -->
@@ -223,6 +237,50 @@
                     <input type="text" id="profile-name-input" class="text-input" placeholder="Enter username..." maxlength="20" pattern="[A-Za-z0-9_]+" autocomplete="off" autocorrect="off" spellcheck="false">
                     <p id="profile-name-error" style="color:#e74c3c;font-size:0.85rem;margin:0 0 8px;display:none;text-align:center;"></p>
                     <button id="profile-save-btn" class="primary-btn" style="width:100%;max-width:280px">Create</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Widget setup walkthrough modal -->
+        <div id="widget-howto-modal" class="overlay" aria-hidden="true">
+            <div class="overlay-content widget-howto-content" role="dialog" aria-modal="true" aria-labelledby="widget-howto-title">
+                <h2 id="widget-howto-title">Add Plummet Widget</h2>
+                <p class="widget-howto-subtitle">This takes about 10 seconds and only needs to be done once.</p>
+
+                <div class="widget-howto-steps">
+                    <div class="widget-howto-step">
+                        <span class="widget-howto-step-num">1</span>
+                        <div class="widget-howto-step-body">
+                            <strong>Long-press your Home Screen</strong>
+                            <p>Wait until icons start to jiggle.</p>
+                        </div>
+                    </div>
+                    <div class="widget-howto-step">
+                        <span class="widget-howto-step-num">2</span>
+                        <div class="widget-howto-step-body">
+                            <strong>Tap the + button</strong>
+                            <p>It appears at the top corner.</p>
+                        </div>
+                    </div>
+                    <div class="widget-howto-step">
+                        <span class="widget-howto-step-num">3</span>
+                        <div class="widget-howto-step-body">
+                            <strong>Search for Plummet</strong>
+                            <p>Select the <em>Word of the Day</em> widget style.</p>
+                        </div>
+                    </div>
+                    <div class="widget-howto-step">
+                        <span class="widget-howto-step-num">4</span>
+                        <div class="widget-howto-step-body">
+                            <strong>Tap Add Widget</strong>
+                            <p>Your daily word will update at noon with notifications.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="widget-howto-actions">
+                    <button type="button" id="widget-howto-open-settings-btn" class="primary-btn">Open iPhone Settings</button>
+                    <button type="button" id="widget-howto-close-btn" class="secondary-btn">Done</button>
                 </div>
             </div>
         </div>
@@ -315,6 +373,17 @@
                                         <span class="settings-toggle-slider"></span>
                                     </label>
                                 </div>
+                                <div class="settings-row">
+                                    <div class="settings-row-text">
+                                        <span class="settings-row-label">🧩 Word Widget</span>
+                                        <span class="settings-row-desc">Show Word of the Day widget on Home/Lock Screen</span>
+                                    </div>
+                                    <div class="settings-action-group">
+                                        <button type="button" id="widget-settings-btn" class="settings-action-btn">Set Up</button>
+                                        <button type="button" id="widget-howto-btn" class="settings-action-btn settings-action-btn-secondary">How to Add</button>
+                                    </div>
+                                </div>
+                                <p class="settings-inline-hint">Widgets are added manually on iPhone. Tap <strong>How to Add</strong> for a quick walkthrough.</p>
                             </div>
 
                             <p class="links-page-footer">&copy; 2026 Freddy River. All rights reserved.</p>
@@ -402,6 +471,7 @@
                         <button id="shop-btn" class="secondary-btn shop-btn btn-orange">Shop</button>
                         <button id="music-menu-btn" class="secondary-btn btn-pink">Music</button>
                         <button id="switch-profile-btn" class="secondary-btn btn-lime">Switch Profile</button>
+                        <button id="home-signup-btn" class="secondary-btn btn-gold hidden">SIGN UP</button>
                         <div id="menu-level-display">
                             <div id="menu-level-badge">Lv. <span id="menu-level-num">1</span></div>
                             <div id="menu-xp-bar-track"><div id="menu-xp-bar-fill"></div></div>
@@ -764,15 +834,25 @@
                 <div id="ws-word-popup" aria-live="polite"></div>
                 <canvas id="ws-canvas"></canvas>
             </div>
-            <!-- Words found count -->
+            <!-- Words found count + action buttons -->
             <div id="ws-words-found-bar">
                 <span id="ws-words-found-count">Words Found: 0</span>
+                <div class="ws-bar-actions">
+                    <button id="ws-words-found-btn" class="ws-bar-btn" title="View Words Found">📋</button>
+                    <button id="ws-hint-btn" class="ws-bar-btn ws-hint-btn" title="Use Hint (500 coins)">💡<span id="ws-hints-left">3</span></button>
+                </div>
+            </div>
+            <!-- Hint display bar -->
+            <div id="ws-hint-bar" class="ws-hint-bar hidden">
+                <span class="ws-hint-label">HINT</span>
+                <span id="ws-hint-word"></span>
             </div>
             <!-- Pause overlay -->
             <div id="ws-pause-overlay" class="pause-overlay">
                 <div class="overlay-content">
                     <h2>Paused</h2>
                     <button id="ws-resume-btn" class="primary-btn">Resume</button>
+                    <button id="ws-pause-words-btn" class="secondary-btn btn-blue">📋 Words Found</button>
                     <button id="ws-howtoplay-btn" class="secondary-btn btn-olive">How To Play</button>
                     <button id="ws-dict-btn" class="secondary-btn btn-gold">📖 Dictionary</button>
                     <button id="ws-music-btn" class="secondary-btn btn-pink">Music</button>
@@ -991,6 +1071,7 @@
         <!-- GAME OVER SCREEN -->
         <div id="gameover-screen" class="screen">
             <button id="dict-btn-gameover" class="dict-fab dict-fab-screen" title="Dictionary">📖</button>
+            <p id="gameover-player-name" class="gameover-player-name"></p>
             <h1 class="title">GAME OVER</h1>
             <p id="final-score-text">Score: 0</p>
             <p id="new-high-score-text" class="hidden">New High Score!</p>
@@ -1004,6 +1085,10 @@
                 <div id="gameover-xp-bar-track"><div id="gameover-xp-bar-fill"></div></div>
             </div>
             <button id="restart-btn" class="primary-btn">Play Again</button>
+            <div class="gameover-share-row">
+                <button id="share-score-btn" class="secondary-btn btn-blue gameover-share-main">📸 Share Score</button>
+                <button id="copy-link-btn" class="secondary-btn btn-blue gameover-share-link" title="Copy link">🔗</button>
+            </div>
             <button id="words-found-btn" class="secondary-btn">Words Found</button>
             <button id="menu-btn" class="secondary-btn btn-orange">Main Menu</button>
         </div>
@@ -1114,6 +1199,11 @@
         </div>
     </div>
 
+    <!-- Game Countdown Overlay (3-2-1) -->
+    <div id="countdown-overlay" class="countdown-overlay hidden">
+        <span id="countdown-number" class="countdown-number">3</span>
+    </div>
+
     <!-- Tutorial Overlay -->
     <div id="tutorial-overlay" class="overlay">
         <!-- Sub-menu -->
@@ -1153,14 +1243,26 @@
         <div id="guided-tour-card">
             <div id="guided-tour-card-top">
                 <span id="guided-tour-counter">1 / 1</span>
-                <button id="guided-tour-exit-btn" class="secondary-btn">Exit Tour</button>
+                <button id="guided-tour-exit-btn">Skip</button>
             </div>
             <h3 id="guided-tour-title">Guided Tour</h3>
             <p id="guided-tour-body"></p>
+            <div id="guided-tour-dots"></div>
             <div id="guided-tour-hint">Tap the highlighted area to continue.</div>
             <div id="guided-tour-actions">
-                <button id="guided-tour-continue-btn" class="primary-btn">Tap to Continue</button>
+                <button id="guided-tour-continue-btn" class="primary-btn">Next</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Sign-Up Prompt Modal (shown to anonymous users) -->
+    <div id="signup-prompt-overlay" class="overlay">
+        <div class="overlay-content signup-prompt-content">
+            <h2>Create an Account</h2>
+            <p id="signup-prompt-message">Sign up to save your progress across devices and unlock up to 3 profiles!</p>
+            <button id="signup-prompt-email" class="primary-btn" style="width:100%;max-width:280px">Sign Up with Email</button>
+            <button id="signup-prompt-apple" class="primary-btn signup-apple-btn" style="width:100%;max-width:280px"> Sign in with Apple</button>
+            <button id="signup-prompt-dismiss" class="link-btn">Not right now</button>
         </div>
     </div>
 

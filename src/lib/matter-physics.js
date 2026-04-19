@@ -64,8 +64,11 @@ export function initPhysicsWorld(canvas) {
 export function updatePhysics(dt) {
     if (!_engine || !_isRunning) return;
 
-    // Matter uses ms internally
-    Engine.update(_engine, dt * 1000);
+    // Matter uses ms internally — clamp to one frame max (16.667ms) to avoid
+    // the "delta argument is recommended to be less than or equal to 16.667 ms" warning
+    // that fires on first frame, tab-refocus, or any frame spike.
+    const dtMs = Math.min(dt * 1000, 16.667);
+    Engine.update(_engine, dtMs);
 
     // Render all tracked bodies
     if (_ctx && _canvas) {

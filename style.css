@@ -748,6 +748,17 @@ html, body {
     font-weight: 600;
 }
 
+.game-mode-btn.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.game-mode-btn.locked:hover {
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+
 /* ---------- Buttons ---------- */
 .primary-btn {
     background: var(--accent);
@@ -841,6 +852,36 @@ html, body {
     background: rgba(255, 105, 180, 0.25);
     border-color: #ff85c0;
     color: #ff85c0;
+}
+
+.btn-blue {
+    background: rgba(70, 130, 255, 0.15);
+    border-color: #4682ff;
+    color: #4682ff;
+}
+.btn-blue:hover {
+    background: rgba(70, 130, 255, 0.25);
+    border-color: #6ea0ff;
+    color: #6ea0ff;
+}
+
+/* Game-over share button row */
+.gameover-share-row {
+    display: flex;
+    gap: 8px;
+    align-self: center;
+}
+.gameover-share-main {
+    flex: 1;
+}
+.gameover-share-link {
+    width: 48px;
+    min-width: 48px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
 }
 
 .btn-gold {
@@ -1832,6 +1873,16 @@ body.touch-input #mobile-controls {
     transform: scale(0.97);
 }
 
+.time-select-btn.locked {
+    opacity: 0.35;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.time-select-btn.locked:hover {
+    border-color: var(--border);
+}
+
 /* ── Perk selection modal ── */
 .perk-select-content {
     width: min(88vw, 420px);
@@ -2389,6 +2440,129 @@ body.touch-input #mobile-controls {
 
 .settings-toggle input:focus + .settings-toggle-slider {
     box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.settings-action-btn {
+    appearance: none;
+    border: 1px solid var(--accent);
+    background: linear-gradient(180deg, rgba(226, 216, 166, 0.16), rgba(226, 216, 166, 0.08));
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 8px 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.settings-action-btn:active {
+    transform: translateY(1px);
+}
+
+.settings-action-btn[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.settings-action-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.settings-action-btn-secondary {
+    border-color: var(--border);
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-inline-hint {
+    margin: 8px 0 0;
+    font-size: 0.73rem;
+    color: var(--text-dim);
+    line-height: 1.35;
+}
+
+.settings-inline-hint strong {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.widget-howto-content {
+    width: min(92vw, 420px);
+    align-items: stretch;
+    gap: 10px;
+}
+
+.widget-howto-content h2 {
+    margin: 0;
+    text-align: center;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 1.05rem;
+}
+
+.widget-howto-subtitle {
+    margin: 0 0 4px;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.widget-howto-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.widget-howto-step {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.widget-howto-step-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.74rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.widget-howto-step-body strong {
+    display: block;
+    color: var(--text);
+    font-size: 0.86rem;
+    margin-bottom: 2px;
+}
+
+.widget-howto-step-body p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+.widget-howto-actions {
+    margin-top: 6px;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
 }
 
 /* Footer */
@@ -4284,6 +4458,10 @@ body.touch-input #mobile-controls {
     flex-shrink: 0;
 }
 
+/* ══════════════════════════════════════════════════════════════ */
+/*  GUIDED TOUR — Sleek Tooltip Design                          */
+/* ══════════════════════════════════════════════════════════════ */
+
 #guided-tour-overlay {
     display: none;
     position: fixed;
@@ -4296,57 +4474,67 @@ body.touch-input #mobile-controls {
     display: block;
 }
 
+/* ── Dim backdrop ─────────────────────────────────────────── */
 #guided-tour-dim {
     position: absolute;
     inset: 0;
-    background: rgba(7, 10, 18, 0.76);
-    pointer-events: none;
+    background: rgba(0, 0, 0, 0.65);
+    pointer-events: auto;
     opacity: 0;
-    transition: opacity 0.35s ease;
+    transition: opacity 0.4s ease;
+    cursor: pointer;
 }
 
+/* ── Spotlight cutout ──────────────────────────────────────── */
 #guided-tour-focus {
     position: fixed;
     left: 0;
     top: 0;
     width: 0;
     height: 0;
-    border-radius: 18px;
-    border: 2px solid rgba(226, 216, 166, 0.95);
-    box-shadow: 0 0 0 9999px rgba(7, 10, 18, 0.76), 0 0 0 10px rgba(226, 216, 166, 0.12);
+    border-radius: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    box-shadow:
+        0 0 0 9999px rgba(0, 0, 0, 0.65),
+        0 0 24px 4px rgba(255, 255, 255, 0.08);
     z-index: 10021;
     pointer-events: none;
     opacity: 0;
-    transition: left 0.35s ease, top 0.35s ease, width 0.35s ease, height 0.35s ease, border-radius 0.35s ease, opacity 0.35s ease;
+    transition:
+        left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+        top 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+        width 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+        height 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+        border-radius 0.4s ease,
+        opacity 0.4s ease;
 }
 
-#guided-tour-focus::before,
-#guided-tour-focus::after {
+#guided-tour-focus::before {
     content: "";
     position: absolute;
-    inset: -8px;
+    inset: -6px;
     border-radius: inherit;
-    border: 1px solid rgba(226, 216, 166, 0.35);
-    animation: guidedPulse 2s ease-out infinite;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    animation: gtPulse 2.2s ease-out infinite;
 }
 
 #guided-tour-focus::after {
-    inset: -16px;
-    animation-delay: 0.6s;
+    display: none;
 }
 
+/* ── Arrow connector ──────────────────────────────────────── */
 #guided-tour-arrow {
     position: fixed;
     left: 0;
     top: 0;
     width: 0;
-    height: 3px;
-    background: linear-gradient(90deg, rgba(226, 216, 166, 0), rgba(226, 216, 166, 0.95));
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6));
     transform-origin: 0 50%;
     z-index: 10022;
     pointer-events: none;
     opacity: 0;
-    transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+    transition: left 0.3s ease, top 0.3s ease, width 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
 }
 
 #guided-tour-arrow::after {
@@ -4354,22 +4542,23 @@ body.touch-input #mobile-controls {
     position: absolute;
     right: -1px;
     top: 50%;
-    width: 11px;
-    height: 11px;
-    border-top: 3px solid rgba(226, 216, 166, 0.95);
-    border-right: 3px solid rgba(226, 216, 166, 0.95);
+    width: 8px;
+    height: 8px;
+    border-top: 2px solid rgba(255, 255, 255, 0.6);
+    border-right: 2px solid rgba(255, 255, 255, 0.6);
     transform: translateY(-50%) rotate(45deg);
 }
 
+/* ── Pointer bobber ──────────────────────────────────────── */
 #guided-tour-pointer {
     position: fixed;
     left: 0;
     top: 0;
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.95), rgba(226,216,166,0.92) 45%, rgba(226,216,166,0.14) 70%, rgba(226,216,166,0) 72%);
-    box-shadow: 0 0 0 8px rgba(226, 216, 166, 0.12);
+    background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9), rgba(255,255,255,0.5) 50%, transparent 70%);
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.1);
     z-index: 10022;
     pointer-events: none;
     opacity: 0;
@@ -4378,9 +4567,10 @@ body.touch-input #mobile-controls {
 
 #guided-tour-pointer.active {
     opacity: 1;
-    animation: guidedPointerBob 1.4s ease-in-out infinite;
+    animation: gtPointerBob 1.4s ease-in-out infinite;
 }
 
+/* ── Tap target hotspot ──────────────────────────────────── */
 #guided-tour-hotspot {
     position: fixed;
     z-index: 10022;
@@ -4396,119 +4586,196 @@ body.touch-input #mobile-controls {
     display: none;
 }
 
+/* ── Tooltip Card ─────────────────────────────────────────── */
 #guided-tour-card {
     position: fixed;
-    width: min(280px, calc(100vw - 32px));
-    background: rgba(20, 24, 40, 0.88);
-    border: 1px solid rgba(226, 216, 166, 0.25);
-    border-radius: 18px;
-    padding: 14px;
+    width: min(228px, calc(100vw - 42px));
+    background: rgba(18, 18, 24, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 14px 16px 12px;
     z-index: 10023;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(16px);
-    overflow: hidden;
+    box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    overflow: visible;
     pointer-events: auto;
     opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 0.3s ease, transform 0.3s ease, left 0.35s ease, top 0.35s ease;
+    transform: translateY(10px) scale(0.96);
+    transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), left 0.4s ease, top 0.4s ease;
 }
 
 #guided-tour-card.visible {
     opacity: 1;
-    transform: translateY(0);
-}
-
-#guided-tour-card::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #e2d8a6, #7eb8ff, #8cb860);
+    transform: translateY(0) scale(1);
 }
 
 #guided-tour-card.hidden {
     opacity: 0 !important;
-    transform: translateY(8px) !important;
+    transform: translateY(10px) scale(0.96) !important;
     pointer-events: none !important;
 }
 
+/* ── Card top row (counter + skip) ──────────────────────── */
 #guided-tour-card-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
-    margin-bottom: 6px;
+    margin-bottom: 2px;
 }
 
 #guided-tour-counter {
-    color: var(--accent);
-    font-size: 0.65rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    font-weight: 500;
 }
 
-#guided-tour-title {
-    color: var(--text);
-    margin: 0 0 4px;
-    font-size: 0.95rem;
-    font-weight: 600;
-}
-
-#guided-tour-body {
-    color: var(--text-muted);
-    margin: 0;
-    font-size: 0.8rem;
-    line-height: 1.4;
-}
-
-#guided-tour-hint {
-    color: var(--accent);
-    margin-top: 6px;
+#guided-tour-exit-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
     font-size: 0.7rem;
+    font-weight: 500;
+    padding: 2px 6px;
+    margin: -2px -6px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: color 0.2s;
+    font-family: inherit;
 }
 
+#guided-tour-exit-btn:hover,
+#guided-tour-exit-btn:active {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Title ──────────────────────────────────────────────── */
+#guided-tour-title {
+    color: #fff;
+    margin: 0 0 6px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+}
+
+/* ── Body text ──────────────────────────────────────────── */
+#guided-tour-body {
+    color: rgba(255, 255, 255, 0.6);
+    margin: 0;
+    font-size: 0.74rem;
+    line-height: 1.45;
+}
+
+/* ── Progress dots ──────────────────────────────────────── */
+#guided-tour-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 14px;
+}
+
+.gt-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.3s, transform 0.3s, width 0.3s;
+}
+
+.gt-dot.active {
+    background: #fff;
+    border-radius: 3px;
+    width: 18px;
+    transform: scale(1);
+}
+
+.gt-dot.visited {
+    background: rgba(255, 255, 255, 0.45);
+}
+
+/* ── Hint text ──────────────────────────────────────────── */
+#guided-tour-hint {
+    color: rgba(255, 255, 255, 0.3);
+    margin-top: 8px;
+    font-size: 0.65rem;
+    text-align: center;
+    letter-spacing: 0.02em;
+}
+
+/* ── Actions (Next button) ─────────────────────────────── */
 #guided-tour-actions {
-    margin-top: 10px;
+    margin-top: 12px;
     display: flex;
     justify-content: center;
 }
 
+#guided-tour-continue-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 8px 28px;
+    border-radius: 24px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.15s;
+    font-family: inherit;
+    letter-spacing: 0.02em;
+}
+
+#guided-tour-continue-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+#guided-tour-continue-btn:active {
+    transform: scale(0.96);
+}
+
+#guided-tour-continue-btn.hidden {
+    display: none;
+}
+
+/* ── Back button ──────────────────────────────────────── */
 #guided-tour-back-btn {
     position: fixed;
     top: 16px;
     left: 16px;
     z-index: 10024;
-    padding: 8px 12px;
-    font-size: 0.9rem;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    pointer-events: auto;
 }
 
 #guided-tour-back-btn.hidden {
     display: none;
 }
 
-@keyframes guidedPulse {
+/* ── Animations ──────────────────────────────────────── */
+@keyframes gtPulse {
     0% {
-        opacity: 0.55;
+        opacity: 0.5;
         transform: scale(0.98);
     }
-    70% {
+    70%, 100% {
         opacity: 0;
-        transform: scale(1.08);
-    }
-    100% {
-        opacity: 0;
-        transform: scale(1.08);
+        transform: scale(1.06);
     }
 }
 
-@keyframes guidedPointerBob {
+@keyframes gtPointerBob {
     0%, 100% {
         transform: translate(-50%, -50%) scale(1);
     }
     50% {
-        transform: translate(-50%, -42%) scale(1.04);
+        transform: translate(-50%, -42%) scale(1.05);
     }
 }
 
@@ -4557,13 +4824,8 @@ body.touch-input #mobile-controls {
 
 @media (max-width: 480px) {
     #guided-tour-card {
-        width: calc(100vw - 20px);
-        padding: 14px;
-    }
-
-    #guided-tour-card-top {
-        align-items: flex-start;
-        flex-direction: column;
+        width: calc(100vw - 32px);
+        padding: 13px 14px 11px;
     }
 }
 
@@ -5059,6 +5321,51 @@ body.touch-input #mobile-controls {
     border-color: var(--border-light);
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
+}
+
+.challenge-card.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.challenge-card.daily-coming-soon {
+    position: relative;
+    filter: saturate(0.55) brightness(0.55);
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.challenge-card.daily-coming-soon .challenge-level-badge {
+    color: #d8d8d8;
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.26);
+}
+
+.challenge-coming-soon-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.62);
+    color: #f4f4f4;
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.25;
+    text-transform: none;
+    z-index: 3;
+}
+
+.challenge-lock-label {
+    margin-top: 6px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
 }
 
 .challenge-preview {
@@ -6050,6 +6357,195 @@ body.touch-input #mobile-controls {
 
 .shop-toast.success { border-color: var(--success); color: var(--success); }
 .shop-toast.error { border-color: var(--danger); color: var(--danger); }
+
+/* Save-to-photos confirmation toast */
+.save-toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.85);
+    background: rgba(20, 20, 40, 0.95);
+    border: 1.5px solid var(--success, #4caf50);
+    border-radius: 16px;
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+}
+.save-toast.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+.save-toast-icon {
+    font-size: 1.4em;
+}
+
+/* Player name on game-over screenshot */
+.gameover-player-name {
+    display: none;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent, #6ea0ff);
+    letter-spacing: 0.04em;
+    margin: 0 0 2px;
+    text-align: center;
+}
+
+/* ═══════════════════════════════════════════════
+   Share Card — beautiful branded score image
+   ═══════════════════════════════════════════════ */
+.share-card {
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    width: 400px;
+    padding: 40px 32px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: linear-gradient(170deg, #0f0c29 0%, #1a1a3e 35%, #24243e 65%, #0f0c29 100%);
+    border-radius: 24px;
+    overflow: hidden;
+    color: #fff;
+    z-index: -1;
+}
+
+/* Subtle radial glow behind score */
+.sc-glow {
+    position: absolute;
+    top: 35%;
+    left: 50%;
+    width: 300px;
+    height: 300px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(110, 160, 255, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+/* Header branding */
+.sc-header {
+    text-align: center;
+    margin-bottom: 20px;
+    position: relative;
+}
+.sc-logo {
+    font-size: 1.9rem;
+    font-weight: 200;
+    letter-spacing: 0.35em;
+    color: #8bb4ff;
+    text-transform: uppercase;
+}
+.sc-subtitle {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.5em;
+    color: rgba(139, 180, 255, 0.5);
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+/* Game mode label */
+.sc-mode {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: rgba(255, 210, 60, 0.9);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+/* Player name */
+.sc-player {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #c5d5ff;
+    letter-spacing: 0.06em;
+    margin-bottom: 18px;
+    padding: 4px 16px;
+    border: 1px solid rgba(139, 180, 255, 0.2);
+    border-radius: 20px;
+    background: rgba(139, 180, 255, 0.06);
+}
+
+/* Score section */
+.sc-score-section {
+    text-align: center;
+    margin-bottom: 22px;
+    position: relative;
+}
+.sc-score-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.4em;
+    color: rgba(255, 255, 255, 0.35);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+.sc-score {
+    font-size: 3.5rem;
+    font-weight: 200;
+    letter-spacing: 0.08em;
+    color: #fff;
+    line-height: 1.1;
+    text-shadow: 0 0 40px rgba(110, 160, 255, 0.35);
+}
+.sc-new-high {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: #ffd700;
+    margin-top: 6px;
+    text-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+
+/* Stats grid */
+.sc-stats {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 24px;
+    padding: 14px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    width: 100%;
+}
+.sc-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+.sc-stat-val {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+}
+.sc-stat-lbl {
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+}
+
+/* Footer branding */
+.sc-footer {
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    color: rgba(255, 255, 255, 0.2);
+    text-transform: lowercase;
+}
 
 /* Coin earned display on game over */
 .gameover-coins {
@@ -7152,12 +7648,98 @@ body.touch-input #mobile-controls {
 #ws-words-found-bar {
     width: 100%;
     max-width: 500px;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     font-size: 0.95rem;
     font-weight: 300;
     color: var(--text-dim);
-    padding: 6px 0;
+    padding: 6px 12px;
     flex-shrink: 0;
+}
+
+.ws-bar-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.ws-bar-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.ws-bar-btn:active {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.ws-hint-btn {
+    color: #ffd700;
+    border-color: rgba(255, 215, 0, 0.2);
+    background: rgba(255, 215, 0, 0.06);
+}
+.ws-hint-btn:active {
+    background: rgba(255, 215, 0, 0.15);
+}
+.ws-hint-exhausted {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+#ws-hints-left {
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: rgba(255, 215, 0, 0.2);
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffd700;
+}
+
+/* Hint bar — shows hinted word below grid */
+.ws-hint-bar {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 8px 16px;
+    background: rgba(255, 215, 0, 0.06);
+    border: 1px solid rgba(255, 215, 0, 0.15);
+    border-radius: 12px;
+    flex-shrink: 0;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.ws-hint-bar.hidden {
+    display: none;
+}
+.ws-hint-bar.ws-hint-found {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+.ws-hint-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: rgba(255, 215, 0, 0.5);
+    text-transform: uppercase;
+}
+#ws-hint-word {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #ffd700;
+    letter-spacing: 0.12em;
 }
 
 /* Word popup — floating above the grid, inside ws-grid-container */
@@ -7286,11 +7868,15 @@ body.touch-input #mobile-controls {
     position: absolute;
     inset: 0;
     z-index: 150;
-    background: rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.92);
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: calc(20px + var(--safe-top)) calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
     animation: screenFadeIn 0.3s ease-out;
+    overflow-y: auto;
 }
 
 /* "Tap to continue" banner after word reveal */
@@ -7324,47 +7910,182 @@ body.touch-input #mobile-controls {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
 }
-.ws-level-complete-card {
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    padding: 32px 24px;
-    max-width: 360px;
-}
-.ws-level-complete-card .primary-btn,
-.ws-level-complete-card .secondary-btn {
+.ws-level-complete-overlay .primary-btn,
+.ws-level-complete-overlay .secondary-btn {
     width: 100%;
     max-width: 280px;
 }
-.ws-level-complete-card h2 {
-    color: var(--accent);
-    font-size: 1.8rem;
-    font-weight: 200;
-    letter-spacing: 0.15em;
+.ws-level-complete-overlay .gameover-share-link {
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+    padding: 0;
 }
-.ws-level-stats {
+.ws-level-complete-overlay .gameover-share-row {
+    max-width: 280px;
+}
+
+.ws-go-score {
+    font-size: 2.4rem;
+    font-weight: 200;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+}
+
+.ws-go-new-high {
+    font-size: 1.4rem;
+    font-weight: 300;
+    color: var(--success);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.ws-go-time-bonus {
+    color: #fbbf24;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+.ws-go-stats {
     display: flex;
     flex-direction: column;
     gap: 6px;
     color: var(--text-muted);
     font-size: 1rem;
+    text-align: center;
 }
-.ws-level-stats strong {
+
+.ws-go-stats strong {
     color: var(--accent);
 }
-.ws-early-bonus {
-    color: #fbbf24;
-    font-size: 1.15rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    margin-bottom: 4px;
+
+.ws-go-xp-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0;
+}
+
+.ws-go-xp-text {
+    font-size: 1.3rem;
+    font-weight: 300;
+    color: var(--blue);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.5s, transform 0.5s;
+}
+
+.ws-go-xp-text.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.ws-go-coins {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--bonus);
+    animation: coinFadeIn 0.5s ease-out 0.8s both;
+}
+
+.ws-go-level-text {
+    font-size: 0.9rem;
+    color: var(--blue);
+    font-weight: 300;
+}
+
+.ws-go-xp-bar-track {
+    width: 200px;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    border: none;
+}
+
+.ws-go-xp-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--blue);
+    border-radius: 4px;
 }
 
 /* ═══════════════════════════════════════════════════════════
    WORD RUNNER CHALLENGE
    ═══════════════════════════════════════════════════════ */
+
+/* ── Word Runner Tutorial ── */
+.wr-tutorial-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 20, 0.94);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: screenFadeIn 0.3s ease-out;
+}
+.wr-tutorial-overlay.closing {
+    animation: wrTutFadeOut 0.3s ease-in forwards;
+}
+@keyframes wrTutFadeOut {
+    to { opacity: 0; }
+}
+
+.wr-tutorial-card {
+    width: min(90vw, 380px);
+    text-align: center;
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+}
+
+.wr-tutorial-card h2 {
+    color: var(--accent);
+    font-size: 1.6rem;
+    font-weight: 200;
+    letter-spacing: 0.2em;
+    margin-bottom: 4px;
+}
+
+.wr-tutorial-section {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    text-align: left;
+    width: 100%;
+}
+
+.wr-tutorial-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    width: 36px;
+    text-align: center;
+    margin-top: 2px;
+}
+
+.wr-tutorial-section p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.wr-tutorial-section strong {
+    color: var(--text);
+}
+
+.wr-tutorial-start-btn {
+    margin-top: 8px;
+    width: 100%;
+    max-width: 240px;
+}
 
 /* ══════════════════════════════════════════
    WORD RUNNER – Matches WS/Play screen patterns
@@ -8226,4 +8947,94 @@ body.touch-input #mobile-controls {
     #dict-filter-row { justify-content: center; flex-wrap: wrap; }
     .dict-word-head { padding: 12px 18px; }
     .dict-word-card.open .dict-word-detail { padding: 0 18px 18px; }
+}
+
+/* ---------- Game Countdown Overlay (3-2-1) ---------- */
+.countdown-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+}
+.countdown-overlay.hidden {
+    display: none;
+}
+.countdown-number {
+    font-size: 6rem;
+    font-weight: 800;
+    color: var(--accent, #d4a060);
+    text-shadow: 0 0 30px rgba(212, 160, 96, 0.5);
+    animation: countdownPop 0.7s ease-out;
+}
+@keyframes countdownPop {
+    0% { opacity: 0; transform: scale(2.5); }
+    40% { opacity: 1; transform: scale(0.95); }
+    60% { transform: scale(1.05); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* ---------- Sign-Up Prompt Modal ---------- */
+.signup-prompt-content {
+    text-align: center;
+}
+
+.signup-prompt-content h2 {
+    font-size: 1.4rem;
+    font-weight: 300;
+    color: var(--accent);
+    margin: 0 0 8px 0;
+}
+
+#signup-prompt-message {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+}
+
+.signup-apple-btn {
+    background: #fff !important;
+    color: #000 !important;
+    border: none !important;
+    font-weight: 500;
+}
+
+.signup-apple-btn:hover {
+    background: #e8e8e8 !important;
+}
+
+#signup-prompt-dismiss {
+    margin-top: 4px;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+}
+
+/* Auth back button for anonymous users */
+.auth-back {
+    margin-top: 1.5rem;
+    font-size: 0.95rem;
+    color: var(--text-dim);
+}
+
+/* ── Welcome Screen ── */
+.welcome-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    margin-top: 1.5rem;
+    width: 100%;
+}
+
+#home-signup-btn {
+    animation: signupPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes signupPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(212, 160, 96, 0.4); }
+    50% { box-shadow: 0 0 12px 4px rgba(212, 160, 96, 0.2); }
 }

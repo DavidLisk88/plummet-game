@@ -198,7 +198,21 @@ export async function scheduleWordOfDay(wordsData) {
     // Select the word
     const wordEntry = selectWordOfDay(wordsData);
     const formatted = formatWordForNotification(wordEntry);
-    
+
+    // Write selected word to iOS App Group so the home screen widget shows the same word
+    try {
+        const { setWordOfDay: setWidgetWord } = await import('./app-group.js');
+        const def = wordEntry.definitions?.[0];
+        await setWidgetWord({
+            word:       wordEntry.word.toUpperCase(),
+            pos:        def?.pos?.replace(' satellite', '') ?? '',
+            definition: def?.definition ?? '',
+            date:       new Date().toISOString().slice(0, 10),
+        });
+    } catch {
+        // Non-iOS or bridge not available — silent no-op
+    }
+
     // Calculate next noon
     const now = new Date();
     const noon = new Date();

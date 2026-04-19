@@ -27,6 +27,80 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 // AUTH
 // ════════════════════════════════════════
 
+/**
+ * Sign in anonymously — creates a lightweight Supabase auth user with no email/password.
+ * The user gets a real auth.uid() so all RLS policies work normally.
+ * Returns the session data.
+ */
+export async function signInAnonymously() {
+    if (isLocalMode) throw new Error('Supabase not configured');
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error) throw error;
+    const user = data.session?.user || data.user;
+    if (user) {
+        await ensureAccountRow(user.id, null); // no email for anon users
+    }
+    return data;
+}
+
+/**
+ * Check if the current auth user is anonymous (no email/password linked).
+ */
+export async function isAnonymousUser() {
+    if (isLocalMode) return false;
+    const { data } = await supabase.auth.getUser();
+    const user = data?.user;
+    if (!user) return false;
+    return user.is_anonymous === true;
+}
+
+/**
+ * Convert an anonymous account to a real account by linking email + password.
+ * Supabase promotes the anonymous user — same UUID, all data preserved.
+ *
+ * Follows the official two-step process from Supabase docs:
+ *   Step 1: updateUser({ email })    → links the email identity
+ *   Step 2: updateUser({ password }) → sets the password (requires email linked first)
+ *
+ * REQUIRED Supabase Dashboard settings (Authentication → Settings):
+ *   1. "Allow anonymous sign-ins" → ON
+ *   2. "Enable manual linking" → ON  (required for anonymous → permanent conversion)
+ *   3. "Secure email change" → OFF   (we verify email ourselves via custom OTP;
+ *      if ON, Supabase sends a SECOND confirmation email and blocks the upgrade
+ *      until the user clicks that link — causing a confusing double-verification)
+ */
+export async function linkEmailPassword(email, password) {
+    if (isLocalMode) throw new Error('Supabase not configured');
+
+    // Step 1: Link the email identity to the anonymous user
+    // With "Secure email change" OFF, this is instant (no Supabase confirmation email)
+    const { data: emailData, error: emailError } = await supabase.auth.updateUser({ email });
+    if (emailError) throw emailError;
+
+    // Verify the email was actually linked (not pending confirmation)
+    const emailUser = emailData?.user;
+    if (emailUser && !emailUser.email && emailUser.new_email === email) {
+        throw new Error(
+            'Email is pending Supabase confirmation. ' +
+            'Disable "Secure email change" in Supabase Dashboard → Auth → Settings.'
+        );
+    }
+
+    // Step 2: Set the password (email must be linked/verified first per Supabase docs)
+    const { data, error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    const user = data?.user;
+    if (!user) throw new Error('No user returned after setting password');
+
+    // Step 3: Update our accounts table with the real email
+    const { error: updateErr } = await supabase.from('accounts').update({ email }).eq('id', user.id);
+    if (updateErr) {
+        console.error('[auth] Failed to update accounts.email:', updateErr.message);
+        throw new Error('Account upgraded but email sync failed. Please try again.');
+    }
+    return data;
+}
+
 export async function signUp(email, password) {
     if (isLocalMode) throw new Error('Supabase not configured');
     const { data, error } = await supabase.auth.signUp({ email, password });
@@ -41,10 +115,16 @@ export async function signUp(email, password) {
 
 export async function ensureAccountRow(userId, email) {
     if (isLocalMode || !userId) return;
+    const row = { id: userId };
+    if (email) row.email = email;
     const { error } = await supabase
         .from('accounts')
-        .upsert({ id: userId, email }, { onConflict: 'id' });
-    if (error) console.warn('ensureAccountRow:', error.message);
+        .upsert(row, { onConflict: 'id' });
+    if (error) {
+        // This will fail if migration 034 hasn't been run and email is null (NOT NULL constraint)
+        console.error('[auth] ensureAccountRow failed:', error.message);
+        throw error;
+    }
 }
 
 export async function signIn(email, password) {
@@ -112,26 +192,30 @@ export async function getProfiles(accountId) {
 }
 
 const MAX_PROFILES_PER_ACCOUNT = 3;
+const MAX_PROFILES_ANONYMOUS = 1;
 
-export async function createProfile(accountId, username) {
+export async function createProfile(accountId, username, isAnonymous = false) {
     if (isLocalMode) return null;
     // Check if profile with same name already exists (prevent duplicates)
-    const { data: existing } = await supabase
+    const { data: existingList } = await supabase
         .from('profiles')
         .select('*')
         .eq('account_id', accountId)
         .eq('username', username)
-        .maybeSingle();
-    if (existing) return existing;
+        .limit(1);
+    if (existingList && existingList.length > 0) return existingList[0];
 
-    // Enforce profile limit
+    // Enforce profile limit — 1 for anonymous, 3 for real accounts
+    const maxProfiles = isAnonymous ? MAX_PROFILES_ANONYMOUS : MAX_PROFILES_PER_ACCOUNT;
     const { count, error: countErr } = await supabase
         .from('profiles')
         .select('id', { count: 'exact', head: true })
         .eq('account_id', accountId);
     if (countErr) throw countErr;
-    if (count >= MAX_PROFILES_PER_ACCOUNT) {
-        throw new Error(`Maximum ${MAX_PROFILES_PER_ACCOUNT} profiles per account`);
+    if (count >= maxProfiles) {
+        throw new Error(isAnonymous
+            ? 'Sign up for an account to create more profiles (up to 3)!'
+            : `Maximum ${MAX_PROFILES_PER_ACCOUNT} profiles per account`);
     }
 
     const { data, error } = await supabase
@@ -198,7 +282,6 @@ export async function recordGame({
     timeRemainingSeconds, xpEarned, coinsEarned, gridFactor,
     difficultyMultiplier, modeMultiplier,
     wsPlacedWords, wsLevel, wsIsPerfectClear, wsClearSeconds,
-    level, totalXp,
 }) {
     if (isLocalMode) return null;
     const { data, error } = await supabase.rpc('record_game', {
@@ -226,8 +309,6 @@ export async function recordGame({
         p_ws_level: wsLevel ?? null,
         p_ws_is_perfect_clear: wsIsPerfectClear || false,
         p_ws_clear_seconds: wsClearSeconds ?? null,
-        p_level: level ?? null,
-        p_total_xp: totalXp ?? null,
     });
     if (error) throw error;
     return data;
@@ -450,7 +531,7 @@ export async function getWordSearchStats(profileId) {
 // LEADERBOARD
 // ════════════════════════════════════════
 
-export async function getLeaderboard(limit = 50, offset = 0, classFilter = null) {
+export async function getLeaderboard(limit = 1000, offset = 0, classFilter = null) {
     if (isLocalMode) return [];
     const { data, error } = await supabase.rpc('get_leaderboard', {
         p_limit: limit,
@@ -461,7 +542,7 @@ export async function getLeaderboard(limit = 50, offset = 0, classFilter = null)
     return data || [];
 }
 
-export async function getChallengeLeaderboard(challengeType, limit = 50, offset = 0, classFilter = null) {
+export async function getChallengeLeaderboard(challengeType, limit = 1000, offset = 0, classFilter = null) {
     if (isLocalMode) return [];
     const { data, error } = await supabase.rpc('get_challenge_leaderboard', {
         p_challenge_type: challengeType,
@@ -548,10 +629,10 @@ export async function getPlayerAnalysisData(profileId) {
 
 export async function deleteAccount() {
     if (isLocalMode) return;
-    // Deleting the account row cascades to all data
     const user = await getUser();
     if (!user) throw new Error('Not authenticated');
-    const { error } = await supabase.from('accounts').delete().eq('id', user.id);
+    // RPC deletes accounts row (cascade) + auth.users row (frees email)
+    const { error } = await supabase.rpc('delete_own_account');
     if (error) throw error;
     await signOut();
 }
