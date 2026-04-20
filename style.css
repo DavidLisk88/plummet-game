@@ -6285,6 +6285,197 @@ body.touch-input #mobile-controls {
     white-space: nowrap;
 }
 
+/* ── Slots Tutorial Animation ── */
+.slots-tutorial {
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+.slots-tutorial-title {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 12px;
+    text-align: center;
+}
+.slots-tutorial-scene {
+    position: relative;
+    height: 160px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 14px;
+}
+
+/* Mini grid */
+.slots-tut-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 30px);
+    gap: 3px;
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.slots-tut-cell {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(226,216,166,0.12);
+    border-radius: 4px;
+    font-size: 0.75rem; font-weight: 700;
+    color: var(--accent);
+}
+.slots-tut-cell.dim {
+    color: rgba(226,216,166,0.2);
+}
+
+/* Radial mock */
+.slots-tut-radial {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.slots-tut-toggle {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem;
+    color: var(--bonus);
+    background: rgba(212,160,96,0.1);
+    border: 2px solid rgba(212,160,96,0.3);
+    border-radius: 50%;
+    opacity: 0.6;
+    animation: slotsTutToggle 6s infinite;
+}
+.slots-tut-slots {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    opacity: 0;
+    transform: translateY(-8px) scale(0.8);
+    animation: slotsTutFanOut 6s infinite;
+}
+.slots-tut-slot {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    border-radius: 50%;
+    border: 2px solid var(--bonus);
+    background: rgba(212,160,96,0.08);
+}
+.slots-tut-slot.s0 {
+    animation: slotsTutActivate 6s infinite;
+}
+
+/* Cursor dot */
+.slots-tut-cursor {
+    position: absolute;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.7);
+    box-shadow: 0 0 8px rgba(255,255,255,0.4);
+    pointer-events: none;
+    opacity: 0;
+    left: 28px; top: 50%;
+    animation: slotsTutCursor 6s infinite;
+}
+
+/* Flash when bonus activates */
+.slots-tut-flash {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 30% 55%, rgba(212,160,96,0.35), transparent 60%);
+    opacity: 0;
+    animation: slotsTutFlash 6s infinite;
+}
+
+/* Step text */
+.slots-tutorial-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.slots-tut-step {
+    font-size: 0.72rem;
+    color: var(--faded);
+    padding: 4px 0;
+    opacity: 0.4;
+    transition: opacity 0.3s, color 0.3s;
+    animation-duration: 6s;
+    animation-iteration-count: infinite;
+}
+.slots-tut-step.step-1 { animation-name: slotsTutHighlight1; }
+.slots-tut-step.step-2 { animation-name: slotsTutHighlight2; }
+.slots-tut-step.step-3 { animation-name: slotsTutHighlight3; }
+.slots-tut-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: rgba(212,160,96,0.15);
+    color: var(--bonus);
+    font-size: 0.65rem; font-weight: 800;
+    margin-right: 6px;
+}
+
+/* ── Keyframes (6s loop) ──
+   0.0s–1.2s  Step 1: cursor moves to toggle, toggle glows
+   1.2s–2.6s  Step 2: toggle pulses, slots fan out
+   2.6s–4.2s  Step 3: cursor moves to slot 0, taps it, flash
+   4.2s–6.0s  Reset pause
+*/
+@keyframes slotsTutToggle {
+    0%, 15%   { opacity: 0.6; transform: scale(1); }
+    20%       { opacity: 1; transform: scale(1.12); border-color: var(--bonus); }
+    30%, 100% { opacity: 0.6; transform: scale(1); }
+}
+@keyframes slotsTutFanOut {
+    0%, 20%  { opacity: 0; transform: translateY(-8px) scale(0.8); }
+    28%      { opacity: 1; transform: translateY(0) scale(1); }
+    65%      { opacity: 1; transform: translateY(0) scale(1); }
+    72%, 100% { opacity: 0; transform: translateY(-8px) scale(0.8); }
+}
+@keyframes slotsTutActivate {
+    0%, 42%   { background: rgba(212,160,96,0.08); transform: scale(1); }
+    48%       { background: rgba(212,160,96,0.35); transform: scale(1.15); box-shadow: 0 0 12px rgba(212,160,96,0.5); }
+    55%, 100% { background: rgba(212,160,96,0.08); transform: scale(1); box-shadow: none; }
+}
+@keyframes slotsTutCursor {
+    0%        { opacity: 0; left: 50px; top: 40%; }
+    8%        { opacity: 0.8; left: 50px; top: 40%; }
+    16%       { opacity: 0.9; left: 28px; top: 48%; }
+    20%       { opacity: 0; left: 28px; top: 48%; }
+    35%       { opacity: 0; left: 50px; top: 60%; }
+    40%       { opacity: 0.8; left: 50px; top: 60%; }
+    46%       { opacity: 0.9; left: 28px; top: 63%; }
+    50%       { opacity: 0; left: 28px; top: 63%; }
+    55%, 100% { opacity: 0; }
+}
+@keyframes slotsTutFlash {
+    0%, 47%   { opacity: 0; }
+    50%       { opacity: 1; }
+    58%, 100% { opacity: 0; }
+}
+@keyframes slotsTutHighlight1 {
+    0%, 5%    { opacity: 0.4; color: var(--faded); }
+    8%        { opacity: 1; color: var(--text); }
+    20%       { opacity: 1; color: var(--text); }
+    25%, 100% { opacity: 0.4; color: var(--faded); }
+}
+@keyframes slotsTutHighlight2 {
+    0%, 22%   { opacity: 0.4; color: var(--faded); }
+    26%       { opacity: 1; color: var(--text); }
+    40%       { opacity: 1; color: var(--text); }
+    45%, 100% { opacity: 0.4; color: var(--faded); }
+}
+@keyframes slotsTutHighlight3 {
+    0%, 42%   { opacity: 0.4; color: var(--faded); }
+    46%       { opacity: 1; color: var(--text); }
+    60%       { opacity: 1; color: var(--text); }
+    65%, 100% { opacity: 0.4; color: var(--faded); }
+}
+
 /* ── Radial bonus slot menu ── */
 .radial-menu {
     position: absolute;

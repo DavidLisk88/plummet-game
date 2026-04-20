@@ -11559,6 +11559,34 @@ class Game {
         }
 
         html += '</div>';
+
+        // ── How to Use Slots — animated tutorial ──
+        html += `
+        <div class="slots-tutorial">
+            <h3 class="slots-tutorial-title">How to Use Slots</h3>
+            <div class="slots-tutorial-scene">
+                <div class="slots-tut-grid">
+                    <div class="slots-tut-cell">P</div><div class="slots-tut-cell">L</div><div class="slots-tut-cell">A</div><div class="slots-tut-cell">Y</div>
+                    <div class="slots-tut-cell dim">·</div><div class="slots-tut-cell dim">·</div><div class="slots-tut-cell dim">·</div><div class="slots-tut-cell dim">·</div>
+                </div>
+                <div class="slots-tut-radial">
+                    <div class="slots-tut-toggle">⬡</div>
+                    <div class="slots-tut-slots">
+                        <div class="slots-tut-slot s0">💣</div>
+                        <div class="slots-tut-slot s1">❄️</div>
+                        <div class="slots-tut-slot s2">⭐</div>
+                    </div>
+                </div>
+                <div class="slots-tut-cursor"></div>
+                <div class="slots-tut-flash"></div>
+            </div>
+            <div class="slots-tutorial-steps">
+                <div class="slots-tut-step step-1"><span class="slots-tut-num">1</span> Tap the <b>⬡</b> button during gameplay</div>
+                <div class="slots-tut-step step-2"><span class="slots-tut-num">2</span> Your filled slots fan out</div>
+                <div class="slots-tut-step step-3"><span class="slots-tut-num">3</span> Tap a slot to activate the bonus!</div>
+            </div>
+        </div>`;
+
         container.innerHTML = html;
 
         // Bind slot buy buttons
