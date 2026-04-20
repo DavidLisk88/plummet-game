@@ -115,7 +115,7 @@
 // ── Variant definitions ──────────────────────────────────
 const VARIANTS = [
     {
-        name: 'Bright Yellow / Bold Orange',
+        name: 'Bright Yellow / Bold Green',
         bg: (ctx, s) => {
             const g = ctx.createLinearGradient(0, 0, s * 0.3, s);
             g.addColorStop(0, '#ffe534');
@@ -123,13 +123,13 @@ const VARIANTS = [
             g.addColorStop(1, '#ffb800');
             return g;
         },
-        mainColor: '#d4380d',
-        subColor: 'rgba(180,40,0,0.7)',
-        fallingColors: ['#e8590c', '#d9480f', '#c92a2a', '#e64980', '#f76707', '#d94600', '#ff6b35'],
-        lineColor: 'rgba(212,56,13,0.25)',
+        mainColor: '#166534',
+        subColor: 'rgba(22,101,52,0.7)',
+        fallingColors: ['#15803d', '#166534', '#14532d', '#22c55e', '#16a34a', '#0d7a3a', '#059669'],
+        lineColor: 'rgba(22,101,52,0.25)',
     },
     {
-        name: 'Sunny Yellow / Deep Red',
+        name: 'Sunny Yellow / Deep Green',
         bg: (ctx, s) => {
             const g = ctx.createRadialGradient(s*0.5, s*0.45, 0, s*0.5, s*0.5, s*0.7);
             g.addColorStop(0, '#fff44f');
@@ -137,13 +137,13 @@ const VARIANTS = [
             g.addColorStop(1, '#f0a500');
             return g;
         },
-        mainColor: '#9b1c1c',
-        subColor: 'rgba(120,20,20,0.7)',
-        fallingColors: ['#b91c1c', '#dc2626', '#ef4444', '#9b1c1c', '#c2410c', '#a3160a', '#d94600'],
-        lineColor: 'rgba(155,28,28,0.2)',
+        mainColor: '#14532d',
+        subColor: 'rgba(20,83,45,0.7)',
+        fallingColors: ['#166534', '#15803d', '#16a34a', '#14532d', '#059669', '#047857', '#0d7a3a'],
+        lineColor: 'rgba(20,83,45,0.2)',
     },
     {
-        name: 'Lemon / Burnt Orange',
+        name: 'Lemon / Forest Green',
         bg: (ctx, s) => {
             const g = ctx.createLinearGradient(0, 0, s, s);
             g.addColorStop(0, '#fef08a');
@@ -151,13 +151,13 @@ const VARIANTS = [
             g.addColorStop(1, '#facc15');
             return g;
         },
-        mainColor: '#c2410c',
-        subColor: 'rgba(194,65,12,0.65)',
-        fallingColors: ['#ea580c', '#c2410c', '#9a3412', '#f97316', '#fb923c', '#dc2626', '#b45309'],
-        lineColor: 'rgba(234,88,12,0.2)',
+        mainColor: '#15803d',
+        subColor: 'rgba(21,128,61,0.65)',
+        fallingColors: ['#16a34a', '#15803d', '#166534', '#22c55e', '#4ade80', '#059669', '#0d9460'],
+        lineColor: 'rgba(21,128,61,0.2)',
     },
     {
-        name: 'Golden / Black Bold',
+        name: 'Golden / Dark Green',
         bg: (ctx, s) => {
             const g = ctx.createLinearGradient(0, 0, s * 0.4, s);
             g.addColorStop(0, '#fbbf24');
@@ -165,13 +165,13 @@ const VARIANTS = [
             g.addColorStop(1, '#d97706');
             return g;
         },
-        mainColor: '#1c1917',
-        subColor: 'rgba(28,25,23,0.65)',
-        fallingColors: ['#292524', '#44403c', '#57534e', '#1c1917', '#78716c', '#413c38', '#292524'],
-        lineColor: 'rgba(28,25,23,0.15)',
+        mainColor: '#052e16',
+        subColor: 'rgba(5,46,22,0.65)',
+        fallingColors: ['#14532d', '#166534', '#15803d', '#052e16', '#0d7a3a', '#064e2b', '#14532d'],
+        lineColor: 'rgba(5,46,22,0.15)',
     },
     {
-        name: 'Yellow / Navy Bold',
+        name: 'Yellow / Emerald',
         bg: (ctx, s) => {
             const g = ctx.createLinearGradient(0, 0, s, s);
             g.addColorStop(0, '#fef9c3');
@@ -179,13 +179,13 @@ const VARIANTS = [
             g.addColorStop(1, '#eab308');
             return g;
         },
-        mainColor: '#1e3a5f',
-        subColor: 'rgba(30,58,95,0.6)',
-        fallingColors: ['#1e3a5f', '#1e40af', '#1d4ed8', '#2563eb', '#1e3a5f', '#3b82f6', '#1e40af'],
-        lineColor: 'rgba(30,58,95,0.18)',
+        mainColor: '#065f46',
+        subColor: 'rgba(6,95,70,0.6)',
+        fallingColors: ['#065f46', '#047857', '#059669', '#10b981', '#065f46', '#34d399', '#047857'],
+        lineColor: 'rgba(6,95,70,0.18)',
     },
     {
-        name: 'Hot Yellow / Magenta',
+        name: 'Hot Yellow / Teal',
         bg: (ctx, s) => {
             const g = ctx.createLinearGradient(0, s, s, 0);
             g.addColorStop(0, '#fbbf24');
@@ -194,10 +194,10 @@ const VARIANTS = [
             g.addColorStop(1, '#fff8a8');
             return g;
         },
-        mainColor: '#be185d',
-        subColor: 'rgba(190,24,93,0.6)',
-        fallingColors: ['#be185d', '#db2777', '#ec4899', '#f472b6', '#a21caf', '#c026d3', '#9333ea'],
-        lineColor: 'rgba(190,24,93,0.2)',
+        mainColor: '#0f766e',
+        subColor: 'rgba(15,118,110,0.6)',
+        fallingColors: ['#0f766e', '#0d9488', '#14b8a6', '#2dd4bf', '#115e59', '#0f766e', '#0d9488'],
+        lineColor: 'rgba(15,118,110,0.2)',
     },
 ];
 

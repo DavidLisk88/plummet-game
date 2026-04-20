@@ -46,6 +46,24 @@ const HISTORY_SIZE = 500;
 const NOTIFICATION_CHANNEL_ID = 'plummet-word-of-day';
 const NOTIFICATION_ID = 9001; // Unique ID for the recurring notification
 
+// Cache today's universal word so we only compute once per session
+let _cachedDailyWord = null;
+let _cachedDailyDate = null;
+
+/**
+ * Simple deterministic hash from a string → integer.
+ * Used to seed daily word selection so everyone gets the same word.
+ */
+function hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const ch = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + ch;
+        hash |= 0; // Convert to 32-bit int
+    }
+    return Math.abs(hash);
+}
+
 /**
  * Get the last 500 words that were used for notifications
  */
@@ -72,37 +90,57 @@ function addToWordHistory(word) {
 }
 
 /**
- * Select a random word suitable for Word of the Day
+ * Select the universal Word of the Day — same word for every player on a given date.
+ * Uses a deterministic hash of today's date string to pick from eligible words.
  * - 4+ letters
  * - Not a basic/common word
  * - Has at least one definition
- * - Not in the last 500 words used
  */
 export function selectWordOfDay(wordsData) {
-    const history = new Set(getWordHistory());
-    
-    // Filter eligible words
+    const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+
+    // Return cached if already computed today
+    if (_cachedDailyWord && _cachedDailyDate === today) {
+        return _cachedDailyWord;
+    }
+
+    // Build a stable eligible pool (sorted alphabetically for determinism)
     const eligible = Object.values(wordsData).filter(entry => {
+        if (!entry || !entry.word) return false;
         const word = entry.word;
         return (
             word.length >= 4 &&
             !BASIC_WORDS.has(word.toLowerCase()) &&
-            entry.definitions?.length > 0 &&
-            !history.has(word)
+            entry.definitions?.length > 0
         );
-    });
-    
+    }).sort((a, b) => a.word.localeCompare(b.word));
+
     if (eligible.length === 0) {
-        // Fallback: clear history and try again
-        localStorage.removeItem(STORAGE_KEY);
-        return selectWordOfDay(wordsData);
+        return null;
     }
-    
-    // Random selection
-    const selected = eligible[Math.floor(Math.random() * eligible.length)];
+
+    // Deterministic selection using date hash
+    const index = hashString('plummet-wotd-' + today) % eligible.length;
+    const selected = eligible[index];
+
+    // Still add to history for notification tracking
     addToWordHistory(selected.word);
-    
+
+    // Cache for the session
+    _cachedDailyWord = selected;
+    _cachedDailyDate = today;
+
     return selected;
+}
+
+/**
+ * Get today's universal daily word string (uppercase).
+ * Returns null if WORDS_DATA not available yet.
+ */
+export function getTodaysDailyWord(wordsData) {
+    if (!wordsData) return null;
+    const entry = selectWordOfDay(wordsData);
+    return entry ? entry.word.toUpperCase() : null;
 }
 
 /**

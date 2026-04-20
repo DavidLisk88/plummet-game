@@ -9190,6 +9190,31 @@ class Game {
         this.wordsFound = [];  // track all words found this round
         this.foundWordsThisGame = new Set();
         this.categoryWordsFound = [];  // track category words found this round
+        this._dailyWordClaimed = false; // track if daily word bonus was already claimed this game
+        this._todaysDailyWord = null;
+
+        // Check if already found today (sync, before async load)
+        const todayStr = new Date().toISOString().slice(0, 10);
+        if (localStorage.getItem('plummet_daily_word_found_' + todayStr)) {
+            this._dailyWordClaimed = true;
+        }
+
+        // Load universal daily word from enriched dictionary
+        if (ENRICHED_DICT && Object.keys(ENRICHED_DICT).length > 0) {
+            import('./src/lib/word-of-day.js').then(({ getTodaysDailyWord }) => {
+                this._todaysDailyWord = getTodaysDailyWord(ENRICHED_DICT);
+                if (this._todaysDailyWord) {
+                    console.log(`[WotD] Today's daily word loaded: ${this._todaysDailyWord}`);
+                } else {
+                    console.warn('[WotD] No eligible daily word found');
+                }
+            }).catch(err => {
+                console.warn('[WotD] Failed to load daily word module:', err);
+            });
+        } else {
+            console.warn('[WotD] Enriched dictionary not available, daily word disabled');
+        }
+
         this.availableBonusType = null;
         this.bonusBag = [];
         this.lastAwardedBonusType = null;
@@ -9720,7 +9745,7 @@ class Game {
     }
 
     _showEasterEggBanner() {
-        // Secret jackpot: player spelled the game name. Create a temporary full-screen flash banner.
+        // Secret jackpot: player spelled the game name. Create a full-screen banner.
         let banner = document.getElementById('plummet-easter-egg-banner');
         if (!banner) {
             banner = document.createElement('div');
@@ -9731,18 +9756,48 @@ class Game {
                 'align-items:center', 'justify-content:center',
                 'background:rgba(0,0,0,0.82)',
                 'color:#ffe066', 'font-family:inherit',
-                'pointer-events:none', 'opacity:0',
-                'transition:opacity 0.3s',
+                'pointer-events:auto', 'opacity:0',
+                'transition:opacity 0.3s', 'cursor:pointer',
             ].join(';');
             banner.innerHTML = `
                 <div style="font-size:2.8rem;font-weight:900;letter-spacing:0.08em;text-shadow:0 0 24px #ffe066,0 0 48px #ff9800;">✨ PLUMMET ✨</div>
-                <div style="font-size:1.1rem;margin-top:0.5rem;color:#fff;opacity:0.9;">You found the secret word!</div>
+                <div style="font-size:1.1rem;margin-top:0.5rem;color:#fff;opacity:0.9;">You found the bonus word!</div>
                 <div style="font-size:1.4rem;margin-top:0.6rem;font-weight:700;color:#4fffb0;">+10,000 pts &nbsp;•&nbsp; +1,000 coins</div>
+                <div style="position:absolute;bottom:3rem;font-size:0.85rem;color:#fff;opacity:0.5;letter-spacing:0.05em;">Tap anywhere to continue</div>
             `;
+            banner.addEventListener('click', () => { banner.style.opacity = '0'; banner.style.pointerEvents = 'none'; });
             document.body.appendChild(banner);
         }
+        banner.style.pointerEvents = 'auto';
         banner.style.opacity = '1';
-        setTimeout(() => { banner.style.opacity = '0'; }, 2800);
+    }
+
+    _showDailyWordBanner(word, coins, xp) {
+        let banner = document.getElementById('plummet-daily-word-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'plummet-daily-word-banner';
+            banner.style.cssText = [
+                'position:fixed', 'inset:0', 'z-index:9999',
+                'display:flex', 'flex-direction:column',
+                'align-items:center', 'justify-content:center',
+                'background:rgba(0,0,0,0.85)',
+                'color:#4fffb0', 'font-family:inherit',
+                'pointer-events:auto', 'opacity:0',
+                'transition:opacity 0.3s', 'cursor:pointer',
+            ].join(';');
+            banner.addEventListener('click', () => { banner.style.opacity = '0'; banner.style.pointerEvents = 'none'; });
+            document.body.appendChild(banner);
+        }
+        banner.innerHTML = `
+            <div style="font-size:1rem;font-weight:600;letter-spacing:0.15em;color:#e2d8a6;opacity:0.8;margin-bottom:0.3rem;">⭐ DAILY WORD ⭐</div>
+            <div style="font-size:2.6rem;font-weight:900;letter-spacing:0.06em;text-shadow:0 0 24px #4fffb0,0 0 48px #00c853;">${word}</div>
+            <div style="font-size:1rem;margin-top:0.5rem;color:#fff;opacity:0.85;">You found today's Word of the Day!</div>
+            <div style="font-size:1.4rem;margin-top:0.6rem;font-weight:700;color:#ffe066;">+${coins.toLocaleString()} coins &nbsp;•&nbsp; +${xp.toLocaleString()} XP</div>
+            <div style="position:absolute;bottom:3rem;font-size:0.85rem;color:#fff;opacity:0.5;letter-spacing:0.05em;">Tap anywhere to continue</div>
+        `;
+        banner.style.pointerEvents = 'auto';
+        banner.style.opacity = '1';
     }
 
     _showChainBanner(chainCount) {
@@ -10506,8 +10561,13 @@ class Game {
     _queueFirstGameGuidedTour() {
         const seenKey = 'plummet_first_game_tour_seen';
         const p = this._getLegacyOnboardingState();
+        // Per-profile check: if this profile already saw the tour, skip
         if (p?.legacyGuidedShown) return;
-        if (!p?.legacyOnboardingPending && localStorage.getItem(seenKey) === '1') return;
+        // Global localStorage fallback only applies to legacy profiles that were
+        // already onboarded before per-profile tracking existed.
+        // New profiles (legacyOnboardingPending=false, legacyGuidedShown=false)
+        // should always get the tour regardless of the global key.
+        if (p?.legacyOnboardingPending && localStorage.getItem(seenKey) === '1') return;
 
         this._firstGameTourQueued = true;
         if (this._firstGameTourTimer) {
@@ -16692,6 +16752,18 @@ class Game {
                 this._showEasterEggBanner();
             }
 
+            // 🌟 Daily Word bonus: universal word-of-the-day found in grid
+            if (!this._dailyWordClaimed && this._todaysDailyWord && group.word === this._todaysDailyWord) {
+                this._dailyWordClaimed = true;
+                const dailyBonusCoins = 1000;
+                const dailyBonusXP = 1000;
+                this._coinsThisGame += dailyBonusCoins;
+                this.profileMgr.awardXP(dailyBonusXP);
+                this._showDailyWordBanner(group.word, dailyBonusCoins, dailyBonusXP);
+                // Persist that we found it today
+                localStorage.setItem('plummet_daily_word_found_' + new Date().toISOString().slice(0, 10), 'true');
+            }
+
             // Check for target word match (exact or contains as substring)
             if (this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD
                 && this.targetWord
@@ -19728,6 +19800,15 @@ class Game {
     }
 
     _updateMyRankDisplay(myRank) {
+        // Check if the returned rank belongs to the currently active profile
+        const activeCloudId = this.profileMgr.getActive()?.cloudId;
+        const isActiveProfile = myRank && activeCloudId && myRank.profile_id === activeCloudId;
+
+        // If rank data is for a different profile on this account, treat active profile as unranked
+        if (myRank && !isActiveProfile) {
+            myRank = null;
+        }
+
         // Update the rank card on the menu page 2
         if (myRank) {
             const classInfo = { expert: { icon: '🌟', label: 'Expert Class' }, master: { icon: '💎', label: 'Master Class' }, high: { icon: '👑', label: 'High Class' }, medium: { icon: '⚔️', label: 'Medium Class' }, low: { icon: '🛡️', label: 'Low Class' } };
@@ -19777,8 +19858,8 @@ class Game {
         let mainAnalysisData = null;
 
         try {
-            // Resolve profile_id: prefer from rank RPC, fallback to local profile cloudId
-            const profileId = myRank.profile_id || this.profileMgr.getActive()?.cloudId;
+            // Resolve profile_id: always use the active profile for stats
+            const profileId = this.profileMgr.getActive()?.cloudId || myRank.profile_id;
 
             if (isChallenge && profileId) {
                 // Challenge tab: fetch challenge-specific stats from DB
@@ -19899,7 +19980,7 @@ class Game {
                         const { extractChallengeChartData, extractRecentScores } = await import('./src/lib/player-analysis.js');
                         const { renderBarInto, renderTrendInto } = await import('./src/lib/chart-helpers.js');
                         const { getChallengeAnalysisData } = await import('./src/lib/supabase.js');
-                        const analysisProfileId = myRank.profile_id || this.profileMgr.getActive()?.cloudId;
+                        const analysisProfileId = this.profileMgr.getActive()?.cloudId || myRank.profile_id;
                         const analysisData = analysisProfileId ? await getChallengeAnalysisData(analysisProfileId, challengeType) : null;
                         if (analysisData) {
                             const chartData = extractChallengeChartData(analysisData);

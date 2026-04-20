@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Word Banner Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #2f3029;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 2rem;
+  }
+
+  /* Fake game grid behind the banner */
+  .game-bg {
+    position: fixed; inset: 0; z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(10, 1fr);
+    gap: 3px;
+    padding: 60px 12px 12px;
+    opacity: 0.35;
+  }
+  .game-bg .cell {
+    background: #3a3b34;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #e2d8a6;
+    font-weight: 700;
+    font-size: 1.3rem;
+  }
+  .game-bg .cell.filled { background: #4a4b42; }
+  .game-bg .cell.highlight { background: #8cb860; color: #fff; }
+
+  /* The banner overlay - exact match of game code */
+  .banner-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.85);
+    color: #4fffb0; font-family: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .banner-overlay.visible { opacity: 1; }
+
+  /* Controls */
+  .controls {
+    position: fixed;
+    bottom: 2rem;
+    z-index: 10000;
+    display: flex;
+    gap: 1rem;
+    pointer-events: all;
+  }
+  .controls button {
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0.7rem 1.5rem;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .controls button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .btn-show {
+    background: #4fffb0; color: #1a1a1a;
+  }
+  .btn-easter {
+    background: #ffe066; color: #1a1a1a;
+  }
+
+  /* Easter egg banner for comparison */
+  .easter-overlay {
+    position: fixed; inset: 0; z-index: 9998;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.82);
+    color: #ffe066; font-family: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .easter-overlay.visible { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- Fake game grid background -->
+<div class="game-bg" id="gameGrid"></div>
+
+<!-- Daily Word Banner (exact replica) -->
+<div class="banner-overlay" id="dailyBanner">
+  <div style="font-size:1rem;font-weight:600;letter-spacing:0.15em;color:#e2d8a6;opacity:0.8;margin-bottom:0.3rem;">⭐ DAILY WORD ⭐</div>
+  <div style="font-size:2.6rem;font-weight:900;letter-spacing:0.06em;text-shadow:0 0 24px #4fffb0,0 0 48px #00c853;">ZENITH</div>
+  <div style="font-size:1rem;margin-top:0.5rem;color:#fff;opacity:0.85;">You found today's Word of the Day!</div>
+  <div style="font-size:1.4rem;margin-top:0.6rem;font-weight:700;color:#ffe066;">+1,000 coins &nbsp;•&nbsp; +1,000 XP</div>
+</div>
+
+<!-- Easter Egg Banner (for comparison) -->
+<div class="easter-overlay" id="easterBanner">
+  <div style="font-size:2.8rem;font-weight:900;letter-spacing:0.08em;text-shadow:0 0 24px #ffe066,0 0 48px #ff9800;">✨ PLUMMET ✨</div>
+  <div style="font-size:1.1rem;margin-top:0.5rem;color:#fff;opacity:0.9;">You found the secret word!</div>
+  <div style="font-size:1.4rem;margin-top:0.6rem;font-weight:700;color:#4fffb0;">+10,000 pts &nbsp;•&nbsp; +1,000 coins</div>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <button class="btn-show" onclick="showDaily()">Show Daily Word Banner</button>
+  <button class="btn-easter" onclick="showEaster()">Show Easter Egg Banner</button>
+</div>
+
+<script>
+// Generate fake game grid
+const grid = document.getElementById('gameGrid');
+const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const highlightWord = ['Z','E','N','I','T','H'];
+let highlightIdx = 0;
+
+for (let i = 0; i < 60; i++) {
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  // Bottom rows have letters
+  if (i >= 30) {
+    cell.classList.add('filled');
+    // Highlight ZENITH in row 6 (cells 36-41)
+    if (i >= 36 && i <= 41) {
+      cell.classList.add('highlight');
+      cell.textContent = highlightWord[i - 36];
+    } else {
+      cell.textContent = letters[Math.floor(Math.random() * 26)];
+    }
+  }
+  grid.appendChild(cell);
+}
+
+function showDaily() {
+  const banner = document.getElementById('dailyBanner');
+  banner.classList.add('visible');
+  setTimeout(() => banner.classList.remove('visible'), 3200);
+}
+
+function showEaster() {
+  const banner = document.getElementById('easterBanner');
+  banner.classList.add('visible');
+  setTimeout(() => banner.classList.remove('visible'), 2800);
+}
+
+// Auto-show daily banner on load
+setTimeout(showDaily, 500);
+</script>
+</body>
+</html>

@@ -440,7 +440,7 @@
 <body>
 
 <h1>📱 App Store Screenshots — Bright Edition</h1>
-<p class="subtitle">iPhone 6.7" — 1290 × 2796px</p>
+<p class="subtitle">iPhone 6.7" — 1284 × 2778px</p>
 <p class="instructions">Each: bright headline frame + dark phone mockup. Click Download or Download All.</p>
 
 <div class="screenshots" id="screenshots">
@@ -800,14 +800,21 @@ function buildWSGrid() {
 // ── Download ────────────────────────────────────
 async function downloadSS(num) {
     const el = document.getElementById(`ss-${num}`);
+    // Scale factor: 1284 / 300 preview width = 4.28
+    const scale = 1284 / 300;
+
     const canvas = await html2canvas(el, {
-        width: 1290, height: 2796, scale: 1,
-        windowWidth: 1290, windowHeight: 2796,
-        backgroundColor: null, useCORS: true,
+        scale: scale,
+        backgroundColor: '#ffffff',
+        useCORS: true,
     });
+
+    // Resize to exact App Store dimensions
     const fc = document.createElement('canvas');
-    fc.width = 1290; fc.height = 2796;
-    fc.getContext('2d').drawImage(canvas, 0, 0, 1290, 2796);
+    fc.width = 1284;
+    fc.height = 2778;
+    fc.getContext('2d').drawImage(canvas, 0, 0, 1284, 2778);
+
     const link = document.createElement('a');
     link.download = `plummet-screenshot-${num}.png`;
     link.href = fc.toDataURL('image/png');

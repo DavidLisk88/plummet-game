@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chain Master Week — Event Details Page</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  }
+  .download-btn {
+    margin: 30px 0;
+    padding: 14px 40px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #0a0a0f;
+    background: linear-gradient(135deg, #f5c842, #ffd54f);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    z-index: 100;
+  }
+  .download-btn:hover { opacity: 0.85; }
+  .card {
+    width: 1080px;
+    height: 1920px;
+    background: linear-gradient(170deg, #0a0a0f 0%, #12121f 35%, #1a1020 70%, #0f0a18 100%);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .block {
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.9);
+  }
+  .block.gold {
+    background: linear-gradient(135deg, #d4a025 0%, #f5c842 50%, #d4a025 100%);
+    box-shadow: 0 0 20px rgba(212, 160, 37, 0.4);
+  }
+  .block.dim {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.25);
+  }
+  .block.clearing {
+    background: linear-gradient(135deg, #d4a025 0%, #f5c842 50%, #ffd54f 100%);
+    box-shadow: 0 0 30px rgba(245, 200, 66, 0.6), 0 0 60px rgba(245, 200, 66, 0.2);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 30px rgba(245, 200, 66, 0.6); }
+    50% { box-shadow: 0 0 50px rgba(245, 200, 66, 0.9), 0 0 80px rgba(245, 200, 66, 0.3); }
+  }
+
+  .particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #f5c842;
+    opacity: 0.5;
+  }
+
+  .content {
+    position: relative;
+    z-index: 10;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    padding: 0 60px;
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(245, 200, 66, 0.15);
+    border: 1px solid rgba(245, 200, 66, 0.4);
+    border-radius: 20px;
+    padding: 10px 28px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #f5c842;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+  }
+  .title {
+    font-size: 86px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.08;
+    text-shadow: 0 0 60px rgba(245, 200, 66, 0.2);
+  }
+  .title span {
+    background: linear-gradient(135deg, #f5c842 0%, #ffd54f 50%, #f5c842 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .subtitle {
+    font-size: 32px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.6);
+    max-width: 700px;
+    line-height: 1.4;
+  }
+
+  /* Chain visualization — vertical cascade down the center */
+  .chain-visual {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .chain-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .chain-label {
+    font-size: 20px;
+    font-weight: 700;
+    color: rgba(245, 200, 66, 0.6);
+    width: 100px;
+    text-align: right;
+    padding-right: 16px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .chain-connector {
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(180deg, rgba(245, 200, 66, 0.5), rgba(245, 200, 66, 0.15));
+    margin: 0 auto;
+  }
+  .chain-arrow-down {
+    font-size: 28px;
+    color: rgba(245, 200, 66, 0.5);
+    text-align: center;
+  }
+
+  /* Scattered background grids */
+  .bg-grid-top {
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: repeat(5, 72px);
+    grid-template-rows: repeat(3, 72px);
+    gap: 6px;
+    opacity: 0.4;
+  }
+  .bg-grid-bottom {
+    position: absolute;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: repeat(5, 72px);
+    grid-template-rows: repeat(3, 72px);
+    gap: 6px;
+    opacity: 0.4;
+  }
+
+  .glow-line {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #f5c842, transparent);
+    opacity: 0.5;
+  }
+  .glow-line-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #f5c842, transparent);
+    opacity: 0.3;
+  }
+
+  .corner-glow {
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    filter: blur(150px);
+    opacity: 0.12;
+    background: #f5c842;
+  }
+  .corner-glow.tl { top: -250px; left: -250px; }
+  .corner-glow.br { bottom: -250px; right: -250px; }
+  .corner-glow.mid { top: 40%; left: 50%; transform: translate(-50%, -50%); opacity: 0.06; width: 800px; height: 800px; }
+
+  .watermark {
+    position: absolute;
+    bottom: 50px;
+    font-size: 22px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.15);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="corner-glow tl"></div>
+  <div class="corner-glow br"></div>
+  <div class="corner-glow mid"></div>
+  <div class="glow-line-top"></div>
+
+  <!-- Top background grid -->
+  <div class="bg-grid-top">
+    <div class="block dim">P</div>
+    <div class="block dim">L</div>
+    <div class="block dim">U</div>
+    <div class="block dim">M</div>
+    <div class="block dim">E</div>
+    <div class="block dim">T</div>
+    <div class="block dim">R</div>
+    <div class="block dim">A</div>
+    <div class="block dim">C</div>
+    <div class="block dim">K</div>
+    <div class="block dim">S</div>
+    <div class="block dim">H</div>
+    <div class="block dim">I</div>
+    <div class="block dim">F</div>
+    <div class="block dim">T</div>
+  </div>
+
+  <!-- Particles -->
+  <div class="particle" style="left:200px; top:450px; width:6px; height:6px; opacity:0.6;"></div>
+  <div class="particle" style="right:180px; top:520px;"></div>
+  <div class="particle" style="left:350px; top:1300px; width:5px; height:5px;"></div>
+  <div class="particle" style="right:300px; top:1400px; width:6px; height:6px; opacity:0.5;"></div>
+  <div class="particle" style="left:150px; top:1100px;"></div>
+  <div class="particle" style="right:200px; top:900px; width:5px; height:5px; opacity:0.7;"></div>
+
+  <!-- Center content -->
+  <div class="content">
+    <div class="badge">⚡ Challenge</div>
+    <div class="title"><span>Chain Master</span><br>Week</div>
+    <div class="subtitle">Trigger a 5+ word chain reaction in a single game</div>
+
+    <!-- Chain cascade visualization -->
+    <div class="chain-visual">
+      <div class="chain-row">
+        <div class="chain-label">1st</div>
+        <div class="block gold">F</div>
+        <div class="block gold">A</div>
+        <div class="block gold">L</div>
+        <div class="block gold">L</div>
+      </div>
+      <div class="chain-arrow-down">▼</div>
+      <div class="chain-row">
+        <div class="chain-label">2nd</div>
+        <div class="block clearing">C</div>
+        <div class="block clearing">H</div>
+        <div class="block clearing">A</div>
+        <div class="block clearing">I</div>
+        <div class="block clearing">N</div>
+      </div>
+      <div class="chain-arrow-down">▼</div>
+      <div class="chain-row">
+        <div class="chain-label">3rd</div>
+        <div class="block gold">D</div>
+        <div class="block gold">R</div>
+        <div class="block gold">O</div>
+        <div class="block gold">P</div>
+      </div>
+      <div class="chain-arrow-down">▼</div>
+      <div class="chain-row">
+        <div class="chain-label">4th</div>
+        <div class="block clearing">W</div>
+        <div class="block clearing">O</div>
+        <div class="block clearing">R</div>
+        <div class="block clearing">D</div>
+      </div>
+      <div class="chain-arrow-down">▼</div>
+      <div class="chain-row">
+        <div class="chain-label">5th</div>
+        <div class="block gold">S</div>
+        <div class="block gold">T</div>
+        <div class="block gold">A</div>
+        <div class="block gold">R</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom background grid -->
+  <div class="bg-grid-bottom">
+    <div class="block dim">G</div>
+    <div class="block dim">R</div>
+    <div class="block dim">A</div>
+    <div class="block dim">V</div>
+    <div class="block dim">I</div>
+    <div class="block dim">T</div>
+    <div class="block dim">Y</div>
+    <div class="block dim">W</div>
+    <div class="block dim">I</div>
+    <div class="block dim">N</div>
+    <div class="block dim">D</div>
+    <div class="block dim">R</div>
+    <div class="block dim">O</div>
+    <div class="block dim">P</div>
+    <div class="block dim">S</div>
+  </div>
+
+  <div class="glow-line"></div>
+  <div class="watermark">Plummet: Word Fall</div>
+</div>
+<button class="download-btn" onclick="downloadCard()">Download as PNG</button>
+<script>
+function downloadCard() {
+  const card = document.querySelector('.card');
+  html2canvas(card, { scale: 1, width: 1080, height: 1920, backgroundColor: '#0a0a0f' }).then(canvas => {
+    const link = document.createElement('a');
+    link.download = 'chain-master-week-details-page.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 1.0);
+    link.click();
+  });
+}
+</script>
+</body>
+</html>

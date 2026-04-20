@@ -1,0 +1,60 @@
+═══════════════════════════════════════════════════════════
+  PLUMMET — Next App Store Update To-Do List
+═══════════════════════════════════════════════════════════
+
+SHIP VIA CAPGO (no Apple review needed):
+─────────────────────────────────────────
+[x] Anonymous play (guest mode) — skip sign-up screen
+    - Supabase anonymous auth, auto sign-in on first launch
+    - Anonymous users get 1 profile, real accounts get 3
+    - SIGN UP button on home page (gold, pulsing)
+    - Sign-up prompt after 5 games and 20 games
+    - "Not right now" dismiss option
+    - Email sign-up links anonymous account to real account
+    NOTE: Enable "Allow anonymous sign-ins" in Supabase Dashboard → Auth settings
+    NOTE: Enable "Manual linking" in Supabase Dashboard → Auth settings
+    NOTE: Disable "Secure email change" in Supabase Dashboard → Auth settings
+    Migration: 034_anonymous_play.sql
+
+[ ] Add "Rate on App Store" link button on Connect page
+    - Place below Discord link button
+    - Uses URL: https://apps.apple.com/app/idYOUR_APP_ID?action=write-review
+    - Replace YOUR_APP_ID with actual Apple ID
+
+BUNDLE FOR NEXT APP STORE SUBMISSION:
+─────────────────────────────────────────
+[ ] Sign in with Apple
+    - Install @capacitor-community/apple-sign-in native plugin
+    - Configure in Apple Developer portal (Service ID, etc.)
+    - Supabase: signInWithIdToken({ provider: 'apple', token })
+    - Replace placeholder "Coming in next update" alert
+    - Requires native build + App Store review
+
+[ ] Install @capacitor-community/app-review native plugin
+    - npm install @capacitor-community/app-review
+    - npx cap sync
+    - Add trigger logic (show after class promotion, milestone, or high score)
+    - Guard: gamesPlayed >= 10, sessionCount >= 3, not prompted recently
+    - OS controls actual display frequency (max ~3x per year on iOS)
+
+[ ] Add iOS Home Screen Widget
+    - Shows skill rating, class, recent stats at a glance
+    - Requires native WidgetKit extension (Swift)
+    - Drives re-engagement — users see their stats without opening the app
+
+[x] Add custom manual notification system
+    - Admin-triggered push notifications from Supabase dashboard
+    - For announcements, events, new features, re-engagement
+    - Uses Supabase Edge Functions + APNs/FCM
+
+[ ] (add other changes to bundle here)
+
+MARKETING (non-code):
+─────────────────────────────────────────
+[x] Un-pause Search Ads campaign — DONE 4/17
+[x] Submit Apple Feature Request (developer.apple.com/contact/app-store/promote/) — DONE 4/17
+[ ] Record 3 TikTok gameplay clips
+[ ] Post on Reddit (r/iosgames, r/wordgames, r/indiegaming, r/playmygame)
+[ ] ASO improvements in App Store Connect (keywords, screenshots, preview video)
+[ ] After 1 week: raise Search Ads bid to $0.75-$1.00
+[ ] Consider adding Search Results campaign (in addition to Search Tab)
