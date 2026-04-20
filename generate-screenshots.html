@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLUMMET - App Store Screenshots Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Inter, -apple-system, sans-serif;
+            background: #111;
+            color: #fff;
+            padding: 40px 20px;
+        }
+        h1 { text-align: center; margin-bottom: 8px; font-size: 28px; }
+        .subtitle { text-align: center; color: #888; margin-bottom: 10px; font-size: 14px; }
+        .instructions { text-align: center; color: #666; margin-bottom: 40px; font-size: 12px; }
+        .screenshots {
+            display: flex;
+            gap: 30px;
+            overflow-x: auto;
+            padding: 20px 0 40px;
+            scroll-snap-type: x mandatory;
+        }
+        .screenshot-wrapper {
+            flex-shrink: 0;
+            scroll-snap-align: start;
+            text-align: center;
+        }
+        .screenshot-wrapper h3 {
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+        .screenshot-frame {
+            /* iPhone 6.7" ratio: 1290 x 2796 */
+            width: 300px;
+            height: 650px;
+            border-radius: 30px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            position: relative;
+        }
+        .download-btn {
+            margin-top: 14px;
+            background: linear-gradient(135deg, #e2d8a6, #c4b88a);
+            color: #2f3029;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .download-btn:hover { transform: scale(1.03); }
+        .download-all {
+            display: block;
+            margin: 20px auto;
+            background: linear-gradient(135deg, #e2d8a6, #c4b88a);
+            color: #2f3029;
+            border: none;
+            padding: 14px 40px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        /* ── SCREENSHOT PANELS ─────────────────────── */
+        .ss-panel {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Shared styles */
+        .ss-headline {
+            font-size: 26px;
+            font-weight: 800;
+            text-align: center;
+            line-height: 1.15;
+            margin-bottom: 8px;
+            z-index: 2;
+        }
+        .ss-subline {
+            font-size: 13px;
+            font-weight: 400;
+            text-align: center;
+            opacity: 0.7;
+            z-index: 2;
+            margin-bottom: 24px;
+        }
+        .ss-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            padding: 5px 14px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            z-index: 2;
+        }
+
+        /* ── 1. HERO ─────────────────────────────── */
+        .ss-hero {
+            background: linear-gradient(160deg, #2f3029 0%, #1a1a16 100%);
+            color: #e2d8a6;
+        }
+        .ss-hero .ss-bg-letters {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+        }
+        .ss-hero .falling-letter {
+            position: absolute;
+            font-size: 36px;
+            font-weight: 200;
+            opacity: 0.08;
+            color: #e2d8a6;
+            animation: fallDown 8s linear infinite;
+        }
+        @keyframes fallDown {
+            0% { transform: translateY(-60px); opacity: 0; }
+            10% { opacity: 0.08; }
+            90% { opacity: 0.08; }
+            100% { transform: translateY(700px); opacity: 0; }
+        }
+        .ss-hero .ss-logo {
+            font-size: 52px;
+            font-weight: 200;
+            letter-spacing: -1px;
+            z-index: 2;
+            text-shadow: 0 0 40px rgba(226,216,166,0.3);
+        }
+        .ss-hero .ss-logo-sub {
+            font-size: 16px;
+            font-weight: 300;
+            letter-spacing: 8px;
+            opacity: 0.5;
+            z-index: 2;
+            margin-bottom: 30px;
+        }
+        .ss-hero .ss-tagline {
+            font-size: 15px;
+            font-weight: 400;
+            opacity: 0.6;
+            text-align: center;
+            z-index: 2;
+            line-height: 1.6;
+        }
+        .ss-hero .ss-features-list {
+            list-style: none;
+            z-index: 2;
+            margin-top: 30px;
+        }
+        .ss-hero .ss-features-list li {
+            font-size: 13px;
+            font-weight: 400;
+            opacity: 0.55;
+            padding: 6px 0;
+            text-align: center;
+        }
+        .ss-hero .ss-features-list li span {
+            margin-right: 8px;
+        }
+
+        /* ── 2. GAMEPLAY ─────────────────────────── */
+        .ss-gameplay {
+            background: linear-gradient(160deg, #2f3029 0%, #1e1e1a 100%);
+            color: #e2d8a6;
+        }
+        .ss-grid-mock {
+            display: grid;
+            gap: 4px;
+            z-index: 2;
+            margin: 16px 0;
+        }
+        .ss-cell {
+            width: 38px;
+            height: 38px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .ss-cell-empty {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .ss-cell-filled {
+            background: linear-gradient(145deg, rgba(60,80,120,0.85), rgba(40,55,90,0.9));
+            border: 1px solid rgba(226,216,166,0.3);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+        .ss-cell-word {
+            background: linear-gradient(145deg, rgba(140,184,96,0.9), rgba(100,150,60,0.95));
+            border: 1px solid rgba(140,184,96,0.5);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+            box-shadow: 0 0 12px rgba(140,184,96,0.3);
+        }
+        .ss-cell-falling {
+            background: linear-gradient(145deg, rgba(226,216,166,0.9), rgba(196,184,138,0.95));
+            border: 1px solid rgba(226,216,166,0.7);
+            color: #2f3029;
+            box-shadow: 0 4px 12px rgba(226,216,166,0.2);
+        }
+        .ss-score-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 240px;
+            z-index: 2;
+            margin-bottom: 10px;
+        }
+        .ss-score-item {
+            text-align: center;
+        }
+        .ss-score-item .val {
+            font-size: 20px;
+            font-weight: 800;
+            color: #e2d8a6;
+        }
+        .ss-score-item .lbl {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.4;
+        }
+        .ss-combo-popup {
+            background: linear-gradient(135deg, #d4a060, #c4903e);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 800;
+            padding: 6px 18px;
+            border-radius: 20px;
+            z-index: 2;
+            margin-top: 10px;
+            box-shadow: 0 4px 16px rgba(212,160,96,0.4);
+        }
+        .ss-word-found {
+            background: rgba(140,184,96,0.15);
+            border: 1px solid rgba(140,184,96,0.3);
+            border-radius: 10px;
+            padding: 6px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #8cb860;
+            z-index: 2;
+            margin-top: 8px;
+        }
+
+        /* ── 3. CHALLENGES ───────────────────────── */
+        .ss-challenges {
+            background: linear-gradient(160deg, #2f3029 0%, #1e1e1a 100%);
+            color: #e2d8a6;
+        }
+        .ss-challenge-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            max-width: 250px;
+            z-index: 2;
+        }
+        .ss-challenge-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(226,216,166,0.12);
+            border-radius: 14px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .ss-challenge-icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+        .ss-challenge-info h4 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #e2d8a6;
+            margin-bottom: 2px;
+        }
+        .ss-challenge-info p {
+            font-size: 10px;
+            color: rgba(226,216,166,0.5);
+            line-height: 1.3;
+        }
+
+        /* ── 4. WORD SEARCH ──────────────────────── */
+        .ss-wordsearch {
+            background: linear-gradient(160deg, #2f3029 0%, #1a1a16 100%);
+            color: #e2d8a6;
+        }
+        .ss-ws-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 2px;
+            z-index: 2;
+            margin: 12px 0;
+        }
+        .ss-ws-cell {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(255,255,255,0.5);
+            background: rgba(255,255,255,0.03);
+        }
+        .ss-ws-cell.found {
+            background: rgba(140,184,96,0.25);
+            color: #8cb860;
+            font-weight: 700;
+        }
+        .ss-ws-cell.highlight {
+            background: rgba(226,216,166,0.2);
+            color: #e2d8a6;
+            font-weight: 700;
+        }
+        .ss-ws-words {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+            z-index: 2;
+            max-width: 240px;
+        }
+        .ss-ws-word {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            color: rgba(226,216,166,0.5);
+        }
+        .ss-ws-word.found {
+            background: rgba(140,184,96,0.15);
+            color: #8cb860;
+            text-decoration: line-through;
+        }
+
+        /* ── 5. LEADERBOARDS ─────────────────────── */
+        .ss-leaderboard {
+            background: linear-gradient(160deg, #2f3029 0%, #1e1e1a 100%);
+            color: #e2d8a6;
+        }
+        .ss-lb-list {
+            width: 100%;
+            max-width: 250px;
+            z-index: 2;
+        }
+        .ss-lb-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-bottom: 6px;
+        }
+        .ss-lb-row.me {
+            background: rgba(226,216,166,0.08);
+            border: 1px solid rgba(226,216,166,0.15);
+        }
+        .ss-lb-rank {
+            font-size: 14px;
+            font-weight: 800;
+            width: 24px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .ss-lb-rank.gold { color: #ffd700; }
+        .ss-lb-rank.silver { color: #c0c0c0; }
+        .ss-lb-rank.bronze { color: #cd7f32; }
+        .ss-lb-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .ss-lb-name {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .ss-lb-score {
+            font-size: 13px;
+            font-weight: 700;
+            color: #d4a060;
+        }
+
+        /* ── 6. REWARDS / LEVEL UP ───────────────── */
+        .ss-rewards {
+            background: linear-gradient(160deg, #2f3029 0%, #1a1a16 100%);
+            color: #e2d8a6;
+        }
+        .ss-level-badge {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(226,216,166,0.15), rgba(226,216,166,0.05));
+            border: 2px solid rgba(226,216,166,0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+            margin-bottom: 16px;
+        }
+        .ss-level-badge .lvl-num {
+            font-size: 36px;
+            font-weight: 800;
+        }
+        .ss-level-badge .lvl-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            opacity: 0.5;
+        }
+        .ss-xp-bar-container {
+            width: 200px;
+            height: 8px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 4px;
+            overflow: hidden;
+            z-index: 2;
+            margin: 8px 0 20px;
+        }
+        .ss-xp-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #8cb860, #a4d070);
+            border-radius: 4px;
+            width: 72%;
+        }
+        .ss-reward-items {
+            display: flex;
+            gap: 20px;
+            z-index: 2;
+        }
+        .ss-reward-item {
+            text-align: center;
+        }
+        .ss-reward-item .emoji { font-size: 28px; margin-bottom: 4px; }
+        .ss-reward-item .val {
+            font-size: 16px;
+            font-weight: 800;
+            color: #e2d8a6;
+        }
+        .ss-reward-item .lbl {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.4;
+        }
+        .ss-milestones {
+            display: flex;
+            gap: 8px;
+            z-index: 2;
+            margin-top: 20px;
+        }
+        .ss-milestone {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(226,216,166,0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        /* ── 7. NO ADS / MUSIC ───────────────────── */
+        .ss-noads {
+            background: linear-gradient(160deg, #2f3029 0%, #1e1e1a 100%);
+            color: #e2d8a6;
+        }
+        .ss-feature-blocks {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 250px;
+            z-index: 2;
+        }
+        .ss-feature-block {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(226,216,166,0.1);
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .ss-feature-block .fb-icon {
+            font-size: 30px;
+            flex-shrink: 0;
+        }
+        .ss-feature-block .fb-text h4 {
+            font-size: 14px;
+            font-weight: 700;
+            color: #e2d8a6;
+            margin-bottom: 2px;
+        }
+        .ss-feature-block .fb-text p {
+            font-size: 10.5px;
+            color: rgba(226,216,166,0.45);
+            line-height: 1.4;
+        }
+
+        /* ── 8. MUSIC PLAYER ──────────────────────── */
+        .ss-music {
+            background: linear-gradient(160deg, #2f3029 0%, #1a1a16 100%);
+            color: #e2d8a6;
+        }
+        .ss-mp-now-playing {
+            width: 100%;
+            max-width: 250px;
+            z-index: 2;
+            text-align: center;
+        }
+        .ss-mp-art {
+            width: 180px;
+            height: 180px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(226,216,166,0.12), rgba(226,216,166,0.04));
+            border: 1px solid rgba(226,216,166,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            font-size: 64px;
+            position: relative;
+            overflow: hidden;
+        }
+        .ss-mp-art::before {
+            content: '';
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(226,216,166,0.08);
+            border: 2px solid rgba(226,216,166,0.15);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .ss-mp-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #e2d8a6;
+            margin-bottom: 3px;
+        }
+        .ss-mp-artist {
+            font-size: 12px;
+            color: rgba(226,216,166,0.45);
+            margin-bottom: 16px;
+        }
+        .ss-mp-progress {
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 2px;
+            margin-bottom: 6px;
+            overflow: hidden;
+        }
+        .ss-mp-progress-fill {
+            width: 38%;
+            height: 100%;
+            background: linear-gradient(90deg, #e2d8a6, #c4b88a);
+            border-radius: 2px;
+        }
+        .ss-mp-times {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: rgba(226,216,166,0.35);
+            margin-bottom: 18px;
+        }
+        .ss-mp-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            margin-bottom: 24px;
+        }
+        .ss-mp-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(226,216,166,0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #e2d8a6;
+        }
+        .ss-mp-btn.play {
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, #e2d8a6, #c4b88a);
+            border: none;
+            font-size: 20px;
+            color: #2f3029;
+            box-shadow: 0 4px 20px rgba(226,216,166,0.3);
+        }
+        .ss-mp-playlist {
+            width: 100%;
+            z-index: 2;
+            max-width: 250px;
+        }
+        .ss-mp-pl-header {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: rgba(226,216,166,0.4);
+            margin-bottom: 8px;
+        }
+        .ss-mp-track {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 10px;
+            margin-bottom: 4px;
+            gap: 10px;
+        }
+        .ss-mp-track.active {
+            background: rgba(226,216,166,0.06);
+            border: 1px solid rgba(226,216,166,0.1);
+        }
+        .ss-mp-track-num {
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(226,216,166,0.3);
+            width: 16px;
+            text-align: center;
+        }
+        .ss-mp-track.active .ss-mp-track-num {
+            color: #e2d8a6;
+        }
+        .ss-mp-track-info {
+            flex: 1;
+        }
+        .ss-mp-track-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(226,216,166,0.6);
+        }
+        .ss-mp-track.active .ss-mp-track-name {
+            color: #e2d8a6;
+        }
+        .ss-mp-track-dur {
+            font-size: 10px;
+            color: rgba(226,216,166,0.25);
+        }
+        .ss-mp-eq {
+            display: flex;
+            gap: 2px;
+            align-items: flex-end;
+            height: 14px;
+        }
+        .ss-mp-eq-bar {
+            width: 3px;
+            background: #e2d8a6;
+            border-radius: 1px;
+            animation: eqBounce 0.8s ease-in-out infinite alternate;
+        }
+        @keyframes eqBounce {
+            0% { height: 3px; }
+            100% { height: 14px; }
+        }
+
+        /* ── 9. DICTIONARY ────────────────────────── */
+        .ss-dict {
+            background: linear-gradient(160deg, #2f3029 0%, #1e1e1a 100%);
+            color: #e2d8a6;
+        }
+        .ss-dict-search {
+            width: 100%;
+            max-width: 250px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(226,216,166,0.12);
+            border-radius: 12px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 2;
+            margin-bottom: 12px;
+        }
+        .ss-dict-search-icon {
+            font-size: 14px;
+            opacity: 0.4;
+        }
+        .ss-dict-search-text {
+            font-size: 13px;
+            color: rgba(226,216,166,0.35);
+        }
+        .ss-dict-filters {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: center;
+            z-index: 2;
+            max-width: 250px;
+            margin-bottom: 16px;
+        }
+        .ss-dict-chip {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 5px 10px;
+            border-radius: 16px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(226,216,166,0.1);
+            color: rgba(226,216,166,0.5);
+        }
+        .ss-dict-chip.active {
+            background: rgba(226,216,166,0.9);
+            color: #2f3029;
+            border-color: transparent;
+        }
+        .ss-dict-cards {
+            width: 100%;
+            max-width: 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 2;
+        }
+        .ss-dict-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(226,216,166,0.1);
+            border-radius: 12px;
+            padding: 12px 14px;
+        }
+        .ss-dict-card.expanded {
+            border-color: rgba(226,216,166,0.25);
+            background: rgba(255,255,255,0.05);
+        }
+        .ss-dict-word-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ss-dict-word-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: #e2d8a6;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .ss-dict-pos {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .ss-dict-pos.noun { background: rgba(122,166,142,0.15); color: #7aa68e; }
+        .ss-dict-pos.verb { background: rgba(212,160,96,0.15); color: #d4a060; }
+        .ss-dict-pos.adj { background: rgba(176,160,212,0.15); color: #b0a0d4; }
+        .ss-dict-pos.adv { background: rgba(212,160,176,0.15); color: #d4a0b0; }
+        .ss-dict-chevron {
+            margin-left: auto;
+            font-size: 10px;
+            opacity: 0.3;
+        }
+        .ss-dict-detail {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(226,216,166,0.08);
+        }
+        .ss-dict-def {
+            font-size: 11.5px;
+            font-weight: 300;
+            color: rgba(226,216,166,0.65);
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .ss-dict-def-num {
+            font-weight: 700;
+            color: rgba(226,216,166,0.4);
+            margin-right: 4px;
+        }
+        .ss-dict-syns-label {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(226,216,166,0.3);
+            margin-bottom: 6px;
+        }
+        .ss-dict-syns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .ss-dict-syn {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 8px;
+            background: rgba(122,166,142,0.1);
+            color: #7aa68e;
+        }
+    </style>
+</head>
+<body>
+<h1>📱 App Store Screenshots</h1>
+<p class="subtitle">iPhone 6.7" — 1290 × 2796px</p>
+<p class="instructions">Click "Download" on each to save as PNG, or "Download All" at the bottom.</p>
+
+<div class="screenshots" id="screenshots">
+
+    <!-- 1. HERO -->
+    <div class="screenshot-wrapper">
+        <h3>1 — Hero</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-hero" id="ss-1">
+                <div class="ss-bg-letters" id="falling-bg"></div>
+                <div class="ss-logo">plummet</div>
+                <div class="ss-logo-sub">WORD FALL</div>
+                <div class="ss-tagline">
+                    Drop letters. Form words.<br>
+                    Climb the leaderboard.
+                </div>
+                <ul class="ss-features-list">
+                    <li><span>🎯</span> 5 unique challenge modes</li>
+                    <li><span>📖</span> 33,000+ word dictionary</li>
+                    <li><span>🎵</span> Built-in music player</li>
+                    <li><span>🚫</span> Zero ads. Ever.</li>
+                </ul>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(1)">⬇ Download</button>
+    </div>
+
+    <!-- 2. GAMEPLAY -->
+    <div class="screenshot-wrapper">
+        <h3>2 — Gameplay</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-gameplay" id="ss-2">
+                <div class="ss-headline">Drop. Spell. Score.</div>
+                <div class="ss-subline">Form words in any direction</div>
+                <div class="ss-score-bar">
+                    <div class="ss-score-item"><div class="val">2,450</div><div class="lbl">Score</div></div>
+                    <div class="ss-score-item"><div class="val">3×</div><div class="lbl">Combo</div></div>
+                    <div class="ss-score-item"><div class="val">12</div><div class="lbl">Words</div></div>
+                </div>
+                <div class="ss-grid-mock" id="gameplay-grid" style="grid-template-columns: repeat(6, 38px);"></div>
+                <div class="ss-combo-popup">🔥 3× COMBO!</div>
+                <div class="ss-word-found">✓ PLUMMET  +280</div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(2)">⬇ Download</button>
+    </div>
+
+    <!-- 3. CHALLENGES -->
+    <div class="screenshot-wrapper">
+        <h3>3 — Challenges</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-challenges" id="ss-3">
+                <div class="ss-badge" style="background: rgba(226,216,166,0.1); border: 1px solid rgba(226,216,166,0.2); color: #e2d8a6;">5 GAME MODES</div>
+                <div class="ss-headline">Test Your<br>Word Skills</div>
+                <div class="ss-subline">Something new every time you play</div>
+                <div class="ss-challenge-cards">
+                    <div class="ss-challenge-card">
+                        <div class="ss-challenge-icon">🎯</div>
+                        <div class="ss-challenge-info"><h4>Target Word</h4><p>Spell the target word before time runs out</p></div>
+                    </div>
+                    <div class="ss-challenge-card">
+                        <div class="ss-challenge-icon">⚡</div>
+                        <div class="ss-challenge-info"><h4>Speed Round</h4><p>60 seconds. How many words can you find?</p></div>
+                    </div>
+                    <div class="ss-challenge-card">
+                        <div class="ss-challenge-icon">🏷️</div>
+                        <div class="ss-challenge-info"><h4>Word Category</h4><p>Find words that match: Animals, Food, Sports...</p></div>
+                    </div>
+                    <div class="ss-challenge-card">
+                        <div class="ss-challenge-icon">🔍</div>
+                        <div class="ss-challenge-info"><h4>Word Search</h4><p>Classic word search with a twist</p></div>
+                    </div>
+                    <div class="ss-challenge-card">
+                        <div class="ss-challenge-icon">🏃</div>
+                        <div class="ss-challenge-info"><h4>Word Runner</h4><p>Action-packed letter collecting runner</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(3)">⬇ Download</button>
+    </div>
+
+    <!-- 4. WORD SEARCH -->
+    <div class="screenshot-wrapper">
+        <h3>4 — Word Search</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-wordsearch" id="ss-4">
+                <div class="ss-headline">Classic<br>Word Search</div>
+                <div class="ss-subline">Swipe to find hidden words</div>
+                <div class="ss-ws-grid" id="ws-grid"></div>
+                <div class="ss-ws-words" id="ws-words"></div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(4)">⬇ Download</button>
+    </div>
+
+    <!-- 5. LEADERBOARD -->
+    <div class="screenshot-wrapper">
+        <h3>5 — Leaderboard</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-leaderboard" id="ss-5">
+                <div class="ss-badge" style="background: rgba(212,160,96,0.1); border: 1px solid rgba(212,160,96,0.2); color: #d4a060;">GLOBAL RANKINGS</div>
+                <div class="ss-headline">Climb the<br>Leaderboard</div>
+                <div class="ss-subline">Compete with players worldwide</div>
+                <div class="ss-lb-list">
+                    <div class="ss-lb-row"><div class="ss-lb-rank gold">1</div><div class="ss-lb-avatar">👑</div><div class="ss-lb-name">WordKing99</div><div class="ss-lb-score">48,200</div></div>
+                    <div class="ss-lb-row"><div class="ss-lb-rank silver">2</div><div class="ss-lb-avatar">🧠</div><div class="ss-lb-name">LexiMaster</div><div class="ss-lb-score">41,850</div></div>
+                    <div class="ss-lb-row"><div class="ss-lb-rank bronze">3</div><div class="ss-lb-avatar">⚡</div><div class="ss-lb-name">SpeedSpell</div><div class="ss-lb-score">38,400</div></div>
+                    <div class="ss-lb-row"><div class="ss-lb-rank">4</div><div class="ss-lb-avatar">🎯</div><div class="ss-lb-name">PuzzlePro</div><div class="ss-lb-score">35,120</div></div>
+                    <div class="ss-lb-row me"><div class="ss-lb-rank" style="color: #8cb860;">12</div><div class="ss-lb-avatar" style="border: 2px solid #8cb860;">🫵</div><div class="ss-lb-name" style="color: #8cb860;">You</div><div class="ss-lb-score" style="color: #8cb860;">18,900</div></div>
+                </div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(5)">⬇ Download</button>
+    </div>
+
+    <!-- 6. REWARDS -->
+    <div class="screenshot-wrapper">
+        <h3>6 — Rewards & Progression</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-rewards" id="ss-6">
+                <div class="ss-badge" style="background: rgba(140,184,96,0.1); border: 1px solid rgba(140,184,96,0.2); color: #8cb860;">LEVEL UP!</div>
+                <div class="ss-level-badge">
+                    <div class="lvl-num">14</div>
+                    <div class="lvl-label">Level</div>
+                </div>
+                <div class="ss-headline" style="font-size: 22px;">Keep Playing,<br>Keep Growing</div>
+                <div class="ss-xp-bar-container"><div class="ss-xp-bar-fill"></div></div>
+                <div class="ss-subline">Earn XP, coins, and unlock milestones</div>
+                <div class="ss-reward-items">
+                    <div class="ss-reward-item"><div class="emoji">⭐</div><div class="val">+350</div><div class="lbl">XP Earned</div></div>
+                    <div class="ss-reward-item"><div class="emoji">🪙</div><div class="val">+120</div><div class="lbl">Coins</div></div>
+                    <div class="ss-reward-item"><div class="emoji">🔥</div><div class="val">5</div><div class="lbl">Day Streak</div></div>
+                </div>
+                <div class="ss-milestones">
+                    <div class="ss-milestone">🏅</div>
+                    <div class="ss-milestone">📖</div>
+                    <div class="ss-milestone">⚡</div>
+                    <div class="ss-milestone">🎯</div>
+                </div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(6)">⬇ Download</button>
+    </div>
+
+    <!-- 7. NO ADS + MUSIC -->
+    <div class="screenshot-wrapper">
+        <h3>7 — No Ads & Music</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-noads" id="ss-7">
+                <div class="ss-headline">Pure<br>Word Fun</div>
+                <div class="ss-subline">No interruptions. Just play.</div>
+                <div class="ss-feature-blocks">
+                    <div class="ss-feature-block">
+                        <div class="fb-icon">🚫</div>
+                        <div class="fb-text"><h4>Zero Ads</h4><p>No banners, no popups, no video ads. Ever.</p></div>
+                    </div>
+                    <div class="ss-feature-block">
+                        <div class="fb-icon">🎵</div>
+                        <div class="fb-text"><h4>Built-in Music</h4><p>Original soundtrack with play, pause, and skip controls.</p></div>
+                    </div>
+                    <div class="ss-feature-block">
+                        <div class="fb-icon">📖</div>
+                        <div class="fb-text"><h4>Full Dictionary</h4><p>33,000+ words with definitions, synonyms, and categories.</p></div>
+                    </div>
+                    <div class="ss-feature-block">
+                        <div class="fb-icon">☁️</div>
+                        <div class="fb-text"><h4>Cloud Sync</h4><p>Your progress saves across devices automatically.</p></div>
+                    </div>
+                    <div class="ss-feature-block">
+                        <div class="fb-icon">👤</div>
+                        <div class="fb-text"><h4>Play Instantly</h4><p>No sign-up required. Jump right in.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(7)">⬇ Download</button>
+    </div>
+
+    <!-- 8. MUSIC PLAYER -->
+    <div class="screenshot-wrapper">
+        <h3>8 — Music Player</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-music" id="ss-8">
+                <div class="ss-badge" style="background: rgba(226,216,166,0.1); border: 1px solid rgba(226,216,166,0.2); color: #e2d8a6;">BUILT-IN SOUNDTRACK</div>
+                <div class="ss-headline">Play With<br>Great Music</div>
+                <div class="ss-subline">Original tracks. No subscription needed.</div>
+                <div class="ss-mp-now-playing">
+                    <div class="ss-mp-art">🎵</div>
+                    <div class="ss-mp-title">Falling Slow</div>
+                    <div class="ss-mp-artist">PLUMMET Soundtrack</div>
+                    <div class="ss-mp-progress"><div class="ss-mp-progress-fill"></div></div>
+                    <div class="ss-mp-times"><span>1:24</span><span>3:42</span></div>
+                    <div class="ss-mp-controls">
+                        <div class="ss-mp-btn">🔀</div>
+                        <div class="ss-mp-btn">⏮</div>
+                        <div class="ss-mp-btn play">▶</div>
+                        <div class="ss-mp-btn">⏭</div>
+                        <div class="ss-mp-btn">🔁</div>
+                    </div>
+                </div>
+                <div class="ss-mp-playlist">
+                    <div class="ss-mp-pl-header">Up Next</div>
+                    <div class="ss-mp-track active">
+                        <div class="ss-mp-track-num">
+                            <div class="ss-mp-eq">
+                                <div class="ss-mp-eq-bar" style="animation-delay:0s; height:10px;"></div>
+                                <div class="ss-mp-eq-bar" style="animation-delay:0.2s; height:6px;"></div>
+                                <div class="ss-mp-eq-bar" style="animation-delay:0.4s; height:12px;"></div>
+                            </div>
+                        </div>
+                        <div class="ss-mp-track-info"><div class="ss-mp-track-name">Falling Slow</div></div>
+                        <div class="ss-mp-track-dur">3:42</div>
+                    </div>
+                    <div class="ss-mp-track">
+                        <div class="ss-mp-track-num">2</div>
+                        <div class="ss-mp-track-info"><div class="ss-mp-track-name">Word Flow</div></div>
+                        <div class="ss-mp-track-dur">4:15</div>
+                    </div>
+                    <div class="ss-mp-track">
+                        <div class="ss-mp-track-num">3</div>
+                        <div class="ss-mp-track-info"><div class="ss-mp-track-name">Letter Rain</div></div>
+                        <div class="ss-mp-track-dur">3:08</div>
+                    </div>
+                    <div class="ss-mp-track">
+                        <div class="ss-mp-track-num">4</div>
+                        <div class="ss-mp-track-info"><div class="ss-mp-track-name">Combo Vibes</div></div>
+                        <div class="ss-mp-track-dur">2:56</div>
+                    </div>
+                    <div class="ss-mp-track">
+                        <div class="ss-mp-track-num">5</div>
+                        <div class="ss-mp-track-info"><div class="ss-mp-track-name">Grid Dreams</div></div>
+                        <div class="ss-mp-track-dur">4:33</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(8)">⬇ Download</button>
+    </div>
+
+    <!-- 9. DICTIONARY -->
+    <div class="screenshot-wrapper">
+        <h3>9 — Dictionary</h3>
+        <div class="screenshot-frame">
+            <div class="ss-panel ss-dict" id="ss-9">
+                <div class="ss-badge" style="background: rgba(122,166,142,0.1); border: 1px solid rgba(122,166,142,0.2); color: #7aa68e;">33,000+ WORDS</div>
+                <div class="ss-headline">Built-in<br>Dictionary</div>
+                <div class="ss-subline">Definitions, synonyms, and categories</div>
+                <div class="ss-dict-search">
+                    <div class="ss-dict-search-icon">🔍</div>
+                    <div class="ss-dict-search-text">Search words...</div>
+                </div>
+                <div class="ss-dict-filters">
+                    <div class="ss-dict-chip active">All</div>
+                    <div class="ss-dict-chip">📦 Nouns</div>
+                    <div class="ss-dict-chip">⚡ Verbs</div>
+                    <div class="ss-dict-chip">✨ Adj</div>
+                    <div class="ss-dict-chip">🍕 Food</div>
+                    <div class="ss-dict-chip">🐾 Animals</div>
+                    <div class="ss-dict-chip">🌿 Nature</div>
+                </div>
+                <div class="ss-dict-cards">
+                    <!-- Expanded card -->
+                    <div class="ss-dict-card expanded">
+                        <div class="ss-dict-word-head">
+                            <div class="ss-dict-word-name">Plummet</div>
+                            <div class="ss-dict-pos verb">Verb</div>
+                            <div class="ss-dict-chevron">▼</div>
+                        </div>
+                        <div class="ss-dict-detail">
+                            <div class="ss-dict-def"><span class="ss-dict-def-num">1.</span> To fall or drop straight down at high speed</div>
+                            <div class="ss-dict-def"><span class="ss-dict-def-num">2.</span> To decrease rapidly in value or amount</div>
+                            <div class="ss-dict-syns-label">Synonyms</div>
+                            <div class="ss-dict-syns">
+                                <span class="ss-dict-syn">plunge</span>
+                                <span class="ss-dict-syn">drop</span>
+                                <span class="ss-dict-syn">tumble</span>
+                                <span class="ss-dict-syn">nosedive</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Collapsed cards -->
+                    <div class="ss-dict-card">
+                        <div class="ss-dict-word-head">
+                            <div class="ss-dict-word-name">Cascade</div>
+                            <div class="ss-dict-pos noun">Noun</div>
+                            <div class="ss-dict-chevron">▶</div>
+                        </div>
+                    </div>
+                    <div class="ss-dict-card">
+                        <div class="ss-dict-word-head">
+                            <div class="ss-dict-word-name">Luminous</div>
+                            <div class="ss-dict-pos adj">Adj</div>
+                            <div class="ss-dict-chevron">▶</div>
+                        </div>
+                    </div>
+                    <div class="ss-dict-card">
+                        <div class="ss-dict-word-head">
+                            <div class="ss-dict-word-name">Swiftly</div>
+                            <div class="ss-dict-pos adv">Adverb</div>
+                            <div class="ss-dict-chevron">▶</div>
+                        </div>
+                    </div>
+                    <div class="ss-dict-card">
+                        <div class="ss-dict-word-head">
+                            <div class="ss-dict-word-name">Gravity</div>
+                            <div class="ss-dict-pos noun">Noun</div>
+                            <div class="ss-dict-chevron">▶</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button class="download-btn" onclick="downloadSS(9)">⬇ Download</button>
+    </div>
+
+</div>
+
+<button class="download-all" onclick="downloadAll()">📦 Download All Screenshots</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+// ── Populate gameplay grid ───────────────────────────────
+function buildGameplayGrid() {
+    const grid = document.getElementById('gameplay-grid');
+    const layout = [
+        ['P','L','U','M','M','E'],
+        ['R','_','_','_','_','T'],
+        ['A','_','W','O','R','D'],
+        ['_','_','_','_','_','_'],
+        ['_','_','_','_','_','_'],
+        ['_','$','_','_','_','_'],
+    ];
+    // word highlight: PLUMMET across top + down, WORD in row 3
+    const wordCells = new Set(['0-0','0-1','0-2','0-3','0-4','0-5','1-5','2-2','2-3','2-4','2-5']);
+    const fallingCell = '5-1';
+
+    layout.forEach((row, r) => {
+        row.forEach((cell, c) => {
+            const div = document.createElement('div');
+            const key = `${r}-${c}`;
+            if (key === fallingCell) {
+                div.className = 'ss-cell ss-cell-falling';
+                div.textContent = 'S';
+            } else if (wordCells.has(key)) {
+                div.className = 'ss-cell ss-cell-word';
+                div.textContent = cell;
+            } else if (cell === '_') {
+                div.className = 'ss-cell ss-cell-empty';
+            } else {
+                div.className = 'ss-cell ss-cell-filled';
+                div.textContent = cell;
+            }
+            grid.appendChild(div);
+        });
+    });
+}
+
+// ── Populate word search grid ────────────────────────────
+function buildWSGrid() {
+    const grid = document.getElementById('ws-grid');
+    const letters = [
+        'P','L','U',  'M','B','E','R','S',
+        'H','A','N',  'D','W','O','R','K',
+        'W','O','R',  'D','G','A','M','E',
+        'L','I','T',  'E','R','A','L','S',
+        'P','U','Z',  'Z','L','E','D','A',
+        'F','A','L',  'L','I','N','G','T',
+        'B','R','A',  'I','N','S','C','E',
+        'Q','U','E',  'S','T','R','Y','S',
+    ];
+    // highlight some word paths
+    const found = new Set([16,17,18,19]); // WORD row3
+    const highlight = new Set([40,41,42,43,44,45,46]); // FALLING row6
+
+    letters.forEach((l, i) => {
+        const div = document.createElement('div');
+        div.className = 'ss-ws-cell' + (found.has(i) ? ' found' : highlight.has(i) ? ' highlight' : '');
+        div.textContent = l;
+        grid.appendChild(div);
+    });
+
+    const wordsEl = document.getElementById('ws-words');
+    const words = [
+        { w: 'WORD', f: true },
+        { w: 'FALLING', f: false },
+        { w: 'PUZZLE', f: false },
+        { w: 'BRAIN', f: false },
+        { w: 'GAME', f: false },
+        { w: 'QUEST', f: false },
+    ];
+    words.forEach(({ w, f }) => {
+        const span = document.createElement('span');
+        span.className = 'ss-ws-word' + (f ? ' found' : '');
+        span.textContent = w;
+        wordsEl.appendChild(span);
+    });
+}
+
+// ── Falling background letters for hero ──────────────────
+function buildFallingBg() {
+    const container = document.getElementById('falling-bg');
+    const chars = 'PLUMMETWORDFALL';
+    for (let i = 0; i < 20; i++) {
+        const span = document.createElement('span');
+        span.className = 'falling-letter';
+        span.textContent = chars[Math.floor(Math.random() * chars.length)];
+        span.style.left = (5 + Math.random() * 90) + '%';
+        span.style.animationDelay = (Math.random() * 8) + 's';
+        span.style.animationDuration = (6 + Math.random() * 4) + 's';
+        span.style.fontSize = (24 + Math.random() * 20) + 'px';
+        container.appendChild(span);
+    }
+}
+
+// ── Download functions ───────────────────────────────────
+async function downloadSS(num) {
+    const el = document.getElementById(`ss-${num}`);
+    const canvas = await html2canvas(el, {
+        width: 1290,
+        height: 2796,
+        scale: 1,
+        windowWidth: 1290,
+        windowHeight: 2796,
+        backgroundColor: null,
+        useCORS: true,
+    });
+    // Scale up: render at panel size then draw to 1290x2796
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = 1290;
+    finalCanvas.height = 2796;
+    const ctx = finalCanvas.getContext('2d');
+    ctx.drawImage(canvas, 0, 0, 1290, 2796);
+
+    const link = document.createElement('a');
+    link.download = `plummet-screenshot-${num}.png`;
+    link.href = finalCanvas.toDataURL('image/png');
+    link.click();
+}
+
+async function downloadAll() {
+    for (let i = 1; i <= 9; i++) {
+        await downloadSS(i);
+        await new Promise(r => setTimeout(r, 500));
+    }
+}
+
+// ── Init ─────────────────────────────────────────────────
+buildFallingBg();
+buildGameplayGrid();
+buildWSGrid();
+</script>
+</body>
+</html>

@@ -4789,6 +4789,63 @@ body.touch-input #mobile-controls {
     z-index: 10024 !important;
 }
 
+/* ── Guided Tour: Swipe Arrows ───────────────────────── */
+.gt-swipe-arrows {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin: 8px 0 4px;
+}
+
+.gt-swipe-text {
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.7);
+    text-align: center;
+    line-height: 1.4;
+}
+
+.gt-swipe-arrow {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+.gt-arrow-left {
+    animation: gtArrowGlowLeft 1.5s ease-in-out infinite;
+}
+
+.gt-arrow-right {
+    animation: gtArrowGlowRight 1.5s ease-in-out infinite;
+}
+
+@keyframes gtArrowGlowLeft {
+    0%, 100% {
+        opacity: 0.6;
+        transform: translateX(0);
+        text-shadow: 0 0 8px rgba(255, 255, 255, 0.5), 0 0 16px rgba(255, 255, 255, 0.2);
+    }
+    50% {
+        opacity: 1;
+        transform: translateX(-5px);
+        text-shadow: 0 0 14px rgba(255, 255, 255, 0.9), 0 0 28px rgba(255, 255, 255, 0.5);
+    }
+}
+
+@keyframes gtArrowGlowRight {
+    0%, 100% {
+        opacity: 0.6;
+        transform: translateX(0);
+        text-shadow: 0 0 8px rgba(255, 255, 255, 0.5), 0 0 16px rgba(255, 255, 255, 0.2);
+    }
+    50% {
+        opacity: 1;
+        transform: translateX(5px);
+        text-shadow: 0 0 14px rgba(255, 255, 255, 0.9), 0 0 28px rgba(255, 255, 255, 0.5);
+    }
+}
+
 /* ── Guided Teaching Grid ────────────────────────────── */
 .guided-teaching-grid {
     position: absolute;
@@ -7689,6 +7746,9 @@ body.touch-input #mobile-controls {
     color: #ffd700;
     border-color: rgba(255, 215, 0, 0.2);
     background: rgba(255, 215, 0, 0.06);
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
 }
 .ws-hint-btn:active {
     background: rgba(255, 215, 0, 0.15);
@@ -7696,18 +7756,6 @@ body.touch-input #mobile-controls {
 .ws-hint-exhausted {
     opacity: 0.35;
     pointer-events: none;
-}
-
-#ws-hints-left {
-    font-size: 0.75rem;
-    font-weight: 700;
-    background: rgba(255, 215, 0, 0.2);
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     color: #ffd700;
 }
 

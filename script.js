@@ -5173,7 +5173,6 @@ class Game {
             wsWordsFoundCount: document.getElementById("ws-words-found-count"),
             wsWordsFoundBtn: document.getElementById("ws-words-found-btn"),
             wsHintBtn: document.getElementById("ws-hint-btn"),
-            wsHintsLeft: document.getElementById("ws-hints-left"),
             wsHintBar: document.getElementById("ws-hint-bar"),
             wsHintWord: document.getElementById("ws-hint-word"),
             wsPauseWordsBtn: document.getElementById("ws-pause-words-btn"),
@@ -15127,6 +15126,15 @@ class Game {
                         cardYOffset: 26,
                     },
                     {
+                        title: 'Explore the App',
+                        bodyHTML: '<div class="gt-swipe-arrows"><span class="gt-swipe-arrow gt-arrow-left">&#8592;</span><span class="gt-swipe-text">Swipe left or right to view all pages</span><span class="gt-swipe-arrow gt-arrow-right">&#8594;</span></div>',
+                        mode: 'continue',
+                        hintText: 'Tap anywhere to continue',
+                        hideArrow: true,
+                        centerCard: true,
+                        onEnter: [call('_setupGuidedMenuPage', 3)],
+                    },
+                    {
                         title: 'Welcome to Plummet!',
                         body: 'You\'re all set. Go play, discover words, and have fun!',
                         mode: 'continue',
@@ -15189,15 +15197,19 @@ class Game {
         this.els.guidedTourCard.classList.remove('hidden');
 
         this.els.guidedTourTitle.textContent = step.title || this._guidedTour.tour.label;
-        this.els.guidedTourBody.textContent = step.body || '';
+        if (step.bodyHTML) {
+            this.els.guidedTourBody.innerHTML = step.bodyHTML;
+        } else {
+            this.els.guidedTourBody.textContent = step.body || '';
+        }
         this.els.guidedTourCounter.textContent = `${this._guidedTour.stepIndex + 1} / ${this._guidedTour.tour.steps.length}`;
         this.els.guidedTourContinueBtn.textContent = step.continueLabel || 'Next';
         this.els.guidedTourContinueBtn.classList.toggle('hidden', step.mode === 'tap-target' || step.hideContinue === true);
         this.els.guidedTourBackBtn.classList.toggle('hidden', this._guidedTour.stepIndex === 0);
         this.els.guidedTourHint.textContent = step.mode === 'tap-target'
             ? 'Tap the highlighted area'
-            : '';
-        this.els.guidedTourHint.classList.toggle('hidden', step.mode !== 'tap-target');
+            : step.hintText || '';
+        this.els.guidedTourHint.classList.toggle('hidden', step.mode !== 'tap-target' && !step.hintText);
 
         // Render progress dots
         const dotsEl = document.getElementById('guided-tour-dots');
@@ -15428,7 +15440,9 @@ class Game {
         let left = (vw - card.offsetWidth) / 2;
         let top = vh - card.offsetHeight - margin;
 
-        if (targetRect) {
+        if (step.centerCard) {
+            top = (vh - card.offsetHeight) / 2;
+        } else if (targetRect) {
             left = Math.min(Math.max(targetRect.left + targetRect.width / 2 - card.offsetWidth / 2, margin), vw - card.offsetWidth - margin);
             const spaceBelow = vh - targetRect.bottom;
             const preferredBelow = targetRect.bottom + margin * 1.5;
@@ -21061,10 +21075,10 @@ class Game {
     _wsUpdateHintUI() {
         if (!this._ws) return;
         const remaining = 3 - (this._ws.hintsUsed || 0);
-        if (this.els.wsHintsLeft) this.els.wsHintsLeft.textContent = remaining;
         if (this.els.wsHintBtn) {
             this.els.wsHintBtn.disabled = remaining <= 0;
             this.els.wsHintBtn.classList.toggle('ws-hint-exhausted', remaining <= 0);
+            this.els.wsHintBtn.textContent = remaining <= 0 ? '💡 No hints left' : '💡 Hint: -500 coins';
         }
     }
 
@@ -21774,6 +21788,9 @@ class Game {
         this.els.restartBtn.dataset.challenge = CHALLENGE_TYPES.WORD_RUNNER;
         delete this.els.restartBtn.dataset.categoryKey;
 
+        this.score = score;
+        this.bestCombo = wr?.maxWordStreak || wr?.wordStreak || 0;
+        this._lastGameNewHighScore = isNewHigh;
         this.wordsFound = wordsFound;
         this._wordsFoundData = wordsFound;
 

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plummet - Colorful App Icon Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #111;
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #fff;
+        }
+        h1 { text-align: center; margin-bottom: 8px; }
+        .subtitle { text-align: center; color: #888; margin-bottom: 30px; }
+        .container { max-width: 1100px; margin: 0 auto; }
+
+        .variants {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        .variant-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 24px;
+            text-align: center;
+        }
+        .variant-card h3 {
+            color: #ccc;
+            font-size: 13px;
+            margin-bottom: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .variant-card canvas {
+            border-radius: 22%;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+            margin-bottom: 12px;
+        }
+        .download-btn {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+        .download-btn:hover { transform: scale(1.05); }
+        .download-btn:active { transform: scale(0.97); }
+        .size-hint { font-size: 11px; color: #666; margin-top: 6px; }
+
+        .mockup-row {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            flex-wrap: wrap;
+            margin-top: 40px;
+        }
+        .mockup {
+            text-align: center;
+        }
+        .mockup-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 8px;
+        }
+        .home-screen-mock {
+            background: linear-gradient(145deg, #1a1a2e, #2d1b69);
+            border-radius: 40px;
+            padding: 60px 30px 30px;
+            display: inline-grid;
+            grid-template-columns: repeat(4, 68px);
+            gap: 20px;
+            justify-items: center;
+        }
+        .mock-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.08);
+        }
+        .mock-icon canvas {
+            border-radius: 14px;
+            width: 60px;
+            height: 60px;
+        }
+        .mock-icon-label {
+            font-size: 10px;
+            color: rgba(255,255,255,0.6);
+            margin-top: 4px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎨 Colorful App Icon Generator</h1>
+    <p class="subtitle">Same text design, vibrant backgrounds — pick your favorite</p>
+
+    <div class="variants" id="variants"></div>
+
+    <h2 style="text-align:center; margin-bottom: 20px; color: #888; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Home Screen Preview</h2>
+    <div class="mockup-row" id="mockup-row"></div>
+</div>
+
+<script>
+// ── Variant definitions ──────────────────────────────────
+const VARIANTS = [
+    {
+        name: 'Bright Yellow / Bold Orange',
+        bg: (ctx, s) => {
+            const g = ctx.createLinearGradient(0, 0, s * 0.3, s);
+            g.addColorStop(0, '#ffe534');
+            g.addColorStop(0.5, '#ffd000');
+            g.addColorStop(1, '#ffb800');
+            return g;
+        },
+        mainColor: '#d4380d',
+        subColor: 'rgba(180,40,0,0.7)',
+        fallingColors: ['#e8590c', '#d9480f', '#c92a2a', '#e64980', '#f76707', '#d94600', '#ff6b35'],
+        lineColor: 'rgba(212,56,13,0.25)',
+    },
+    {
+        name: 'Sunny Yellow / Deep Red',
+        bg: (ctx, s) => {
+            const g = ctx.createRadialGradient(s*0.5, s*0.45, 0, s*0.5, s*0.5, s*0.7);
+            g.addColorStop(0, '#fff44f');
+            g.addColorStop(0.6, '#ffd700');
+            g.addColorStop(1, '#f0a500');
+            return g;
+        },
+        mainColor: '#9b1c1c',
+        subColor: 'rgba(120,20,20,0.7)',
+        fallingColors: ['#b91c1c', '#dc2626', '#ef4444', '#9b1c1c', '#c2410c', '#a3160a', '#d94600'],
+        lineColor: 'rgba(155,28,28,0.2)',
+    },
+    {
+        name: 'Lemon / Burnt Orange',
+        bg: (ctx, s) => {
+            const g = ctx.createLinearGradient(0, 0, s, s);
+            g.addColorStop(0, '#fef08a');
+            g.addColorStop(0.5, '#fde047');
+            g.addColorStop(1, '#facc15');
+            return g;
+        },
+        mainColor: '#c2410c',
+        subColor: 'rgba(194,65,12,0.65)',
+        fallingColors: ['#ea580c', '#c2410c', '#9a3412', '#f97316', '#fb923c', '#dc2626', '#b45309'],
+        lineColor: 'rgba(234,88,12,0.2)',
+    },
+    {
+        name: 'Golden / Black Bold',
+        bg: (ctx, s) => {
+            const g = ctx.createLinearGradient(0, 0, s * 0.4, s);
+            g.addColorStop(0, '#fbbf24');
+            g.addColorStop(0.5, '#f59e0b');
+            g.addColorStop(1, '#d97706');
+            return g;
+        },
+        mainColor: '#1c1917',
+        subColor: 'rgba(28,25,23,0.65)',
+        fallingColors: ['#292524', '#44403c', '#57534e', '#1c1917', '#78716c', '#413c38', '#292524'],
+        lineColor: 'rgba(28,25,23,0.15)',
+    },
+    {
+        name: 'Yellow / Navy Bold',
+        bg: (ctx, s) => {
+            const g = ctx.createLinearGradient(0, 0, s, s);
+            g.addColorStop(0, '#fef9c3');
+            g.addColorStop(0.4, '#fde047');
+            g.addColorStop(1, '#eab308');
+            return g;
+        },
+        mainColor: '#1e3a5f',
+        subColor: 'rgba(30,58,95,0.6)',
+        fallingColors: ['#1e3a5f', '#1e40af', '#1d4ed8', '#2563eb', '#1e3a5f', '#3b82f6', '#1e40af'],
+        lineColor: 'rgba(30,58,95,0.18)',
+    },
+    {
+        name: 'Hot Yellow / Magenta',
+        bg: (ctx, s) => {
+            const g = ctx.createLinearGradient(0, s, s, 0);
+            g.addColorStop(0, '#fbbf24');
+            g.addColorStop(0.3, '#fcd34d');
+            g.addColorStop(0.7, '#ffe066');
+            g.addColorStop(1, '#fff8a8');
+            return g;
+        },
+        mainColor: '#be185d',
+        subColor: 'rgba(190,24,93,0.6)',
+        fallingColors: ['#be185d', '#db2777', '#ec4899', '#f472b6', '#a21caf', '#c026d3', '#9333ea'],
+        lineColor: 'rgba(190,24,93,0.2)',
+    },
+];
+
+const FALLING_LETTERS = ['P', 'L', 'U', 'M', 'M', 'E', 'T'];
+
+// ── Drawing ──────────────────────────────────────────────
+function drawIcon(canvas, size, variant) {
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const s = size;
+    const scale = s / 1024;
+
+    // Background
+    ctx.fillStyle = variant.bg(ctx, s);
+    ctx.fillRect(0, 0, s, s);
+
+    // Subtle radial glow in center
+    const glow = ctx.createRadialGradient(s * 0.5, s * 0.55, 0, s * 0.5, s * 0.55, s * 0.6);
+    glow.addColorStop(0, 'rgba(255,255,255,0.04)');
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, s, s);
+
+    // ── Falling letters (top section) ──
+    // Positions matching the original: letters at various heights with vertical motion lines
+    const fallingPositions = [
+        { letter: 'L', x: 0.28, y: 0.06, lineLen: 0.12 },
+        { letter: 'M', x: 0.42, y: 0.14, lineLen: 0.14 },
+        { letter: 'T', x: 0.62, y: 0.04, lineLen: 0.18 },
+        { letter: 'E', x: 0.74, y: 0.12, lineLen: 0.11 },
+        { letter: 'P', x: 0.33, y: 0.28, lineLen: 0.08 },
+        { letter: 'U', x: 0.58, y: 0.30, lineLen: 0.06 },
+    ];
+
+    ctx.save();
+    const letterFontSize = 42 * scale;
+    ctx.font = `300 ${letterFontSize}px -apple-system, "Helvetica Neue", Helvetica, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    fallingPositions.forEach((pos, i) => {
+        const cx = pos.x * s;
+        const cy = pos.y * s + letterFontSize;
+        const color = variant.fallingColors[i % variant.fallingColors.length];
+
+        // Motion lines above letter
+        ctx.strokeStyle = variant.lineColor;
+        ctx.lineWidth = 1.5 * scale;
+        const lineTop = cy - letterFontSize * 0.6;
+        const lineLen = pos.lineLen * s;
+        for (let li = -1; li <= 1; li++) {
+            const lx = cx + li * 8 * scale;
+            ctx.beginPath();
+            ctx.moveTo(lx, lineTop - lineLen);
+            ctx.lineTo(lx, lineTop);
+            ctx.stroke();
+        }
+
+        // Letter glow
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12 * scale;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.7;
+        ctx.fillText(pos.letter, cx, cy);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1.0;
+    });
+    ctx.restore();
+
+    // ── Main "plummet" text ──
+    const mainFontSize = 142 * scale;
+    ctx.save();
+    ctx.font = `700 ${mainFontSize}px -apple-system, "Helvetica Neue", Helvetica, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+
+    // Soft glow behind main text
+    ctx.shadowColor = variant.fallingColors[0];
+    ctx.shadowBlur = 30 * scale;
+    ctx.fillStyle = variant.mainColor;
+    const mainY = s * 0.66;
+    ctx.fillText('plummet', s / 2, mainY);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // ── "WORD FALL" subtitle ──
+    const subFontSize = 38 * scale;
+    ctx.save();
+    ctx.font = `600 ${subFontSize}px -apple-system, "Helvetica Neue", Helvetica, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.letterSpacing = `${12 * scale}px`;
+    ctx.fillStyle = variant.subColor;
+    const subY = mainY + 14 * scale;
+
+    // Manual letter spacing since canvas doesn't always support letterSpacing
+    const subText = 'WORD FALL';
+    const spacing = 12 * scale;
+    let totalWidth = 0;
+    for (let i = 0; i < subText.length; i++) {
+        totalWidth += ctx.measureText(subText[i]).width + (i < subText.length - 1 ? spacing : 0);
+    }
+    let subX = (s - totalWidth) / 2;
+    for (let i = 0; i < subText.length; i++) {
+        ctx.fillText(subText[i], subX, subY);
+        subX += ctx.measureText(subText[i]).width + spacing;
+    }
+    ctx.restore();
+}
+
+// ── Render all variants ──────────────────────────────────
+function renderAll() {
+    const container = document.getElementById('variants');
+    const mockupRow = document.getElementById('mockup-row');
+    container.innerHTML = '';
+    mockupRow.innerHTML = '';
+
+    VARIANTS.forEach((variant, idx) => {
+        // Main preview card
+        const card = document.createElement('div');
+        card.className = 'variant-card';
+
+        const h3 = document.createElement('h3');
+        h3.textContent = variant.name;
+        card.appendChild(h3);
+
+        const canvas = document.createElement('canvas');
+        drawIcon(canvas, 1024, variant);
+        canvas.style.width = '200px';
+        canvas.style.height = '200px';
+        card.appendChild(canvas);
+
+        card.appendChild(document.createElement('br'));
+
+        const btn = document.createElement('button');
+        btn.className = 'download-btn';
+        btn.textContent = '⬇ Download 1024×1024';
+        btn.onclick = () => downloadVariant(variant, idx);
+        card.appendChild(btn);
+
+        const hint = document.createElement('div');
+        hint.className = 'size-hint';
+        hint.textContent = '1024 × 1024 PNG (App Store ready)';
+        card.appendChild(hint);
+
+        container.appendChild(card);
+
+        // Home screen mockup
+        const mockup = document.createElement('div');
+        mockup.className = 'mockup';
+
+        const screen = document.createElement('div');
+        screen.className = 'home-screen-mock';
+
+        for (let i = 0; i < 8; i++) {
+            const wrapper = document.createElement('div');
+            if (i === 5) { // Plummet at position 5
+                const iconDiv = document.createElement('div');
+                iconDiv.className = 'mock-icon';
+                const miniCanvas = document.createElement('canvas');
+                drawIcon(miniCanvas, 512, variant);
+                miniCanvas.style.width = '60px';
+                miniCanvas.style.height = '60px';
+                iconDiv.appendChild(miniCanvas);
+                wrapper.appendChild(iconDiv);
+                const label = document.createElement('div');
+                label.className = 'mock-icon-label';
+                label.textContent = 'Plummet';
+                wrapper.appendChild(label);
+            } else {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'mock-icon';
+                wrapper.appendChild(placeholder);
+                const label = document.createElement('div');
+                label.className = 'mock-icon-label';
+                label.textContent = ' ';
+                wrapper.appendChild(label);
+            }
+            screen.appendChild(wrapper);
+        }
+        mockup.appendChild(screen);
+
+        const mLabel = document.createElement('div');
+        mLabel.className = 'mockup-label';
+        mLabel.textContent = variant.name;
+        mockup.appendChild(mLabel);
+
+        mockupRow.appendChild(mockup);
+    });
+}
+
+function downloadVariant(variant, idx) {
+    const canvas = document.createElement('canvas');
+    drawIcon(canvas, 1024, variant);
+    const link = document.createElement('a');
+    link.download = `plummet-icon-${variant.name.toLowerCase().replace(/\s+/g, '-')}-1024.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+
+renderAll();
+</script>
+</body>
+</html>
