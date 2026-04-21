@@ -262,7 +262,14 @@ Deno.serve(async (req) => {
             return jsonResponse({ error: dbError.message }, 500)
         }
         if (!rows || rows.length === 0) {
-            return jsonResponse({ sent: 0, message: 'No tokens found' })
+            return jsonResponse({
+                sent: 0,
+                failed: 0,
+                total_tokens: 0,
+                ios_tokens: 0,
+                android_tokens: 0,
+                message: 'No push tokens found',
+            })
         }
 
         const iosTokens     = rows.filter(r => r.platform === 'ios').map(r => r.token)
@@ -317,6 +324,8 @@ Deno.serve(async (req) => {
             total_tokens: rows.length,
             ios_tokens:   iosTokens.length,
             android_tokens: androidTokens.length,
+            message: successes > 0 ? 'Notification sent' : 'No devices accepted the push',
+            error_samples: errors.slice(0, 3).map(e => ({ token: e.token.slice(0, 12), error: e.error })),
         })
     } catch (error) {
         console.error('send-notification unhandled error:', error)

@@ -3699,9 +3699,22 @@ class MusicManager {
         if (this._audioCtx && this._audioCtx.state === "suspended") {
             this._audioCtx.resume().catch(e => console.warn('[Music] watchdog: AudioContext.resume() failed:', e));
         }
-        // Detect audio element paused while we think we're playing
+        // Detect audio element paused while we think we're playing.
+        // iOS Safari sometimes stops audio at track end without firing 'ended'
+        // and without setting audio.ended = true. If we're at (or past) the
+        // end of the track, treat it as an ended event rather than resuming
+        // the same track.
         if (this.audio.paused && !this.audio.ended) {
-            this.audio.play().catch(e => console.warn('[Music] watchdog: audio.play() failed:', e));
+            const dur = this.audio.duration;
+            const pos = this.audio.currentTime;
+            const atTrackEnd = dur > 0 && Number.isFinite(dur) && (dur - pos) < 0.8;
+            if (atTrackEnd && this.repeatMode !== "one") {
+                // iOS silent-end bug: advance instead of replaying
+                console.warn('[Music] watchdog: iOS silent-end detected, advancing track');
+                this._onTrackEnded();
+            } else if (!atTrackEnd) {
+                this.audio.play().catch(e => console.warn('[Music] watchdog: audio.play() failed:', e));
+            }
         }
         // Detect track ended but never advanced (crossfade failure recovery)
         if (this.audio.ended && !this._crossfading && this.repeatMode !== "one") {
@@ -3712,6 +3725,17 @@ class MusicManager {
                 this.pause();
             } else {
                 this.next();
+            }
+        }
+        // Detect stuck crossfade (e.g. app backgrounded mid-crossfade which
+        // throttles setInterval, leaving _crossfading = true forever).
+        if (this._crossfading && this._crossfadeStartTime) {
+            const elapsed = Date.now() - this._crossfadeStartTime;
+            if (elapsed > (this._crossfadeDuration + 5) * 1000) {
+                console.warn('[Music] watchdog: stuck crossfade detected, cancelling');
+                const wasEnded = this.audio.ended;
+                this._cancelCrossfade();
+                if (wasEnded && this.playing) this.next();
             }
         }
     }
@@ -3966,7 +3990,7 @@ class MusicManager {
         if (!nextTrack) return;
 
         this._crossfading = true;
-        const preloadedCF = this._consumePreloaded(q[nextIdx]);
+        this._crossfadeStartTime = Date.now();
         this._crossfadeAudio = preloadedCF || new Audio(nextTrack.file);
         this._crossfadeAudio.loop = false;
         this._crossfadeAudio.volume = this.muted ? 0 : 1;
@@ -4028,6 +4052,8 @@ class MusicManager {
 
             if (step >= steps) {
                 clearInterval(this._crossfadeTimer);
+                this._crossfadeTimer = null;
+                this._crossfadeStartTime = 0;
                 this.audio.pause();
                 // Disconnect old source from gain
                 if (this._sourceNode) {
@@ -4072,6 +4098,8 @@ class MusicManager {
 
     _cancelCrossfade() {
         if (this._crossfadeTimer) clearInterval(this._crossfadeTimer);
+        this._crossfadeTimer = null;
+        this._crossfadeStartTime = 0;
         if (this._crossfadeAudio) {
             this._crossfadeAudio.pause();
             this._crossfadeAudio.src = "";
@@ -4449,6 +4477,11 @@ class ProfileManager {
         if (p.legacyIntroShown === undefined) p.legacyIntroShown = false;
         if (p.legacyBonusShown === undefined) p.legacyBonusShown = false;
         if (p.legacyGuidedShown === undefined) p.legacyGuidedShown = false;
+        // Manufactured first-touch tutorial. Profiles created before this
+        // existed are presumed to have already played, so default to true.
+        if (p.firstProfileTutorialShown === undefined) {
+            p.firstProfileTutorialShown = hasHistory;
+        }
     }
 
     /** Build a key for bestScores lookup. */
@@ -4533,6 +4566,18 @@ class ProfileManager {
     }
 
     /** Get level info for the active profile. */
+    /** Has the active profile finished the first-profile tutorial + first game?
+     *  Source of truth: an explicit firstGameCompleted flag set in _gameOver
+     *  BEFORE XP is awarded, OR profile.level >= 2 (backward-compat for users
+     *  whose first game finished before this flag existed). */
+    hasCompletedFirstProfileSequence() {
+        const p = this.getActive();
+        if (!p) return false;
+        this._ensureXPFields(p);
+        if (p.firstGameCompleted === true) return true;
+        return (p.level || 1) >= 2;
+    }
+
     getLevelInfo() {
         const p = this.getActive();
         if (!p) return { level: 1, xp: 0, xpRequired: 100, totalXp: 0 };
@@ -5366,6 +5411,7 @@ class Game {
             activeTargetEl: null,
             cleanupTargetHandler: null,
             cleanupHotspotHandler: null,
+            cleanupSwipeHandler: null,
             restoreTutorialOverlay: false,
             restoreTutorialMenuView: 'root',
             restoreScreen: 'menu',
@@ -6901,6 +6947,17 @@ class Game {
         }
     }
 
+    _pickNextLetter(grid, targetWord) {
+        // Tutorial / scripted-game letter source. If a queue is set we
+        // consume it letter-by-letter; otherwise fall back to the real
+        // random-letter engine so live games are unaffected.
+        if (Array.isArray(this._scriptedLetterQueue) && this._scriptedLetterQueue.length > 0) {
+            const next = this._scriptedLetterQueue.shift();
+            if (typeof next === 'string' && next.length > 0) return next.toUpperCase();
+        }
+        return randomLetter(grid, targetWord);
+    }
+
     _getSelectedGameMode() {
         return this.gameMode;
     }
@@ -7128,8 +7185,32 @@ class Game {
         const homePage = this.els.menuSlideStrip?.children[3];
         if (homePage) homePage.scrollTop = 0;
 
-        if (this._pendingFirstGameMenuTour) {
+        // G1: profile-backed source of truth. The transient flag
+        // `_pendingFirstGameMenuTour` can be missed (e.g. if the user
+        // navigates back to gameover and re-enters menu). The post-
+        // first-game welcome tour should fire whenever the active
+        // profile has finished its first game but hasn't seen this tour.
+        let shouldTriggerFirstGameTour = this._pendingFirstGameMenuTour;
+        try {
+            const p = this.profileMgr.getActive();
+            if (p && p.firstGameCompleted && !p.guidedFirstGameShown) {
+                shouldTriggerFirstGameTour = true;
+            }
+        } catch (_) {}
+
+        if (shouldTriggerFirstGameTour) {
             this._pendingFirstGameMenuTour = false;
+            // G2: dismiss any first-game XP tutorial overlay still open so
+            // attemptStart's blocked-check can pass on the first tick.
+            try {
+                if (this.els.xpTutorialOverlay?.classList.contains('active')) {
+                    this._stopXPTutorialAnim?.();
+                    this.els.xpTutorialOverlay.classList.remove('active');
+                }
+                if (this.els.levelUpOverlay?.classList.contains('active')) {
+                    this.els.levelUpOverlay.classList.remove('active');
+                }
+            } catch (_) {}
             this._queueFirstGameGuidedTour();
         }
     }
@@ -8319,6 +8400,10 @@ class Game {
     _saveGameState() {
         const key = this._saveKey();
         if (!key || !this.grid || this.state === State.GAMEOVER || this.state === State.MENU) return;
+        // The first-profile guided tutorial runs on top of a placeholder
+        // game. It must NEVER write a saved-game record — otherwise a
+        // bogus "Resume Game" entry shows up if the user bails mid-tour.
+        if (this._guidedFirstProfileRunning) return;
         const state = {
             version: 2,
             gridSize: this.gridSize,
@@ -9186,7 +9271,7 @@ class Game {
         this.renderer.validatedCells = new Set();
         this._activeHintKey = null;
         this.pendingGravityMoves = [];
-        this.nextLetter = randomLetter();
+        this.nextLetter = this._pickNextLetter();
         this.wordsFound = [];  // track all words found this round
         this.foundWordsThisGame = new Set();
         this.categoryWordsFound = [];  // track category words found this round
@@ -9352,7 +9437,11 @@ class Game {
 
         // First game ever → show "How to Play" tutorial + 3-2-1 countdown
         const isFirstGame = this.profileMgr.isFirstGameEver();
-        if (isFirstGame || shouldShowLegacyIntro) {
+        // Suppress the legacy how-to-play overlay while the guided
+        // first-profile tour is driving the game — the guided tour has
+        // its own teaching cards and doesn't want this in the way.
+        const guidedTourActive = !!this._guidedTour?.active || !!this._guidedFirstProfileRunning;
+        if (!guidedTourActive && (isFirstGame || shouldShowLegacyIntro)) {
             if (shouldShowLegacyIntro) this._markLegacyIntroShown();
             this.state = State.PAUSED; // pause until tutorial + countdown finish
             this._initTutorialSlides();
@@ -9414,7 +9503,7 @@ class Game {
         const centerCol = Math.floor(this.gridSize / 2);
         this.block = new FallingBlock(this.nextLetter, centerCol, this.gridSize, "letter");
         const tw = this.activeChallenge === CHALLENGE_TYPES.TARGET_WORD ? this.targetWord : null;
-        this.nextLetter = randomLetter(this.grid, tw);
+        this.nextLetter = this._pickNextLetter(this.grid, tw);
         this.els.nextLetter.textContent = this.nextLetter;
         this.fallTimer = 0;
         this.spawnFreezeTimer = this.activeChallenge === CHALLENGE_TYPES.SPEED_ROUND ? 0 : 2.0;
@@ -9983,6 +10072,18 @@ class Game {
 
         // ── XP System: check first-game status BEFORE recording ──
         const wasFirstGame = this.profileMgr.isFirstGameEver();
+
+        // E1: mark first-game completed BEFORE XP award. This way an XP
+        // failure (network, throw) can't leave a user in a state where
+        // they reached the game-over screen but the tutorial still
+        // wants to restart on next launch. Persist immediately.
+        try {
+            const _p = this.profileMgr.getActive();
+            if (_p && !_p.firstGameCompleted) {
+                _p.firstGameCompleted = true;
+                this.profileMgr._save();
+            }
+        } catch (_) {}
 
         // Record stats to profile
         const wordsCount = (this.wordsFound || []);
@@ -10561,8 +10662,18 @@ class Game {
     _queueFirstGameGuidedTour() {
         const seenKey = 'plummet_first_game_tour_seen';
         const p = this._getLegacyOnboardingState();
+        // G1: per-profile source of truth. Once shown for this profile,
+        // never again — guidedFirstGameShown is the authoritative flag.
+        if (p?.guidedFirstGameShown) return;
         // Per-profile check: if this profile already saw the tour, skip
-        if (p?.legacyGuidedShown) return;
+        if (p?.legacyGuidedShown) {
+            // Backfill the new flag for older saves so we stay consistent.
+            if (p && !p.guidedFirstGameShown) {
+                p.guidedFirstGameShown = true;
+                this.profileMgr._save();
+            }
+            return;
+        }
         // Global localStorage fallback only applies to legacy profiles that were
         // already onboarded before per-profile tracking existed.
         // New profiles (legacyOnboardingPending=false, legacyGuidedShown=false)
@@ -10593,6 +10704,15 @@ class Game {
             this._firstGameTourTimer = null;
             localStorage.setItem(seenKey, '1');
             this._markLegacyGuidedShown();
+            // G1: also persist the new authoritative flag so re-entries
+            // to the menu don't re-trigger the tour.
+            try {
+                const cur = this.profileMgr.getActive();
+                if (cur && !cur.guidedFirstGameShown) {
+                    cur.guidedFirstGameShown = true;
+                    this.profileMgr._save();
+                }
+            } catch (_) {}
             this._startGuidedTour('guided-first-game');
         };
 
@@ -10873,6 +10993,10 @@ class Game {
 
         // Sync to Supabase (awaited to ensure cloudId is assigned)
         await this._syncCreateProfile(localProfile);
+
+        // Manufactured first-time tutorial — fires after the profile is
+        // actually created (and synced), not on profile-card click.
+        this._maybeStartFirstProfileTour();
     }
 
     async _renameProfile(profile, newName) {
@@ -10938,7 +11062,10 @@ class Game {
                 total_coins_earned: p.totalCoinsEarned,
                 // Preferences
                 preferred_grid_size: p.gridSize || 5,
-                preferred_difficulty: p.difficulty || 'casual',
+                // F4: DB constraint allows only 'casual' | 'hard'. Any other
+                // value (e.g. 'normal' from a stale tutorial path) raises
+                // 23514 check_violation. Coerce defensively.
+                preferred_difficulty: (p.difficulty === 'hard') ? 'hard' : 'casual',
                 preferred_game_mode: p.gameMode || 'sandbox',
                 // Cosmetics
                 equipped_theme: p.equipped?.gridTheme || 'theme_default',
@@ -11069,6 +11196,10 @@ class Game {
         // Toggle auth buttons based on anonymous status
         if (this.els.authLogoutBtn) this.els.authLogoutBtn.classList.toggle("hidden", !!this._isAnonymous);
         if (this.els.deleteAccountBtn) this.els.deleteAccountBtn.classList.toggle("hidden", !!this._isAnonymous);
+        // Sign Up / Login button is only relevant for anonymous users; signed-in
+        // accounts already have an email, so hide it for them.
+        const profilesSignupBtn = document.getElementById('profiles-signup-btn');
+        if (profilesSignupBtn) profilesSignupBtn.classList.toggle("hidden", !this._isAnonymous);
 
         if (profiles.length === 0) {
             list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">No profiles yet. Create one to get started!</p>';
@@ -11093,10 +11224,23 @@ class Game {
             // Select profile
             card.addEventListener("click", (e) => {
                 if (e.target.closest(".profile-delete-btn") || e.target.closest(".profile-edit-btn")) return;
+                // E3: if a tutorial is already running for the previous
+                // profile, tear it down cleanly before swapping.
+                if (this._guidedTour?.active) {
+                    try { this._stopGuidedTour(false); } catch (_) {}
+                }
+                if (this._guidedFirstProfileRunning) {
+                    this._guidedFirstProfileRunning = false;
+                    this._scriptedLetterQueue = null;
+                    this.block = null;
+                }
                 this.profileMgr.select(p.id);
                 this._autoplayMusicFromUserAction();
                 this._loadActiveProfile();
                 this._showScreen("menu");
+                // If this profile hasn't finished the intro tutorial + first
+                // game (level < 2), restart the entire onboarding sequence.
+                this._maybeStartFirstProfileTour();
             });
 
             // Edit profile
@@ -14426,6 +14570,17 @@ class Game {
         this._guidedTour.active = true;
         this._guidedTour.tour = tour;
         this._guidedTour.stepIndex = 0;
+        // Manufactured first-profile tutorial: never dim the background.
+        // Force noOverlay on every step so the card + pointer + tap target
+        // appear over a fully-visible screen.
+        if (tourId === 'guided-first-profile') {
+            for (const step of tour.steps) {
+                if (step.noOverlay === undefined) step.noOverlay = true;
+            }
+        }
+        // Post-first-game welcome tour: keep the spotlight but halve the
+        // surrounding darkness so the rest of the menu stays readable.
+        this.els.guidedTourOverlay.classList.toggle('gt-half-dim', tourId === 'guided-first-game');
         this._guidedTour.restoreTutorialOverlay = this.els.tutorialOverlay.classList.contains('active');
         this._guidedTour.restoreTutorialMenuView = this._tutorialMenuView || 'root';
         this._guidedTour.restoreScreen = this._activeScreen || 'menu';
@@ -14461,6 +14616,210 @@ class Game {
         });
 
         return {
+            'guided-first-profile': {
+                label: 'First Profile Tutorial',
+                steps: [
+                    // ── 1. Tap the W to clear WORD ────────────────
+                    {
+                        title: 'Welcome to PLUMMET!',
+                        body: 'Letters fall from the top. Stack them to spell words. WORD just scored — tap the W to clear it!',
+                        mode: 'tap-target',
+                        target: { type: 'cell', row: 6, col: 0 },
+                        showPointer: false,
+                        cardPosition: 'top',
+                        hideArrow: true,
+                        deferredAdvance: true,
+                        onEnter: [
+                            call('_startGuidedFirstProfileGame'),
+                            call('_guidedDemoBoard', {
+                                rows: 7, cols: 7,
+                                board: [
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    ['W','O','R','D',null,null,null],
+                                ],
+                                green: [[6,0],[6,1],[6,2],[6,3]],
+                            }),
+                        ],
+                        onTargetTap: [call('_guidedTriggerDemoWordClearThenAdvance', {
+                            words: [{ word: 'WORD', cells: [[6,0],[6,1],[6,2],[6,3]], pts: 40 }],
+                        })],
+                    },
+                    // ── 2. Two words at once — tap the shared D ──
+                    {
+                        title: 'Two words at once',
+                        body: 'Letters can spell across, down, or backwards. Tap the shared D to score both WORD and DID!',
+                        mode: 'tap-target',
+                        target: { type: 'cell', row: 6, col: 3 },
+                        showPointer: false,
+                        cardPosition: 'top',
+                        hideArrow: true,
+                        deferredAdvance: true,
+                        onEnter: [call('_guidedDemoBoard', {
+                            rows: 7, cols: 7,
+                            board: [
+                                [null,null,null,null,null,null,null],
+                                [null,null,null,null,null,null,null],
+                                [null,null,null,null,null,null,null],
+                                [null,null,null,null,null,null,null],
+                                [null,null,null,'D',null,null,null],
+                                [null,null,null,'I',null,null,null],
+                                ['W','O','R','D',null,null,null],
+                            ],
+                            green: [[4,3],[5,3],[6,3],[6,0],[6,1],[6,2]],
+                        })],
+                        onTargetTap: [call('_guidedTriggerDemoWordClearThenAdvance', {
+                            words: [
+                                { word: 'WORD', cells: [[6,0],[6,1],[6,2],[6,3]], pts: 40 },
+                                { word: 'DID',  cells: [[4,3],[5,3],[6,3]],       pts: 30 },
+                            ],
+                        })],
+                    },
+                    // ── 3. Bonuses unlock as you score ────────────
+                    {
+                        title: 'Earn bonuses',
+                        body: 'Tap Bonus: Bomb to set off the bomb!',
+                        mode: 'tap-target',
+                        target: '#bonus-btn',
+                        cardPosition: 'belowTarget',
+                        cardCompact: true,
+                        hideArrow: true,
+                        showPointer: false,
+                        deferredAdvance: true,
+                        onEnter: [call('_guidedDemoBoard', {
+                            rows: 7, cols: 7,
+                            board: [
+                                [null,null,null,null,null,null,null],
+                                [null,null,null,null,null,null,null],
+                                [null,null,null,null,null,null,null],
+                                ['S', null,null,'L', null,null,'Y'],
+                                ['T', 'T', null,'A', null,'T', 'N'],
+                                ['A', 'I', 'O','I', 'O','R', 'K'],
+                                ['C', 'H', 'T','D', 'D','A', 'I'],
+                            ],
+                            green: [],
+                            showBonus: 'real',
+                        })],
+                        onTargetTap: [call('_guidedTriggerDemoBombThenAdvance', { row: 3, col: 3 })],
+                    },
+                    // ── 3b. Bomb result ───────────────────────────
+                    {
+                        title: 'Boom!',
+                        body: 'Bombs clear the entire row, column, and both diagonals.',
+                        mode: 'continue',
+                        centerCard: true,
+                        cardCompact: true,
+                        hideArrow: true,
+                    },
+                    // ── 3c. Swipe LEFT ────────────────────────────
+                    {
+                        title: 'Move the falling letter',
+                        body: 'A letter is falling. Swipe left on the board to slide it all the way to the left.',
+                        mode: 'continue',
+                        hideContinue: true,
+                        noOverlay: true,
+                        centerCard: false,
+                        cardPosition: 'top',
+                        cardCompact: true,
+                        hideArrow: true,
+                        showPointer: false,
+                        hintText: '← Swipe left',
+                        onEnter: [
+                            call('_guidedDemoBoard', {
+                                rows: 7, cols: 7,
+                                board: [
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                    [null,null,null,null,null,null,null],
+                                ],
+                                green: [],
+                            }),
+                            call('_guidedSpawnSwipeDemoBlock', { letter: 'P', col: 3, fallTargetRow: 2, fallDurationMs: 2000 }),
+                            call('_guidedAwaitSwipeThenAdvance', {
+                                direction: 'left',
+                                targetCol: 0,
+                            }),
+                        ],
+                    },
+                    // ── 3d. Swipe RIGHT ───────────────────────────
+                    {
+                        title: 'Now slide it back',
+                        body: 'Swipe right on the board to slide the letter back to the center.',
+                        mode: 'continue',
+                        hideContinue: true,
+                        noOverlay: true,
+                        cardPosition: 'top',
+                        cardCompact: true,
+                        hideArrow: true,
+                        showPointer: false,
+                        hintText: 'Swipe right →',
+                        onEnter: [
+                            call('_guidedAwaitSwipeThenAdvance', {
+                                direction: 'right',
+                                targetCol: 3,
+                            }),
+                        ],
+                    },
+                    // ── 3e. Swipe DOWN ────────────────────────────
+                    {
+                        title: 'Drop it!',
+                        body: 'Swipe down on the board to drop the letter to the bottom.',
+                        mode: 'continue',
+                        hideContinue: true,
+                        noOverlay: true,
+                        cardPosition: 'top',
+                        cardCompact: true,
+                        hideArrow: true,
+                        showPointer: false,
+                        hintText: '↓ Swipe down',
+                        onEnter: [
+                            call('_guidedAwaitSwipeThenAdvance', {
+                                direction: 'down',
+                                onComplete: '_guidedDropSwipeBlockThenAdvance',
+                                onCompleteArgs: { durationMs: 500 },
+                            }),
+                        ],
+                    },
+                    // ── 4. Hint button ────────────────────────────
+                    {
+                        title: 'Need a hint?',
+                        body: 'Tap the diamond (top right) to highlight letters that can complete a word.',
+                        mode: 'continue',
+                        target: '#hints-btn',
+                        cardPosition: 'belowTarget',
+                        cardCompact: true,
+                        hideArrow: true,
+                    },
+                    // ── 5. Pause menu ─────────────────────────────
+                    {
+                        title: 'Pause anytime',
+                        body: 'The pause button (top right) opens dictionary, shop, music, and more.',
+                        mode: 'continue',
+                        target: '#pause-btn',
+                        cardPosition: 'belowTarget',
+                        cardCompact: true,
+                        hideArrow: true,
+                    },
+                    // ── 5. Hand off to live game ──────────────────
+                    {
+                        title: 'Your turn — 60 seconds',
+                        body: 'Slide falling letters with the side arrows. Drop fast with the down arrow. Score as much as you can!',
+                        mode: 'continue',
+                        centerCard: true,
+                        onAdvance: [
+                            call('_guidedLaunchFirstRealGame'),
+                        ],
+                    },
+                ],
+            },
             'guided-general': {
                 label: 'General Tour',
                 steps: [
@@ -15283,6 +15642,7 @@ class Game {
         // Hide card first for transition
         this.els.guidedTourCard.classList.remove('visible');
         this.els.guidedTourCard.classList.remove('hidden');
+        this.els.guidedTourCard.classList.toggle('gt-card-compact', !!step.cardCompact);
 
         this.els.guidedTourTitle.textContent = step.title || this._guidedTour.tour.label;
         if (step.bodyHTML) {
@@ -15362,6 +15722,28 @@ class Game {
                 padding,
             };
         }
+        // Manufactured tutorial: target a real grid cell by row/col,
+        // resolved against the renderer's current cell metrics.
+        if (step.target.type === 'cell') {
+            const r = step.target.row;
+            const c = step.target.col;
+            const cellRect = this._guidedCellRect?.(r, c);
+            if (!cellRect) return null;
+            return {
+                type: 'hotspot',
+                kind: 'cell',
+                rect: {
+                    left: cellRect.left,
+                    top: cellRect.top,
+                    width: cellRect.width,
+                    height: cellRect.height,
+                    right: cellRect.left + cellRect.width,
+                    bottom: cellRect.top + cellRect.height,
+                },
+                radius: '50%',
+                padding,
+            };
+        }
         return null;
     }
 
@@ -15370,9 +15752,27 @@ class Game {
         const step = this._guidedTour.tour.steps[this._guidedTour.stepIndex];
         const target = this._resolveGuidedTourTarget(step);
 
+        // Tear down any previously installed tap handlers before this
+        // re-position pass installs a new one — otherwise repeated calls
+        // (e.g. from _guidedDemoBoard's RAF re-paint) stack click listeners
+        // and the user's tap fires onTargetTap multiple times.
+        if (typeof this._guidedTour.cleanupHotspotHandler === 'function') {
+            try { this._guidedTour.cleanupHotspotHandler(); } catch (_) {}
+            this._guidedTour.cleanupHotspotHandler = null;
+        }
+        if (typeof this._guidedTour.cleanupTargetHandler === 'function') {
+            try { this._guidedTour.cleanupTargetHandler(); } catch (_) {}
+            this._guidedTour.cleanupTargetHandler = null;
+        }
+
         // "noOverlay" mode: no dimming or spotlight at all — screen is fully visible
         if (step.noOverlay) {
             this.els.guidedTourDim.style.opacity = '0';
+            // CRITICAL: also disable pointer events on the dim. Without
+            // this, the full-screen dim swallows every click/touch (and
+            // the dim has a "click → advance" listener), so the user
+            // can't interact with the canvas underneath.
+            this.els.guidedTourDim.style.pointerEvents = 'none';
             this.els.guidedTourFocus.style.opacity = '0';
             this.els.guidedTourFocus.style.width = '0px';
             this.els.guidedTourFocus.style.height = '0px';
@@ -15383,6 +15783,8 @@ class Game {
                 // Still set up tap handler even without overlay
                 if (target.type === 'hotspot') {
                     this.els.guidedTourHotspot.classList.remove('hidden');
+                    this.els.guidedTourHotspot.classList.toggle('gt-hotspot-ring', target.kind === 'cell');
+                    this.els.guidedTourHotspot.style.pointerEvents = 'auto';
                     const rect = target.rect;
                     this.els.guidedTourHotspot.style.left = `${rect.left}px`;
                     this.els.guidedTourHotspot.style.top = `${rect.top}px`;
@@ -15397,17 +15799,35 @@ class Game {
                     this.els.guidedTourHotspot.addEventListener('click', handler, true);
                     this._guidedTour.cleanupHotspotHandler = () => this.els.guidedTourHotspot.removeEventListener('click', handler, true);
                 } else if (target.type === 'selector' && target.element) {
+                    target.element.classList.add('guided-tour-focus-target');
+                    this._guidedTour.activeTargetEl = target.element;
+                    // Show the green pulsing ring around selector targets and
+                    // make IT the click target — this works even if the
+                    // underlying button is `disabled` (which would block clicks).
+                    const rect = target.rect;
+                    this.els.guidedTourHotspot.classList.remove('hidden');
+                    this.els.guidedTourHotspot.classList.add('gt-hotspot-ring');
+                    this.els.guidedTourHotspot.style.pointerEvents = 'auto';
+                    this.els.guidedTourHotspot.style.cursor = 'pointer';
+                    this.els.guidedTourHotspot.style.left = `${rect.left}px`;
+                    this.els.guidedTourHotspot.style.top = `${rect.top}px`;
+                    this.els.guidedTourHotspot.style.width = `${rect.width}px`;
+                    this.els.guidedTourHotspot.style.height = `${rect.height}px`;
+                    this.els.guidedTourHotspot.style.borderRadius = target.radius || '999px';
                     const handler = (event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         this._advanceGuidedTour('target');
                     };
-                    target.element.classList.add('guided-tour-focus-target');
-                    this._guidedTour.activeTargetEl = target.element;
-                    target.element.addEventListener('click', handler, true);
-                    this._guidedTour.cleanupTargetHandler = () => target.element.removeEventListener('click', handler, true);
+                    this.els.guidedTourHotspot.addEventListener('click', handler, true);
+                    this._guidedTour.cleanupHotspotHandler = () => {
+                        this.els.guidedTourHotspot.removeEventListener('click', handler, true);
+                        this.els.guidedTourHotspot.style.pointerEvents = 'none';
+                        this.els.guidedTourHotspot.style.cursor = '';
+                    };
                 }
-                this._positionGuidedTourPointer(target.rect, step);
+                // Suppress the white dot pointer in noOverlay mode — the
+                // green ring is the primary highlight for cell + button targets.
             }
             this._positionGuidedTourCard(target ? target.rect : null);
             return;
@@ -15416,6 +15836,7 @@ class Game {
         if (!target) {
             // No target: use dim overlay (full-screen darkness), hide spotlight
             this.els.guidedTourDim.style.opacity = '1';
+            this.els.guidedTourDim.style.pointerEvents = 'auto';
             this.els.guidedTourFocus.style.opacity = '0';
             this.els.guidedTourFocus.style.width = '0px';
             this.els.guidedTourFocus.style.height = '0px';
@@ -15428,6 +15849,7 @@ class Game {
 
         // Has target: use spotlight focus (box-shadow provides darkness), hide dim
         this.els.guidedTourDim.style.opacity = '0';
+        this.els.guidedTourDim.style.pointerEvents = 'auto';
         this.els.guidedTourFocus.style.opacity = '1';
 
         const rect = target.rect;
@@ -15453,6 +15875,7 @@ class Game {
             this.els.guidedTourHotspot.classList.add('hidden');
         } else if (target.type === 'hotspot') {
             this.els.guidedTourHotspot.classList.remove('hidden');
+            this.els.guidedTourHotspot.classList.toggle('gt-hotspot-ring', target.kind === 'cell');
             this.els.guidedTourHotspot.style.left = `${rect.left}px`;
             this.els.guidedTourHotspot.style.top = `${rect.top}px`;
             this.els.guidedTourHotspot.style.width = `${rect.width}px`;
@@ -15530,6 +15953,19 @@ class Game {
 
         if (step.centerCard) {
             top = (vh - card.offsetHeight) / 2;
+        } else if (step.cardPosition === 'top') {
+            top = margin;
+            if (targetRect) {
+                left = Math.min(Math.max(targetRect.left + targetRect.width / 2 - card.offsetWidth / 2, margin), vw - card.offsetWidth - margin);
+            }
+        } else if (step.cardPosition === 'bottom') {
+            top = vh - card.offsetHeight - margin;
+            if (targetRect) {
+                left = Math.min(Math.max(targetRect.left + targetRect.width / 2 - card.offsetWidth / 2, margin), vw - card.offsetWidth - margin);
+            }
+        } else if (step.cardPosition === 'belowTarget' && targetRect) {
+            top = targetRect.bottom + 10;
+            left = Math.min(Math.max(targetRect.left + targetRect.width / 2 - card.offsetWidth / 2, 8), vw - card.offsetWidth - 8);
         } else if (targetRect) {
             left = Math.min(Math.max(targetRect.left + targetRect.width / 2 - card.offsetWidth / 2, margin), vw - card.offsetWidth - margin);
             const spaceBelow = vh - targetRect.bottom;
@@ -15543,7 +15979,12 @@ class Game {
         }
 
         card.style.left = `${left}px`;
-        card.style.top = `${Math.max(margin, Math.min(top, vh - card.offsetHeight - margin))}px`;
+        if (step.cardPosition === 'belowTarget') {
+            // Don't re-clamp belowTarget — keep it directly under the target
+            card.style.top = `${Math.max(4, top)}px`;
+        } else {
+            card.style.top = `${Math.max(margin, Math.min(top, vh - card.offsetHeight - margin))}px`;
+        }
     }
 
     _advanceGuidedTour(triggerSource) {
@@ -15551,6 +15992,11 @@ class Game {
         const step = this._guidedTour.tour.steps[this._guidedTour.stepIndex];
         if (triggerSource === 'continue' && step.mode === 'tap-target') return;
         if (triggerSource === 'target' && step.mode !== 'tap-target') return;
+        // Deferred-advance: target was tapped but step controls when to advance
+        if (triggerSource === 'target' && step.deferredAdvance) {
+            if (Array.isArray(step.onTargetTap)) this._runGuidedTourCommands(step.onTargetTap);
+            return;
+        }
         if (Array.isArray(step.onAdvance)) this._runGuidedTourCommands(step.onAdvance);
         this._enterGuidedTourStep(this._guidedTour.stepIndex + 1);
     }
@@ -15571,6 +16017,13 @@ class Game {
             this._guidedTour.cleanupHotspotHandler();
             this._guidedTour.cleanupHotspotHandler = null;
         }
+        if (this._guidedTour.cleanupSwipeHandler) {
+            try { this._guidedTour.cleanupSwipeHandler(); } catch (_) {}
+            this._guidedTour.cleanupSwipeHandler = null;
+        }
+        // D2: reset swipe-animation flag so a Skip mid-animation doesn't
+        // leave _guidedSwipeAnimating=true and block the next tutorial run.
+        this._guidedSwipeAnimating = false;
         if (this._guidedTour.activeTargetEl) {
             this._guidedTour.activeTargetEl.classList.remove('guided-tour-focus-target');
             this._guidedTour.activeTargetEl = null;
@@ -15593,12 +16046,36 @@ class Game {
         this._guidedCloseMusicDropdown();
         this._cleanupGuidedTourStep();
         this._teardownGuidedSceneState();
-        // Reset all overlay states
-        this.els.guidedTourDim.style.opacity = '0';
-        this.els.guidedTourFocus.style.opacity = '0';
+        // Reset all overlay states. Disable transitions briefly so the
+        // dim and spotlight box-shadow vanish on the same frame the user
+        // clicks Finish — otherwise the 0.4s opacity fade can leave a
+        // visible darkened backdrop while the menu is already in view.
+        const dim = this.els.guidedTourDim;
+        const focus = this.els.guidedTourFocus;
+        const prevDimTransition = dim.style.transition;
+        const prevFocusTransition = focus.style.transition;
+        dim.style.transition = 'none';
+        focus.style.transition = 'none';
+        dim.style.opacity = '0';
+        dim.style.background = '';
+        dim.style.pointerEvents = 'none';
+        focus.style.opacity = '0';
+        focus.style.boxShadow = 'none';
+        focus.style.width = '0px';
+        focus.style.height = '0px';
+        // Force a reflow so the above takes effect before transitions resume
+        void dim.offsetHeight;
         this.els.guidedTourCard.classList.remove('visible');
         this.els.guidedTourCard.classList.add('hidden');
         this.els.guidedTourOverlay.classList.remove('active');
+        this.els.guidedTourOverlay.classList.remove('gt-half-dim');
+        // Restore transitions on the next frame so future tours fade normally
+        requestAnimationFrame(() => {
+            dim.style.transition = prevDimTransition || '';
+            focus.style.transition = prevFocusTransition || '';
+            focus.style.boxShadow = '';
+            dim.style.background = '';
+        });
         if (this._guidedTour.resizeHandler) {
             window.removeEventListener('resize', this._guidedTour.resizeHandler);
         }
@@ -15620,6 +16097,13 @@ class Game {
         this._guidedTour.active = false;
         this._guidedTour.tour = null;
         this._guidedTour.stepIndex = 0;
+
+        // Flush any sign-up prompt that was deferred during the tour.
+        if (this._pendingSignUpPromptReason) {
+            const reason = this._pendingSignUpPromptReason;
+            this._pendingSignUpPromptReason = null;
+            setTimeout(() => this._showSignUpPrompt(reason), 600);
+        }
     }
 
     _runGuidedTourCommands(commands) {
@@ -15880,14 +16364,14 @@ class Game {
     }
 
     _setupGuidedSimulatedGrid(config = {}) {
-        // Create a visual teaching grid overlaid on the canvas-wrapper
-        // config.grid = 2D array of letters (null = empty cell), e.g.:
-        //   [
-        //     [null, null, null, null, null],
-        //     [null, 'C',  'A',  'T',  null],
-        //     [null, null, 'R',  null, null],
-        //     ...
-        //   ]
+        // Create a visual teaching grid mirroring the real game canvas.
+        // Appended to <body> with position:fixed (NOT inside canvas-wrapper)
+        // so it lives outside the canvas-wrapper stacking context — that
+        // way `.guided-tour-focus-target` (z-index 10024) on a .gt-cell
+        // can rise above the guided-tour dim (z-index 10020) and receive
+        // clicks during tap-target steps.
+        //
+        // config.grid = 2D array of letters (null = empty cell)
         // config.cols / config.rows override grid dimensions (default 5×5)
         const canvas = this.els.canvasWrapper;
         if (!canvas) return;
@@ -15911,25 +16395,1212 @@ class Game {
                 const letter = (grid[r] && grid[r][c]) || null;
                 const cell = document.createElement('div');
                 cell.className = letter ? 'gt-cell gt-filled' : 'gt-cell gt-empty';
+                cell.dataset.gtR = String(r);
+                cell.dataset.gtC = String(c);
+                cell.id = `gt-cell-r${r}-c${c}`;
                 if (letter) cell.textContent = letter;
                 gridEl.appendChild(cell);
             }
         }
 
-        canvas.appendChild(gridEl);
+        document.body.appendChild(gridEl);
+
+        // Position fixed over canvas-wrapper, kept in sync on resize/scroll.
+        const positionGrid = () => {
+            const rect = canvas.getBoundingClientRect();
+            gridEl.style.left = `${rect.left}px`;
+            gridEl.style.top = `${rect.top}px`;
+            gridEl.style.width = `${rect.width}px`;
+            gridEl.style.height = `${rect.height}px`;
+        };
+        positionGrid();
+        // Stash so teardown can detach listeners.
+        this._guidedTeachingGridReposition = positionGrid;
+        window.addEventListener('resize', positionGrid);
+        window.addEventListener('scroll', positionGrid, true);
+
         return gridEl;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  MANUFACTURED FIRST-PROFILE TUTORIAL
+    //  Triggered the very first time a user selects a brand-new
+    //  profile. Walks the player through grid mechanics with a fully
+    //  scripted scene before letting them touch the real game.
+    // ════════════════════════════════════════════════════════════════
+
+    _maybeStartFirstProfileTour() {
+        const p = this._getLegacyOnboardingState();
+        if (!p) return;
+        // Source of truth: has the user reached level 2 yet? The first real
+        // game guarantees XP for level 2, so anything below means they
+        // closed the app mid-tutorial or mid-first-game and should restart
+        // the entire intro sequence from the top.
+        if (this.profileMgr.hasCompletedFirstProfileSequence()) {
+            // Backfill the legacy flag so old code paths that still read it
+            // stay consistent.
+            if (!p.firstProfileTutorialShown) {
+                p.firstProfileTutorialShown = true;
+                this.profileMgr._save();
+            }
+            return;
+        }
+        // Wipe any half-finished saved game so 'Resume Game' can't surface
+        // and short-circuit the tutorial restart.
+        try { this._clearSavedGameForType(null); } catch (_) {}
+        // E3: snapshot the active profile id at scheduling time. If the
+        // user switches profiles before the timeout fires, abort.
+        const scheduledProfileId = p.id;
+        // Defer slightly so the menu screen finishes rendering first.
+        setTimeout(() => {
+            if (this._guidedTour.active) return;
+            // E2: only fire if the user is still on the menu screen (they
+            // may have navigated to challenges, settings, etc).
+            if (this._activeScreen !== 'menu') return;
+            // E3: bail if the active profile changed during the wait.
+            const cur = this.profileMgr.getActive();
+            if (!cur || cur.id !== scheduledProfileId) return;
+            // Re-check level in case another flow already advanced them.
+            if (this.profileMgr.hasCompletedFirstProfileSequence()) return;
+            this._startGuidedTour('guided-first-profile');
+        }, 350);
+    }
+
+    _markFirstProfileTutorialShown() {
+        const p = this._getLegacyOnboardingState();
+        if (!p) return;
+        p.firstProfileTutorialShown = true;
+        // G3: do NOT mark legacyGuidedShown here. The intro tutorial and
+        // the post-first-game welcome tour are distinct sequences —
+        // suppressing the latter when the former finishes was preventing
+        // the second guided tour from ever firing for new profiles.
+        this.profileMgr._save();
+    }
+
+    _setupGuidedScriptedPlayScene(config = {}) {
+        // Drives the REAL game renderer with a scripted board state.
+        // No CSS-overlay simulation — we populate the actual `Grid` and
+        // ask `Renderer.draw` to paint it once, then keep redrawing while
+        // the tutorial is active so the look exactly matches a live game.
+        this._teardownGuidedSceneState();
+        this._showScreen('play');
+        this.state = State.PAUSED;
+        this.els.pauseOverlay.classList.remove('active');
+        this.els.currentScore.textContent = String(config.score ?? 0);
+        this.els.playCoins.textContent = String(config.coins ?? 0);
+        this.els.playHighScore.textContent = String(config.highScore ?? 0);
+        this.els.nextLetter.textContent = config.nextLetter || '';
+        this.els.wordPopup.textContent = config.popupText || '';
+        this.els.bonusBtn.classList.toggle('hidden', !config.bonusVisible);
+        if (config.bonusVisible) this.els.bonusBtn.textContent = config.bonusLabel || 'Bonus!';
+        this.els.radialMenu.classList.add('hidden');
+        this.els.freezeIndicator.classList.add('hidden');
+        this.els.score2xIndicator.classList.add('hidden');
+        this.els.targetWordDisplay.classList.add('hidden');
+        this.els.timerScoreItem.classList.add('hidden');
+
+        const board = config.board || [];
+        const rows = config.rows || board.length || 5;
+        const cols = config.cols || (board[0] && board[0].length) || 5;
+
+        // Build the real Grid and seed it with the scripted letters.
+        this.gridSize = rows;
+        this.grid = new Grid(rows, cols);
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const v = board[r] && board[r][c];
+                if (v) this.grid.set(r, c, v);
+            }
+        }
+        this.block = null;
+        // Apply the player's equipped theme/block style if available.
+        try {
+            const p = this.profileMgr?.getActive?.();
+            const themeId = p?.equipped?.theme || p?.equippedTheme;
+            const blockId = p?.equipped?.block || p?.equippedBlock;
+            if (themeId) this.renderer.setTheme(themeId);
+            if (blockId) this.renderer.setBlockStyle(blockId);
+        } catch { /* no-op — defaults are fine */ }
+
+        // Optional scripted falling block, rendered through the REAL
+        // renderer.draw path so it looks identical to the live game
+        // (cell highlight, themed border, ghost preview, etc.).
+        if (config.fallingLetter) {
+            const fcol = Number.isFinite(config.fallingCol) ? config.fallingCol : Math.floor(cols / 2);
+            const frow = Number.isFinite(config.fallingRow) ? config.fallingRow : Math.max(0, rows - 4);
+            this.block = new FallingBlock(config.fallingLetter, fcol, rows, 'letter');
+            this.block.row = Math.floor(frow);
+            this.block.visualRow = frow;
+        }
+
+        // Resize and paint a single frame. Then drive a slow redraw loop
+        // so any animation (celebrate flash, blast clearing) plays out.
+        const repaint = () => {
+            this.renderer.resize(rows, cols);
+            this.renderer.draw(this.grid, this.block, 0);
+            // Re-anchor the bonus button to the canvas's actual top edge
+            // so it doesn't float in the empty wrapper space above the grid
+            // when the scripted scene's canvas is shorter than the wrapper.
+            if (config.bonusVisible && this.els.bonusBtn && this.canvas) {
+                const wrap = this.canvas.parentElement;
+                if (wrap) {
+                    const wrapRect = wrap.getBoundingClientRect();
+                    const cnvRect = this.canvas.getBoundingClientRect();
+                    const top = Math.max(2, cnvRect.top - wrapRect.top + 6);
+                    this.els.bonusBtn.style.top = `${top}px`;
+                }
+            } else if (this.els.bonusBtn) {
+                this.els.bonusBtn.style.top = '';
+            }
+        };
+        // Paint synchronously so cell metrics are available immediately
+        // for the guided-tour step that targets a specific cell.
+        repaint();
+        // Re-resize next frame in case the wrapper layout settled later.
+        requestAnimationFrame(() => {
+            repaint();
+            // Reposition the tour card/spotlight against the freshly
+            // measured renderer cell.
+            this._positionGuidedTourStep?.();
+        });
+
+        this._guidedScenePaint = repaint;
+        // Continuous repaint while a tap-target highlight is animating.
+        if (this._guidedSceneRafId) cancelAnimationFrame(this._guidedSceneRafId);
+        const tick = () => {
+            if (!this._guidedScenePaint) return;
+            this._guidedScenePaint();
+            this._guidedSceneRafId = requestAnimationFrame(tick);
+        };
+        this._guidedSceneRafId = requestAnimationFrame(tick);
+
+        // Optional DOM ghost (legacy path) — only used if explicitly
+        // requested via config.useDomGhost. Real falling blocks now render
+        // on the canvas through the renderer above.
+        if (config.fallingLetter && config.useDomGhost) {
+            const canvas = this.els.canvasWrapper;
+            if (canvas) {
+                let ghost = document.getElementById('guided-falling-letter');
+                if (ghost) ghost.remove();
+                ghost = document.createElement('div');
+                ghost.id = 'guided-falling-letter';
+                ghost.className = 'guided-falling-letter';
+                ghost.textContent = config.fallingLetter;
+                document.body.appendChild(ghost);
+                const positionGhost = () => {
+                    const rect = canvas.getBoundingClientRect();
+                    const size = Math.min(rect.width, rect.height) * 0.16;
+                    ghost.style.width = `${size}px`;
+                    ghost.style.height = `${size}px`;
+                    ghost.style.fontSize = `${size * 0.6}px`;
+                    ghost.style.left = `${rect.left + rect.width / 2 - size / 2}px`;
+                    ghost.style.top = `${rect.top + rect.height * 0.06}px`;
+                };
+                positionGhost();
+                this._guidedFallingLetterReposition = positionGhost;
+                window.addEventListener('resize', positionGhost);
+                window.addEventListener('scroll', positionGhost, true);
+            }
+        }
+    }
+
+    // Compute screen rect of a (row, col) cell in the scripted scene
+    // for use as a guided-tour hotspot target.
+    _guidedCellRect(row, col) {
+        const canvas = this.canvas;
+        if (!canvas || !this.renderer || !this.renderer.cellSize) return null;
+        const wrapRect = canvas.getBoundingClientRect();
+        // Use the renderer's own cellCenter() — that's the SAME math the
+        // renderer uses to actually draw the letter, so the ring is
+        // guaranteed to land exactly on the visible block. Then convert
+        // CSS-pixel cellSize to viewport pixels using the canvas's actual
+        // on-screen scale (handles any CSS scaling / subpixel rounding).
+        const center = this.renderer.cellCenter(row, col);
+        if (!center) return null;
+        const cssCellSize = this.renderer.cellSize;
+        const cssCanvasW = parseFloat(canvas.style.width) || cssCellSize * (this.grid?.cols || 1);
+        const scale = wrapRect.width / cssCanvasW; // 1 unless CSS-scaled
+        const cs = cssCellSize * scale;
+        const cx = wrapRect.left + center.x * scale;
+        const cy = wrapRect.top + center.y * scale;
+        return {
+            left: cx - cs / 2,
+            top: cy - cs / 2,
+            width: cs,
+            height: cs,
+        };
+    }
+
+
+    _guidedCelebrateCells(coords, advanceAfterMs = 700) {
+        // Use the real renderer's validation effect (green) for word scoring,
+        // with a brief white flash pulse on top so the moment pops.
+        if (!this.renderer || !this.grid) return;
+        this.renderer.flashCells.clear();
+        this.renderer.validatedCells = new Set();
+        for (const [r, c] of coords) {
+            const key = `${r},${c}`;
+            this.renderer.flashCells.add(key);
+            this.renderer.validatedCells.add(key);
+        }
+        const start = performance.now();
+        const dur = Math.max(advanceAfterMs, 400);
+        const flashDur = Math.min(350, dur * 0.5);
+        const animate = (now) => {
+            if (!this.renderer) return;
+            const elapsed = now - start;
+            this.renderer.flashTimer = elapsed / 1000;
+            if (elapsed >= flashDur) {
+                this.renderer.flashCells.clear();
+                this.renderer.flashTimer = 0;
+            }
+            if (elapsed >= dur) {
+                // Leave validatedCells green until the next scene replaces them.
+                return;
+            }
+            requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }
+
+    _guidedShowFakeBombModal() {
+        const modal = document.getElementById('guided-fake-bomb-modal');
+        if (!modal) return;
+        modal.classList.add('active');
+        // Tour engine's tap-target on #guided-fake-bomb-activate advances.
+    }
+
+    _guidedHideFakeBombModal() {
+        const modal = document.getElementById('guided-fake-bomb-modal');
+        if (modal) modal.classList.remove('active');
+    }
+
+    _guidedExplodeBomb(centerR = 2, centerC = 2, radius = 1) {
+        // Use the real renderer's blast effect, then actually clear cells.
+        if (!this.renderer || !this.grid) return;
+        const cells = [];
+        for (let r = centerR - radius; r <= centerR + radius; r++) {
+            for (let c = centerC - radius; c <= centerC + radius; c++) {
+                if (this.grid.inBounds(r, c) && this.grid.get(r, c)) {
+                    cells.push([r, c]);
+                    this.renderer.blastCells.add(`${r},${c}`);
+                }
+            }
+        }
+        this.renderer.blastCenterKey = `${centerR},${centerC}`;
+        this.renderer.blastProgress = 0;
+        this.renderer.triggerShake(8);
+        const start = performance.now();
+        const dur = 600;
+        const animate = (now) => {
+            if (!this.renderer) return;
+            const t = Math.min(1, (now - start) / dur);
+            this.renderer.blastProgress = t;
+            if (t < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Actually clear them from the grid
+                for (const [r, c] of cells) this.grid.set(r, c, null);
+                this.renderer.blastCells.clear();
+                this.renderer.blastCenterKey = null;
+                this.renderer.blastProgress = 0;
+            }
+        };
+        requestAnimationFrame(animate);
+    }
+
+
+    _guidedShowReadyModal() {
+        const modal = document.getElementById('guided-ready-modal');
+        if (!modal) return;
+        modal.classList.add('active');
+        // Tour engine's tap-target on #guided-ready-go-btn advances the
+        // tour. Modal is hidden in the step's onAdvance commands.
+    }
+
+    _guidedHideReadyModal() {
+        const modal = document.getElementById('guided-ready-modal');
+        if (modal) modal.classList.remove('active');
+    }
+
+    _guidedReturnToHomeForStart() {
+        this._teardownGuidedSceneState();
+        this._showScreen('menu');
+        this._goToMenuPage(3); // Home page
+        const homePage = this.els.menuSlideStrip?.children[3];
+        if (homePage) homePage.scrollTop = 0;
+    }
+
+    _finishFirstProfileTour() {
+        this._markFirstProfileTutorialShown();
+        this._guidedHideFakeBombModal();
+        this._guidedHideReadyModal();
+        // The real 1-minute game is already running underneath the
+        // tutorial overlays — just resume it cleanly. _guidedResumeRealGame
+        // (run on the final step's onAdvance) handles the actual unpause.
+    }
+
+    // After the user clicks "Next" on the final tutorial step, abandon
+    // the placeholder game underneath and force-launch the real first
+    // game. Treat this EXACTLY as if the user had tapped the home-screen
+    // "Start Game" button with these settings already chosen:
+    //   • Game mode: TIMED (1 minute)
+    //   • Difficulty: NORMAL
+    //   • Grid size: 7×7
+    // The standard new-game pipeline then fires the 3-2-1 countdown,
+    // first-game bonus tutorial, XP tutorial, and post-game guided tour
+    // unchanged.
+    _guidedLaunchFirstRealGame() {
+        // T8: idempotency — ignore double-clicks
+        if (this._guidedLaunchInProgress) return;
+        this._guidedLaunchInProgress = true;
+
+        // 1. Mark tutorial complete & end the guided tour overlay
+        this._markFirstProfileTutorialShown();
+        this._guidedHideFakeBombModal();
+        this._guidedHideReadyModal();
+        try { this._stopGuidedTour?.(false); } catch (_) {}
+        // T9: belt-and-suspenders overlay teardown
+        try { this.els.guidedTourOverlay?.classList.remove('active'); } catch (_) {}
+
+        // 2. Tear down placeholder game state (T6, T7, T11)
+        this._guidedFirstProfileRunning = false;  // T7 — must come BEFORE launch
+        this._scriptedLetterQueue = null;          // T6
+        this.block = null;
+        this.clearing = false;
+        this.clearPhase = '';
+        this.clearTimer = 0;
+        this._pendingClearCells = null;
+        this._claimAnimating = false;
+        this._guidedDemoClearRunning = false;
+        this._wordPopupActive = false;
+        this._wordPopupCount = 0;
+        try { if (this.els.wordPopup) this.els.wordPopup.innerHTML = ''; } catch (_) {}
+        if (this.renderer) {
+            this.renderer.flashCells?.clear?.();
+            this.renderer.blastCells?.clear?.();
+            this.renderer.validatedCells = new Set();
+            this.renderer.flashTimer = 0;
+            this.renderer.blastProgress = 0;
+            this.renderer.blastCenterKey = null;
+        }
+        // Defense-in-depth: wipe any saved-game record left by the placeholder
+        try { this._clearSavedGameForType(null); } catch (_) {}
+
+        // 3. Force-close any modal that could block the new-game flow (T4)
+        const modalsToClose = [
+            this.els.confirmNewGameModal,
+            this.els.timeSelectModal,
+            this.els.perkSelectModal,
+            this.els.pauseOverlay,
+            this.els.settingsOverlay,
+            this.els.tutorialOverlay,
+        ];
+        for (const m of modalsToClose) {
+            try { m?.classList?.remove('active'); } catch (_) {}
+        }
+
+        // 4. Apply canonical first-game settings (T1, T2, T3, T5)
+        this.gameMode = GAME_MODES.TIMED;                 // T2
+        this.pendingStartMode = GAME_MODES.TIMED;
+        // T1: must be one of the DB-allowed values ('casual' | 'hard').
+        // 'normal' violates profiles_preferred_difficulty_check and breaks
+        // both _syncProfileToCloud and record_game on first game-over.
+        this.difficulty = 'casual';                       // T1
+        this.gridSize = 7;                                // T3
+        this.activeChallenge = null;                      // T5
+        this.activeCategoryKey = null;                    // T5
+        this.targetWord = null;                           // T5
+        this.targetWordsCompleted = 0;                    // T5
+        this.categoryWordsFound = [];                     // T5
+
+        // Persist the settings to the profile so the home-screen UI
+        // reflects them when the user returns post-game (T1, T3, T13)
+        try { this.profileMgr?.setDifficulty?.('normal'); } catch (_) {}
+        try { this.profileMgr?.setGridSize?.(7); } catch (_) {}
+        try { this._debouncedSyncProfileToCloud?.(); } catch (_) {}
+
+        // T10: re-highlight the home-screen selector buttons so they
+        // match the forced settings if the user ever sees them
+        try { this._highlightSizeButton?.(); } catch (_) {}
+        try { this._highlightDifficultyButton?.(); } catch (_) {}
+        try { this._highlightGameModeButton?.(); } catch (_) {}
+
+        // T12: kick the audio context — Next is a user gesture
+        try { this.audio?.start?.(); } catch (_) {}
+
+        // 5. Launch through the standard pipeline. We bypass _startGame's
+        //    saved-game confirm modal (already cleared above) and the
+        //    time-select modal by calling _maybeShowPerkSelect directly
+        //    with the 60-second time limit. For a brand-new profile this
+        //    has no perks and falls straight through to _beginNewGame(60),
+        //    which handles _showScreen('play'), the 3-2-1 countdown, the
+        //    first-game bonus tutorial, and everything else.
+        try {
+            this._maybeShowPerkSelect(60);
+        } finally {
+            // Release the launch lock on the next frame so any retry
+            // (e.g. user backs out of perk-select) can proceed.
+            requestAnimationFrame(() => { this._guidedLaunchInProgress = false; });
+        }
+    }
+
+    // ── Real-game-with-overlay tutorial ──────────────────────────
+    _startGuidedFirstProfileGame() {
+        console.log('[guided-tour] _startGuidedFirstProfileGame called, activeProfile=', !!this.profileMgr?.getActive(), 'gridSize=', this.gridSize, 'screen=', this._activeScreen);
+        // Launch the actual main 1-minute grid game with a curated
+        // letter queue so the first few drops form simple words.
+        // Everything else (timer, animations, popups, audio, scoring,
+        // bonuses) is the live game — only the randomizer is replaced.
+        this._scriptedLetterQueue = [
+            // Easy openers that set up WORD across the bottom row.
+            'W', 'O', 'R', 'D',
+            // Then a few helpful follow-ups.
+            'I', 'D', 'A', 'T', 'E', 'S', 'P', 'L',
+            'A', 'N', 'O', 'M', 'B', 'I', 'C', 'H',
+        ];
+        this.gameMode = GAME_MODES.TIMED;
+        // Match the real first game's grid size (7×7 — one of the
+        // grids unlocked at level 1) so the placeholder looks identical.
+        this.gridSize = 7;
+        // Wipe any stale saved-game record so a prior bailed tutorial
+        // can't surface as "Resume Game".
+        try { this._clearSavedGameForType(null); } catch (_) {}
+        try {
+            this._beginNewGame(60);
+            console.log('[guided-tour] _beginNewGame returned, screen=', this._activeScreen);
+        } catch (e) {
+            console.warn('[guided-tour] failed to start real game:', e);
+            return;
+        }
+        // Force the play screen visible — _beginNewGame calls _showScreen('play')
+        // but if anything in the call chain throws after our try/catch boundary,
+        // belt-and-suspenders this here too.
+        try { this._showScreen('play'); } catch (_) {}
+        // Also re-pin play across the next few frames so any late
+        // boot/cloud routing can't reroute us back to profiles/menu.
+        let pinFrames = 30;
+        const pinPlay = () => {
+            if (!this._guidedFirstProfileRunning) return;
+            if (pinFrames-- <= 0) return;
+            if (this._activeScreen !== 'play') {
+                try { this._showScreen('play'); } catch (_) {}
+            }
+            requestAnimationFrame(pinPlay);
+        };
+        // Pause immediately and remove the auto-spawned falling block so
+        // the demo board is visible cleanly. The block + queue resume on
+        // _guidedHandoffToRealGame.
+        this._guidedPauseRealGame();
+        this.block = null;
+        // Mark this as a guided run so other systems (legacy howto
+        // overlay, first-game bonus tutorial) skip themselves.
+        this._guidedFirstProfileRunning = true;
+        // Start pinning play screen now that the flag is set
+        requestAnimationFrame(pinPlay);
+    }
+
+    // Paint the live grid + renderer state with a scripted demo board
+    // (letters + green-validated cells + optional bonus button), so the
+    // teaching cards have a real visual to point at — but we're still
+    // running the real game underneath.
+    _guidedDemoBoard(config = {}) {
+        if (!this.grid || !this.renderer) return;
+        const rows = config.rows || this.grid.rows;
+        const cols = config.cols || this.grid.cols;
+        // Resize the live grid + renderer to match the demo dimensions
+        if (this.grid.rows !== rows || this.grid.cols !== cols) {
+            this.grid = new Grid(rows, cols);
+            this.gridSize = rows;
+        } else {
+            // wipe existing cells
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) this.grid.set(r, c, null);
+            }
+        }
+        const board = config.board || [];
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const v = board[r] && board[r][c];
+                if (v) this.grid.set(r, c, v);
+            }
+        }
+        // Green validation overlay (mirrors live word-validation effect)
+        this.renderer.validatedCells = new Set();
+        for (const [r, c] of (config.green || [])) {
+            this.renderer.validatedCells.add(`${r},${c}`);
+        }
+        this.renderer.flashCells.clear();
+        this.renderer.blastCells.clear();
+        this.renderer.blastCenterKey = null;
+        this.renderer.blastProgress = 0;
+        this.renderer.flashTimer = 0;
+        // Optional bonus button (real button, just unhidden + labeled)
+        if (config.showBonus) {
+            const useReal = config.showBonus === 'real';
+            if (useReal) {
+                // Use the live "Bonus: Bomb" label from BONUS_METADATA and
+                // the natural CSS position (top of canvas wrapper, centered).
+                const bombMeta = BONUS_METADATA[BONUS_TYPES.BOMB];
+                this.els.bonusBtn.textContent = bombMeta?.buttonLabel || 'Bonus: Bomb';
+                this.els.bonusBtn.title = bombMeta?.buttonTitle || 'Use Bonus';
+                this.els.bonusBtn.disabled = false;
+                this.els.bonusBtn.style.top = '';
+            } else {
+                this.els.bonusBtn.textContent = config.showBonus;
+                // Anchor it to the actual canvas top, not the wrapper
+                const wrap = this.canvas?.parentElement;
+                if (wrap && this.canvas) {
+                    const wrapRect = wrap.getBoundingClientRect();
+                    const cnvRect = this.canvas.getBoundingClientRect();
+                    this.els.bonusBtn.style.top = `${Math.max(2, cnvRect.top - wrapRect.top + 6)}px`;
+                }
+            }
+            this.els.bonusBtn.classList.remove('hidden');
+        } else {
+            this.els.bonusBtn.classList.add('hidden');
+            this.els.bonusBtn.style.top = '';
+        }
+        // Paint immediately so the next tour step's hotspot can measure
+        // accurate cell positions.
+        this.renderer.resize(rows, cols);
+        this.renderer.draw(this.grid, null, 0);
+        // Re-resize + reposition the hotspot across multiple frames to
+        // catch any layout-settling races on first page load (fonts
+        // flushing, wrapper reflow, etc). Without this, the very first
+        // step's ring can land slightly off the W until the user
+        // interacts. Each pass is cheap and idempotent.
+        const repaintAndReposition = () => {
+            if (!this.grid || !this.renderer) return;
+            this.renderer.resize(rows, cols);
+            this.renderer.draw(this.grid, null, 0);
+            this._positionGuidedTourStep?.();
+        };
+        requestAnimationFrame(repaintAndReposition);
+        // Settle passes — covers the case where the canvas wrapper
+        // hasn't fully laid out on initial page load.
+        setTimeout(repaintAndReposition, 50);
+        setTimeout(repaintAndReposition, 150);
+        setTimeout(repaintAndReposition, 350);
+    }
+
+    // Drive the real word-clear animation manually (same pipeline as
+    // _claimValidatedAt in the live game): flash → cell removal →
+    // gravity → check. Game stays paused so timer doesn't run, but
+    // we self-tick _processClearPhase each frame.
+    _guidedTriggerDemoWordClearThenAdvance({ words = [] } = {}) {
+        if (!this._guidedTour?.active || !this.grid || !this.renderer) return;
+        // Guard: if a previous tap is still animating, ignore further taps
+        if (this._guidedDemoClearRunning) return;
+        this._guidedDemoClearRunning = true;
+        const stepIndex = this._guidedTour.stepIndex;
+        // Hide the prompt card + green ring while the animation plays
+        this._cleanupGuidedTourStep();
+
+        // Save score so demo word points don't pollute the player's score
+        const savedScore = this.score;
+        const savedHigh = this.highScore;
+
+        // Build cellsToClear from the configured word definitions
+        const cellsToClear = new Set();
+        const claimedWords = [];
+        const longestLen = words.reduce((m, w) => Math.max(m, w.word.length), 0);
+        for (const w of words) {
+            for (const [r, c] of w.cells) cellsToClear.add(`${r},${c}`);
+            claimedWords.push({ word: w.word, pts: w.pts || 0, multiplied: false });
+        }
+
+        // Show word popup (just like the real game)
+        try {
+            // Clear any leftover popup rows from a previous step before adding new ones
+            if (this.els.wordPopup) this.els.wordPopup.innerHTML = '';
+            this._wordPopupCount = 0;
+            this._wordPopupActive = false;
+            this._showWordPopup(claimedWords);
+        } catch (_) {}
+
+        // Audio + shake — same as _claimValidatedAt single-word branch
+        try { this.audio?.clear?.(longestLen); } catch (_) {}
+        try { this.renderer.triggerShake?.(1.5 + longestLen * 0.4); } catch (_) {}
+
+        // Set up the standard word-clear flash phase
+        this._claimAnimating = true;
+        this.clearing = true;
+        this.clearPhase = 'flash';
+        this.clearTimer = 0;
+        this.clearFlashDuration = STANDARD_CLEAR_FLASH_DURATION;
+        this.pendingClearMode = 'words';
+        this.renderer.flashCells = new Set(cellsToClear);
+        this.renderer.blastCells.clear();
+        this.renderer.blastCenterKey = null;
+        this.renderer.blastProgress = 0;
+        this.renderer.flashTimer = 0;
+        try { this.renderer.spawnParticles?.(cellsToClear); } catch (_) {}
+        this._pendingClearCells = cellsToClear;
+
+        // Self-drive the clear phase (game is paused, main loop won't tick)
+        let lastT = performance.now();
+        const tick = (now) => {
+            if (!this._guidedTour?.active) return;
+            const dt = Math.min((now - lastT) / 1000, 0.1);
+            lastT = now;
+            try {
+                this._processClearPhase(dt);
+                this.renderer.draw(this.grid, null, dt);
+            } catch (e) {
+                console.warn('[guided-demo-word-clear] tick error:', e);
+            }
+            if (!this.clearing) {
+                // Restore score and clean up popup leftovers
+                this.score = savedScore;
+                this.highScore = savedHigh;
+                try { this._updateScoreDisplay(); } catch (_) {}
+                // Throw away any block _checkWords may have spawned
+                this.block = null;
+                this.renderer.flashCells.clear();
+                this.renderer.blastCells.clear();
+                this.renderer.flashTimer = 0;
+                // Allow the popup to remain briefly so users see the score,
+                // then advance.
+                setTimeout(() => {
+                    try { this.els.wordPopup.innerHTML = ''; } catch (_) {}
+                    this._wordPopupActive = false;
+                    this._wordPopupCount = 0;
+                    this._guidedDemoClearRunning = false;
+                    if (this._guidedTour?.active && this._guidedTour.stepIndex === stepIndex) {
+                        this._enterGuidedTourStep(stepIndex + 1);
+                    }
+                }, 600);
+                return;
+            }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    }
+
+    // Drive the real bomb-clear animation manually while the game is
+    // paused — calls the real _triggerBombClear (so flash, blast, particles,
+    // shrapnel, sparkle burst, audio, shake all match the live game), then
+    // self-ticks _processClearPhase each frame so we get identical gravity
+    // animation. Game stays in PAUSED state the whole time so the timer
+    // doesn't run, but the renderer draws every frame anyway (paused-state
+    // branch of _loop calls renderer.draw with dt=0, but _processClearPhase
+    // mutates the cells/animation state directly).
+    // ──────────────────────────────────────────────────────────────────
+    // SWIPE-TEACH STEP HELPERS
+    // Used by the new tour steps that teach left/right/down controls
+    // using a real falling letter and the on-screen control buttons
+    // (#btn-left, #btn-right, #btn-drop). Game is PAUSED throughout so
+    // the main loop won't tick — every helper drives its own RAF.
+    // ──────────────────────────────────────────────────────────────────
+
+    // Spawn a fake FallingBlock at the top of the grid and animate it
+    // falling down for a fixed duration, then halt mid-grid so the
+    // user can practice sliding it. Game is paused — we tick the
+    // visualRow ourselves and call renderer.draw each frame.
+    _guidedSpawnSwipeDemoBlock({ letter = 'P', col = 3, fallTargetRow = 2, fallDurationMs = 2000 } = {}) {
+        if (!this.grid || !this.renderer) return;
+        // Defensive: clear any leftover popup / clearing state
+        try { this.els.wordPopup.innerHTML = ''; } catch (_) {}
+        this._wordPopupActive = false;
+        this._wordPopupCount = 0;
+        this.clearing = false;
+        // Spawn a real FallingBlock so the renderer draws it the same way
+        // as in the live game.
+        const block = new FallingBlock(letter, col, this.gridSize, 'letter');
+        block.row = fallTargetRow;          // logical landing row
+        block.visualRow = -BUFFER_ROWS;     // start above the grid
+        block.col = col;
+        this.block = block;
+        this._guidedSwipeAnimating = true;
+        const startT = performance.now();
+        const startVR = -BUFFER_ROWS;
+        const endVR = fallTargetRow;
+        const tick = (now) => {
+            // Bail if tour ended or block was replaced
+            if (!this._guidedTour?.active || this.block !== block) return;
+            const t = Math.min(1, (now - startT) / fallDurationMs);
+            block.visualRow = startVR + (endVR - startVR) * t;
+            try { this.renderer.draw(this.grid, block, 0); } catch (_) {}
+            if (t < 1) {
+                requestAnimationFrame(tick);
+            } else {
+                // Halt mid-grid; user now needs to tap the buttons
+                block.visualRow = endVR;
+                this._guidedSwipeAnimating = false;
+                try { this.renderer.draw(this.grid, block, 0); } catch (_) {}
+            }
+        };
+        requestAnimationFrame(tick);
+    }
+
+    // Smoothly slide the fake swipe block from its current column to
+    // targetCol, then advance the tour. Renderer reads block.col * cs
+    // directly so it accepts non-integer columns during the tween.
+    _guidedSlideSwipeBlockThenAdvance({ targetCol = 0, durationMs = 350 } = {}) {
+        if (!this._guidedTour?.active) return;
+        if (this._guidedSwipeAnimating) return; // ignore double-tap
+        const block = this.block;
+        if (!block) return;
+        const stepIndex = this._guidedTour.stepIndex;
+        // Tear down current step's hotspot/handlers immediately so the
+        // user can't double-tap the same button while we animate.
+        this._cleanupGuidedTourStep();
+        this._guidedSwipeAnimating = true;
+        const startCol = block.col;
+        const endCol = Math.max(0, Math.min(this.gridSize - 1, targetCol));
+        const startT = performance.now();
+        // Cubic ease-in-out for a natural slide
+        const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+        const tick = (now) => {
+            if (!this._guidedTour?.active || this.block !== block) {
+                this._guidedSwipeAnimating = false;
+                return;
+            }
+            const t = Math.min(1, (now - startT) / durationMs);
+            block.col = startCol + (endCol - startCol) * ease(t);
+            try { this.renderer.draw(this.grid, block, 0); } catch (_) {}
+            if (t < 1) {
+                requestAnimationFrame(tick);
+            } else {
+                block.col = endCol; // snap back to integer
+                try { this.renderer.draw(this.grid, block, 0); } catch (_) {}
+                this._guidedSwipeAnimating = false;
+                if (this._guidedTour?.active && this._guidedTour.stepIndex === stepIndex) {
+                    this._enterGuidedTourStep(stepIndex + 1);
+                }
+            }
+        };
+        requestAnimationFrame(tick);
+    }
+
+    // Animate the swipe block falling all the way to the bottom of the
+    // grid (its column is empty since the board was wiped at step entry),
+    // then null the block and advance the tour. We do NOT call _fastDrop
+    // because that commits the block to the grid via _landBlock and would
+    // trigger word checks / score / popups.
+    _guidedDropSwipeBlockThenAdvance({ durationMs = 500 } = {}) {
+        if (!this._guidedTour?.active) return;
+        if (this._guidedSwipeAnimating) return;
+        const block = this.block;
+        if (!block) return;
+        const stepIndex = this._guidedTour.stepIndex;
+        this._cleanupGuidedTourStep();
+        this._guidedSwipeAnimating = true;
+        const startVR = block.visualRow;
+        const endVR = block.maxRow;
+        const startT = performance.now();
+        const ease = (t) => 1 - Math.pow(1 - t, 2); // ease-out (quick fall + soft landing)
+        const tick = (now) => {
+            if (!this._guidedTour?.active || this.block !== block) {
+                this._guidedSwipeAnimating = false;
+                return;
+            }
+            const t = Math.min(1, (now - startT) / durationMs);
+            block.visualRow = startVR + (endVR - startVR) * ease(t);
+            try { this.renderer.draw(this.grid, block, 0); } catch (_) {}
+            if (t < 1) {
+                requestAnimationFrame(tick);
+            } else {
+                // Landed visually — but DON'T commit to grid. Just null it.
+                this.block = null;
+                this._guidedSwipeAnimating = false;
+                try { this.renderer.draw(this.grid, null, 0); } catch (_) {}
+                if (this._guidedTour?.active && this._guidedTour.stepIndex === stepIndex) {
+                    this._enterGuidedTourStep(stepIndex + 1);
+                }
+            }
+        };
+        requestAnimationFrame(tick);
+    }
+
+    // Listen for a real swipe gesture on the canvas — exactly mirrors
+    // the live game's _bindSwipeInput mechanics: as the user drags, the
+    // block tracks the finger column-by-column (one column per
+    // SWIPE_THRESHOLD pixels). When the block reaches the target column
+    // (left=0, right=center), or for 'down' when the drop threshold is
+    // crossed, the step advances. Game is paused so the live handler
+    // bails immediately — we install our own.
+    //
+    // direction: 'left' | 'right' | 'down'
+    // targetCol: column the block must reach for left/right (advances when reached)
+    // onComplete: optional method name to invoke instead of auto-advancing
+    //             (used by 'down' to run the drop animation before advancing)
+    _guidedAwaitSwipeThenAdvance({ direction = 'left', targetCol = null, onComplete = null, onCompleteArgs = {} } = {}) {
+        if (!this._guidedTour?.active) return;
+        const surface = this.els.canvasWrapper;
+        if (!surface) return;
+        if (typeof this._guidedTour.cleanupSwipeHandler === 'function') {
+            try { this._guidedTour.cleanupSwipeHandler(); } catch (_) {}
+            this._guidedTour.cleanupSwipeHandler = null;
+        }
+        // C1/C3 defense-in-depth: ensure no overlay is intercepting pointer
+        // events on the canvas. _positionGuidedTourStep already does this for
+        // noOverlay steps, but the first frame race could leave a 1-frame
+        // gap. Belt-and-suspenders.
+        try { this.els.guidedTourDim.style.pointerEvents = 'none'; } catch (_) {}
+        try { this.els.guidedTourHotspot.style.pointerEvents = 'none'; } catch (_) {}
+        const SWIPE_THRESHOLD = 26;
+        const DROP_THRESHOLD  = 32;
+        const stepIndex = this._guidedTour.stepIndex;
+        let consumed = false;
+        let pointerId = null;
+        let capturedPointerId = null; // A2: track pointer capture for cleanup
+        let startX = 0, startY = 0;
+        let lastX = 0;
+        let dropTriggered = false;
+
+        // Continuous render loop so the block visually tracks column changes
+        // (game is paused so nothing else is drawing).
+        let renderRunning = true;
+        const renderTick = () => {
+            if (!renderRunning || !this._guidedTour?.active) return;
+            try { this.renderer.draw(this.grid, this.block, 0); } catch (_) {}
+            requestAnimationFrame(renderTick);
+        };
+        requestAnimationFrame(renderTick);
+
+        const advance = () => {
+            if (consumed) return;
+            consumed = true;
+            renderRunning = false;
+            cleanup();
+            if (!this._guidedTour?.active || this._guidedTour.stepIndex !== stepIndex) return;
+            if (onComplete && typeof this[onComplete] === 'function') {
+                this[onComplete](onCompleteArgs);
+            } else {
+                this._enterGuidedTourStep(stepIndex + 1);
+            }
+        };
+
+        // Live column-by-column tracking — same logic as _bindSwipeInput's moveSwipe
+        const onMove = (clientX, clientY) => {
+            if (consumed || !this.block || this._guidedSwipeAnimating) return;
+            const totalDx = clientX - startX;
+            const totalDy = clientY - startY;
+
+            // Drop detection (only matters for 'down' direction step)
+            if (direction === 'down' && !dropTriggered &&
+                totalDy >= DROP_THRESHOLD && totalDy > Math.abs(totalDx) * 1.15) {
+                dropTriggered = true;
+                advance();
+                return;
+            }
+
+            // Horizontal slide — only allowed for left/right steps
+            if (direction === 'down') return;
+            if (Math.abs(totalDx) <= Math.abs(totalDy)) return;
+
+            const deltaSinceLast = clientX - lastX;
+            if (Math.abs(deltaSinceLast) < SWIPE_THRESHOLD) return;
+            const dir = deltaSinceLast > 0 ? 1 : -1;
+            const steps = Math.floor(Math.abs(deltaSinceLast) / SWIPE_THRESHOLD);
+            for (let s = 0; s < steps; s++) {
+                const newCol = this.block.col + dir;
+                if (newCol < 0 || newCol >= this.gridSize) break;
+                this.block.col = newCol;
+            }
+            lastX += dir * steps * SWIPE_THRESHOLD;
+
+            // Check if target reached
+            if (typeof targetCol === 'number' && this.block.col === targetCol) {
+                advance();
+            }
+        };
+
+        const onPointerDown = (e) => {
+            if (consumed) return;
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            pointerId = e.pointerId;
+            startX = e.clientX;
+            startY = e.clientY;
+            lastX = e.clientX;
+            dropTriggered = false;
+            try {
+                surface.setPointerCapture?.(e.pointerId);
+                capturedPointerId = e.pointerId; // A2: remember for cleanup
+            } catch (_) {}
+        };
+        const onPointerMove = (e) => {
+            if (pointerId === null || e.pointerId !== pointerId) return;
+            onMove(e.clientX, e.clientY);
+        };
+        const onPointerUp = (e) => {
+            if (pointerId !== null && e.pointerId !== pointerId) return;
+            try { surface.releasePointerCapture?.(e.pointerId); } catch (_) {}
+            if (capturedPointerId === e.pointerId) capturedPointerId = null;
+            pointerId = null;
+        };
+
+        const onTouchStart = (e) => {
+            if (consumed) return;
+            const t = e.changedTouches[0];
+            if (!t) return;
+            pointerId = t.identifier;
+            startX = t.clientX;
+            startY = t.clientY;
+            lastX = t.clientX;
+            dropTriggered = false;
+        };
+        const onTouchMove = (e) => {
+            if (pointerId === null) return;
+            const t = [...e.changedTouches].find(x => x.identifier === pointerId);
+            if (!t) return;
+            onMove(t.clientX, t.clientY);
+        };
+        const onTouchEnd = () => { pointerId = null; };
+
+        // Keyboard fallback (matches real game arrow controls + WASD)
+        const onKeyDown = (e) => {
+            if (consumed || !this.block || this._guidedSwipeAnimating) return;
+            // B3: skip if the user is typing in an input or has focus on a
+            // tour button (Skip/Back/Next). Otherwise Space/arrows would
+            // both activate the button AND trigger advance().
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            if (t && typeof t.closest === 'function' && t.closest('#guided-tour-card')) return;
+            const isLeft  = e.code === 'ArrowLeft'  || e.code === 'KeyA' || e.key === 'ArrowLeft';
+            const isRight = e.code === 'ArrowRight' || e.code === 'KeyD' || e.key === 'ArrowRight';
+            const isDown  = e.code === 'ArrowDown'  || e.code === 'KeyS' || e.code === 'Space' || e.key === 'ArrowDown';
+            if ((direction === 'left' && isLeft) || (direction === 'right' && isRight)) {
+                e.preventDefault();
+                const dir = direction === 'left' ? -1 : 1;
+                const newCol = this.block.col + dir;
+                if (newCol >= 0 && newCol < this.gridSize) {
+                    this.block.col = newCol;
+                    // Force an immediate render so the user sees the move
+                    try { this.renderer.draw(this.grid, this.block, 0); } catch (_) {}
+                }
+                if (typeof targetCol === 'number' && this.block.col === targetCol) advance();
+            } else if (direction === 'down' && isDown) {
+                e.preventDefault();
+                advance();
+            }
+        };
+
+        const usePointer = !!window.PointerEvent;
+        if (usePointer) {
+            surface.addEventListener('pointerdown', onPointerDown);
+            surface.addEventListener('pointermove', onPointerMove);
+            surface.addEventListener('pointerup', onPointerUp);
+            surface.addEventListener('pointercancel', onPointerUp);
+        } else {
+            surface.addEventListener('touchstart', onTouchStart, { passive: true });
+            surface.addEventListener('touchmove', onTouchMove, { passive: true });
+            surface.addEventListener('touchend', onTouchEnd, { passive: true });
+            surface.addEventListener('touchcancel', onTouchEnd, { passive: true });
+        }
+        window.addEventListener('keydown', onKeyDown);
+
+        const cleanup = () => {
+            renderRunning = false;
+            // A2: release any sticky pointer capture so the next pointer
+            // interaction in the live game isn't blocked.
+            if (capturedPointerId !== null) {
+                try { surface.releasePointerCapture?.(capturedPointerId); } catch (_) {}
+                capturedPointerId = null;
+            }
+            if (usePointer) {
+                surface.removeEventListener('pointerdown', onPointerDown);
+                surface.removeEventListener('pointermove', onPointerMove);
+                surface.removeEventListener('pointerup', onPointerUp);
+                surface.removeEventListener('pointercancel', onPointerUp);
+            } else {
+                surface.removeEventListener('touchstart', onTouchStart);
+                surface.removeEventListener('touchmove', onTouchMove);
+                surface.removeEventListener('touchend', onTouchEnd);
+                surface.removeEventListener('touchcancel', onTouchEnd);
+            }
+            window.removeEventListener('keydown', onKeyDown);
+        };
+        this._guidedTour.cleanupSwipeHandler = cleanup;
+    }
+
+    _guidedTriggerDemoBomb({ row = 3, col = 3, onComplete = null } = {}) {
+        if (!this.grid || !this.renderer) return;
+        // Save score so the bomb's bonus points don't pollute the player's score
+        const savedScore = this.score;
+        const savedHigh = this.highScore;
+        // ── Phase A: spawn a real bomb FallingBlock at the top and animate
+        //    it falling down to the target cell, exactly like a real bomb
+        //    drop in the live game.
+        const bomb = new FallingBlock(BOMB_SYMBOL, col, this.gridSize, 'bomb');
+        bomb.row = row; // logical landing row
+        bomb.visualRow = -BUFFER_ROWS; // start above the grid
+        this.block = bomb;
+        // Render the bomb falling each frame (game stays paused so the
+        // main loop won't advance it for us).
+        const fallSpeed = 7; // cells per second — slow & visible
+        let lastFallT = performance.now();
+        const fallTick = (now) => {
+            if (!this._guidedTour?.active) return;
+            const dt = Math.min((now - lastFallT) / 1000, 0.1);
+            lastFallT = now;
+            if (this.block && this.block.kind === 'bomb') {
+                this.block.visualRow = Math.min(row, this.block.visualRow + fallSpeed * dt);
+                try { this.renderer.draw(this.grid, this.block, dt); } catch (_) {}
+                if (this.block.visualRow < row) {
+                    requestAnimationFrame(fallTick);
+                    return;
+                }
+                // Landed — clear the falling block, run the real bomb pipeline
+                this.block = null;
+                runExplosion();
+            }
+        };
+        const runExplosion = () => {
+            // _triggerBombClear sets up clearing state and fires all the visuals
+            try {
+                this._triggerBombClear(row, col);
+            } catch (e) {
+                console.warn('[guided-demo-bomb] _triggerBombClear failed:', e);
+                if (typeof onComplete === 'function') onComplete();
+                return;
+            }
+            // Wipe the popup the bomb may have queued ("💣 BOMB +N")
+            try {
+                this.els.wordPopup.innerHTML = '';
+                this._wordPopupActive = false;
+                this._wordPopupCount = 0;
+            } catch (_) {}
+            // Restore score (don't credit the demo)
+            this.score = savedScore;
+            this.highScore = savedHigh;
+            try { this._updateScoreDisplay(); } catch (_) {}
+            // Self-drive the clear phase since the main loop is paused
+            let lastT = performance.now();
+            const tick = (now) => {
+                if (!this._guidedTour?.active) return; // tour ended; bail
+                const dt = Math.min((now - lastT) / 1000, 0.1);
+                lastT = now;
+                try {
+                    this._processClearPhase(dt);
+                    // Render so the user sees the animation while paused
+                    this.renderer.draw(this.grid, null, dt);
+                } catch (e) {
+                    console.warn('[guided-demo-bomb] tick error:', e);
+                }
+                if (!this.clearing) {
+                    // Throw away any block _checkWords may have spawned
+                    this.block = null;
+                    this.renderer.flashCells.clear();
+                    this.renderer.blastCells.clear();
+                    this.renderer.blastCenterKey = null;
+                    this.renderer.blastProgress = 0;
+                    this.renderer.flashTimer = 0;
+                    try { this.els.wordPopup.innerHTML = ''; } catch (_) {}
+                    this._wordPopupActive = false;
+                    this._wordPopupCount = 0;
+                    if (typeof onComplete === 'function') {
+                        try { onComplete(); } catch (_) {}
+                    }
+                    return;
+                }
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(fallTick);
+    }
+
+    // Tap-target handler for step 3: hide the card, run the real bomb
+    // animation while the game stays paused, then advance once the
+    // explosion finishes.
+    _guidedTriggerDemoBombThenAdvance({ row = 3, col = 3 } = {}) {
+        if (!this._guidedTour?.active) return;
+        const stepIndex = this._guidedTour.stepIndex;
+        // Tear down the current step's hotspot/handlers so the user
+        // can't tap the bomb twice, and hide the prompt card.
+        this._cleanupGuidedTourStep();
+        // Hide the bonus button now that it's been used (matches real game)
+        this.els.bonusBtn.disabled = true;
+        this.els.bonusBtn.classList.add('hidden');
+        this.els.bonusBtn.style.top = '';
+        this._guidedTriggerDemoBomb({
+            row, col,
+            onComplete: () => {
+                // Only advance if we're still on the same step (user didn't skip)
+                if (this._guidedTour?.active && this._guidedTour.stepIndex === stepIndex) {
+                    this._enterGuidedTourStep(stepIndex + 1);
+                }
+            },
+        });
+    }
+
+    // Final step: clear the demo grid, restore real game state, spawn
+    // the first scripted block, then unpause so the player drops in.
+    _guidedHandoffToRealGame() {
+        if (!this.grid || !this.renderer) return;
+        // Wipe demo letters + green overlay so the player starts clean
+        for (let r = 0; r < this.grid.rows; r++) {
+            for (let c = 0; c < this.grid.cols; c++) this.grid.set(r, c, null);
+        }
+        this.renderer.validatedCells = new Set();
+        this.renderer.flashCells.clear();
+        // Reset bonus button to its real state (hidden until earned)
+        this.els.bonusBtn.classList.add('hidden');
+        this.els.bonusBtn.style.top = '';
+        // Spawn the first real falling block from the scripted queue
+        this.block = null;
+        this._spawnBlock();
+        this.lastTime = performance.now();
+        this._guidedFirstProfileRunning = false;
+    }
+
+    _guidedPauseRealGame() {
+        if (this.state === State.PLAYING) {
+            this.state = State.PAUSED;
+        }
+    }
+
+    _guidedResumeRealGame() {
+        if (this.state === State.PAUSED) {
+            this.state = State.PLAYING;
+            this.lastTime = performance.now();
+        }
+    }
+
     _teardownGuidedSceneState() {
-        // Clean up teaching grid if it exists
+        // Stop scripted-scene repaint loop
+        if (this._guidedSceneRafId) {
+            cancelAnimationFrame(this._guidedSceneRafId);
+            this._guidedSceneRafId = null;
+        }
+        this._guidedScenePaint = null;
+        // Clear any renderer effects from the manufactured tutorial
+        if (this.renderer) {
+            this.renderer.flashCells?.clear();
+            this.renderer.blastCells?.clear();
+            this.renderer.validatedCells = new Set();
+            this.renderer.blastCenterKey = null;
+            this.renderer.blastProgress = 0;
+            this.renderer.flashTimer = 0;
+        }
+        // Clean up teaching grid if it exists (old simulated path)
         const teachingGrid = document.getElementById('guided-teaching-grid');
         if (teachingGrid) teachingGrid.remove();
+        if (this._guidedTeachingGridReposition) {
+            window.removeEventListener('resize', this._guidedTeachingGridReposition);
+            window.removeEventListener('scroll', this._guidedTeachingGridReposition, true);
+            this._guidedTeachingGridReposition = null;
+        }
+        // Manufactured tutorial extras
+        const fallingGhost = document.getElementById('guided-falling-letter');
+        if (fallingGhost) fallingGhost.remove();
+        if (this._guidedFallingLetterReposition) {
+            window.removeEventListener('resize', this._guidedFallingLetterReposition);
+            window.removeEventListener('scroll', this._guidedFallingLetterReposition, true);
+            this._guidedFallingLetterReposition = null;
+        }
+        this._guidedHideFakeBombModal();
+        this._guidedHideReadyModal();
 
         this.els.pauseOverlay.classList.remove('active');
         if (this.els.wsPauseOverlay) this.els.wsPauseOverlay.classList.remove('active');
         if (this.els.wrPauseOverlay) this.els.wrPauseOverlay.classList.remove('active');
         this.els.wordPopup.textContent = '';
         this.els.bonusBtn.classList.add('hidden');
+        if (this.els.bonusBtn) this.els.bonusBtn.style.top = '';
         this.els.radialMenu.classList.add('hidden');
         this.els.freezeIndicator.classList.add('hidden');
         this.els.score2xIndicator.classList.add('hidden');
@@ -18444,6 +20115,18 @@ class Game {
             this._clearAuthError();
             this._resetSignupSteps();
         });
+
+        // Mirror the same behavior on the profiles-screen Sign Up / Login button.
+        const profilesSignupBtn = document.getElementById('profiles-signup-btn');
+        profilesSignupBtn?.addEventListener('click', () => {
+            this._authOrigin = 'profiles';
+            this._showScreen("auth");
+            if (this.els.authSignin) this.els.authSignin.classList.add('hidden');
+            if (this.els.authSignup) this.els.authSignup.classList.remove('hidden');
+            if (this.els.authSubtitle) this.els.authSubtitle.textContent = 'Create an account';
+            this._clearAuthError();
+            this._resetSignupSteps();
+        });
     }
 
     _bindAuth() {
@@ -18890,6 +20573,14 @@ class Game {
         const overlay = document.getElementById('signup-prompt-overlay');
         if (!overlay) return;
 
+        // Never interrupt a guided tour — defer until it ends.
+        if (this._guidedTour?.active) {
+            if (reason !== 'manual') {
+                this._pendingSignUpPromptReason = reason;
+            }
+            return;
+        }
+
         // Customize message based on reason
         const msgEl = document.getElementById('signup-prompt-message');
         if (msgEl) {
@@ -19041,10 +20732,6 @@ class Game {
             // Load milestone timestamps after profiles are synced
             await this._loadMilestonesFromCloud();
             this._renderMilestonesPage();
-            // Register for push notifications after successful auth (fire-and-forget, don't block auth)
-            import('./src/lib/push-notifications.js')
-                .then(({ registerPushNotifications }) => registerPushNotifications())
-                .catch(e => console.warn('[push] registration skipped:', e));
             // Silently refresh stats (un-stale PGS skill_rating + leaderboard) — fire-and-forget
             import('./src/lib/supabase.js')
                 .then(({ refreshMyStats }) => refreshMyStats())
@@ -19054,6 +20741,13 @@ class Game {
             console.error('[auth] failed to load cloud profiles:', err);
             this._initialSyncComplete = true; // Even on error, allow syncing (user may have new data)
         }
+
+        // Register for push notifications after auth (fire-and-forget, don't block auth).
+        // Keep this outside cloud sync try/catch so token registration still happens when
+        // profile fetch has transient errors.
+        import('./src/lib/push-notifications.js')
+            .then(({ registerPushNotifications }) => registerPushNotifications())
+            .catch(e => console.warn('[push] registration skipped:', e));
     }
 
     _syncCloudProfilesToLocal(cloudProfiles) {
@@ -20102,7 +21796,16 @@ class Game {
         try {
             const { isLocalMode, recordGame } = await import('./src/lib/supabase.js');
             if (isLocalMode) return;
-            const profile = this.profileMgr.getActive();
+            let profile = this.profileMgr.getActive();
+            // F1: brand-new tutorial profile may still be mid-_syncCreateProfile
+            // when the first game ends. Wait briefly for cloudId before bailing,
+            // so the very first game still records to the leaderboard.
+            if (profile && !profile.cloudId && this._authUser) {
+                for (let i = 0; i < 20 && !profile.cloudId; i++) {
+                    await new Promise(r => setTimeout(r, 150));
+                    profile = this.profileMgr.getActive();
+                }
+            }
             if (!profile || !profile.cloudId) {
                 console.warn('[supabase] No active profile or cloudId — game not recorded');
                 return;
@@ -20110,6 +21813,14 @@ class Game {
 
             // Ensure all integer fields are integers (PostgreSQL rejects floats for INT columns)
             const safeInt = v => v == null ? null : Math.round(v);
+            // F2: gridFactor / multipliers must be finite numerics. NaN/Infinity
+            // make PostgREST 22P02 invalid_text_representation errors.
+            const safeNum = (v, dflt) => {
+                const n = Number(v);
+                return Number.isFinite(n) ? n : dflt;
+            };
+            // F4: difficulty enum must match DB CHECK ('casual' | 'hard').
+            const safeDifficulty = (scoreData.difficulty === 'hard') ? 'hard' : 'casual';
 
             const result = await recordGame({
                 profileId: profile.cloudId,
@@ -20118,7 +21829,7 @@ class Game {
                 challengeType: scoreData.challengeType || null,
                 categoryKey: scoreData.categoryKey || null,
                 gridSize: safeInt(scoreData.gridSize),
-                difficulty: scoreData.difficulty,
+                difficulty: safeDifficulty,
                 timeLimitSeconds: safeInt(scoreData.timeLimitSeconds),
                 score: safeInt(scoreData.score) ?? 0,
                 wordsFound: safeInt(scoreData.wordsFound) ?? 0,
@@ -20129,9 +21840,9 @@ class Game {
                 timeRemainingSeconds: safeInt(scoreData.timeRemainingSeconds),
                 xpEarned: safeInt(scoreData.xpEarned) ?? 0,
                 coinsEarned: safeInt(scoreData.coinsEarned) ?? 0,
-                gridFactor: scoreData.gridFactor ?? null,
-                difficultyMultiplier: scoreData.difficultyMultiplier ?? null,
-                modeMultiplier: scoreData.modeMultiplier ?? null,
+                gridFactor: safeNum(scoreData.gridFactor, 1.0),
+                difficultyMultiplier: safeNum(scoreData.difficultyMultiplier, 1.0),
+                modeMultiplier: safeNum(scoreData.modeMultiplier, 1.0),
                 // Word Search specific fields
                 wsPlacedWords: safeInt(scoreData.wsPlacedWords),
                 wsLevel: safeInt(scoreData.wsLevel),
@@ -20175,7 +21886,13 @@ class Game {
             }
         } catch (err) {
             console.error('[supabase] Failed to record game score:', err);
-            this._showSyncError('Game not saved: ' + (err.message || err));
+            // F3: surface PostgREST error code/details when present so the
+            // toast tells us *why* the server rejected (schema drift, RLS,
+            // missing function, etc.) instead of a generic [object Object].
+            const detail = (err && (err.code || err.details || err.hint))
+                ? `${err.code || ''} ${err.message || ''} ${err.details || ''}`.trim()
+                : (err && err.message) ? err.message : String(err);
+            this._showSyncError('Game not saved: ' + detail);
         }
     }
 
@@ -22119,6 +23836,16 @@ document.addEventListener("visibilitychange", () => {
                 if (g.music) {
                     g.music.resumeFromBackground();
                 }
+                // Refresh the widget's WOTD on resume so it stays in sync
+                // across UTC midnight rollovers without requiring the user
+                // to reschedule notifications.
+                try {
+                    if (typeof ENRICHED_DICT !== 'undefined' && ENRICHED_DICT) {
+                        import('./src/lib/word-of-day.js').then(({ pushDailyWordToWidget }) => {
+                            pushDailyWordToWidget(ENRICHED_DICT);
+                        });
+                    }
+                } catch (_) {}
             } else {
                 // Show Plummet overlay so iOS snapshots it
                 if (resumeOverlay) resumeOverlay.classList.remove('resume-overlay--hidden');
@@ -22220,6 +23947,15 @@ Promise.all([
     }),
     loadEnrichedDict().then(() => {
         LoadingScreen.setProgress(85, 'Loading definitions...');
+        // Push today's universal Word of the Day into the iOS App Group so
+        // the home-screen widget displays it. Independent of notification
+        // permission — the widget should always show the current word.
+        // Silent no-op on Android/web.
+        try {
+            import('./src/lib/word-of-day.js').then(({ pushDailyWordToWidget }) => {
+                pushDailyWordToWidget(ENRICHED_DICT);
+            });
+        } catch (_) {}
     })
 ]).then(async () => {
     LoadingScreen.setProgress(90, 'Initializing game...');
@@ -22230,6 +23966,60 @@ Promise.all([
     window._game = new Game();
     // Mount Preact UI layer after game initializes
     mountPreactUI();
+
+    // ── Dev hook: ?tutorial=1 launches the first-profile guided tour
+    //    immediately on boot, bypassing profile creation. Lets us test
+    //    the tour repeatedly without churning profiles.
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('tutorial') === '1' || params.get('tutorial') === 'guided-first-profile') {
+            const startedAt = Date.now();
+            const launchTour = () => {
+                const g = window._game;
+                const ready = g && g._startGuidedTour && g.profileMgr && g._showScreen;
+                if (!ready) {
+                    if (Date.now() - startedAt > 15000) return;
+                    setTimeout(launchTour, 200);
+                    return;
+                }
+                // Wait for boot routing to settle off welcome/auth before
+                // we try to take over — otherwise the boot's _showScreen
+                // call races ours and wins.
+                const screen = g._activeScreen;
+                if (screen === 'welcome' || screen === 'auth' || !screen) {
+                    if (Date.now() - startedAt > 15000) {
+                        // Try anyway as last resort
+                    } else {
+                        setTimeout(launchTour, 200);
+                        return;
+                    }
+                }
+                try {
+                    // Ensure a profile is selected — the tour calls
+                    // _beginNewGame which expects an active profile.
+                    if (!g.profileMgr.getActive()) {
+                        if (g.profileMgr.profiles.length === 0) {
+                            try { g.profileMgr.create('TutorialTester'); } catch (_) {}
+                        }
+                        g.profileMgr.activeId = g.profileMgr.profiles[0]?.id || null;
+                        try { g.profileMgr._save?.(); } catch (_) {}
+                        try { g._loadActiveProfile?.(); } catch (_) {}
+                    } else {
+                        // Profile loaded by boot — make sure gridSize/etc are set
+                        try { g._loadActiveProfile?.(); } catch (_) {}
+                    }
+                } catch (e) {
+                    console.warn('[test-tutorial] profile setup failed:', e);
+                }
+                try { g._showScreen?.('menu'); } catch (_) {}
+                setTimeout(() => {
+                    try { g._startGuidedTour('guided-first-profile'); }
+                    catch (e) { console.warn('[test-tutorial] failed to start:', e); }
+                }, 400);
+            };
+            setTimeout(launchTour, 800);
+        }
+    } catch (_) {}
     
     LoadingScreen.setProgress(95, 'Setting up notifications...');
     

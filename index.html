@@ -221,6 +221,7 @@
             <button id="tutorial-btn-profiles" class="tutorial-btn tutorial-btn-large">? TUTORIAL</button>
             <div id="profiles-list"></div>
             <button id="new-profile-btn" class="secondary-btn">+ New Profile</button>
+            <button id="profiles-signup-btn" class="secondary-btn hidden" style="width:100%;max-width:280px">Sign Up / Login</button>
             <button id="auth-logout-btn" class="link-btn auth-logout">Sign Out</button>
             <button id="delete-account-btn" class="link-btn auth-logout" style="color:#e74c3c;margin-top:0.5rem">Delete Account</button>
         </div>
@@ -1251,6 +1252,29 @@
             <div id="guided-tour-hint">Tap the highlighted area to continue.</div>
             <div id="guided-tour-actions">
                 <button id="guided-tour-continue-btn" class="primary-btn">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manufactured first-profile tutorial: fake bomb activation modal -->
+    <div id="guided-fake-bomb-modal" class="overlay">
+        <div class="overlay-content guided-fake-bomb-content">
+            <div class="guided-fake-bomb-icon">💣</div>
+            <h2>Bomb Bonus!</h2>
+            <p class="subtitle">Drop a bomb that clears nearby letters from the board.</p>
+            <div class="modal-buttons">
+                <button id="guided-fake-bomb-activate" class="primary-btn">Activate!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manufactured first-profile tutorial: fake "Ready to play?" prompt -->
+    <div id="guided-ready-modal" class="overlay">
+        <div class="overlay-content guided-ready-content">
+            <h2>Ready to play?</h2>
+            <p class="subtitle">You've got the basics down. Time to drop into your first real game!</p>
+            <div class="modal-buttons">
+                <button id="guided-ready-go-btn" class="primary-btn">Let's go!</button>
             </div>
         </div>
     </div>

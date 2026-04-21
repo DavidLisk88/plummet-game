@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
+import path from 'path';
 
 export default defineConfig({
   base: './',
@@ -8,6 +9,13 @@ export default defineConfig({
     outDir: 'www',
     emptyOutDir: true,
     target: 'safari15',
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        musicVideo: path.resolve(__dirname, 'word-runner-music-video.html'),
+        testTutorial: path.resolve(__dirname, 'test-tutorial.html'),
+      },
+    },
   },
   server: {
     fs: {
@@ -16,6 +24,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    entries: ['index.html'],
+    entries: ['index.html', 'word-runner-music-video.html', 'test-tutorial.html'],
   },
 });

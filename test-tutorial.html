@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial Tester · PLUMMET</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #0c0c10;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            overflow: hidden;
+        }
+        #toolbar {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 99999;
+            display: flex;
+            gap: 8px;
+            background: rgba(20, 20, 26, 0.92);
+            padding: 8px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        #toolbar button {
+            background: #2c2c36;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 7px 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+            font-family: inherit;
+        }
+        #toolbar button:hover { background: #3a3a48; }
+        #toolbar button:active { transform: scale(0.96); }
+        #toolbar button.primary {
+            background: #4a8cff;
+            border-color: #4a8cff;
+        }
+        #toolbar button.primary:hover { background: #5fa0ff; }
+        #toolbar #status {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.5);
+            align-self: center;
+            padding: 0 4px;
+            min-width: 60px;
+        }
+        #status.ok { color: #8cb860; }
+        #status.err { color: #e07070; }
+        iframe {
+            position: absolute;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            border: 0;
+        }
+        #hint {
+            position: fixed;
+            bottom: 10px;
+            left: 12px;
+            font-size: 0.65rem;
+            color: rgba(255, 255, 255, 0.4);
+            z-index: 99999;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <span id="status">loading…</span>
+        <button id="restart-btn" class="primary" title="Reload the iframe and re-launch the tour">↻ Restart Tutorial</button>
+        <button id="relaunch-btn" title="Re-trigger the tour without reloading the page">▶ Re-launch In-Place</button>
+        <button id="open-direct-btn" title="Open in a new tab">↗ Open Direct</button>
+    </div>
+    <div id="hint">Tutorial Tester — uses index.html?tutorial=1 to skip profile creation.</div>
+    <iframe id="game-frame" src="index.html?tutorial=1" allow="autoplay"></iframe>
+
+    <script>
+        const frame = document.getElementById('game-frame');
+        const status = document.getElementById('status');
+        const restartBtn = document.getElementById('restart-btn');
+        const relaunchBtn = document.getElementById('relaunch-btn');
+        const openDirectBtn = document.getElementById('open-direct-btn');
+
+        function setStatus(text, kind) {
+            status.textContent = text;
+            status.className = kind || '';
+        }
+
+        frame.addEventListener('load', () => {
+            setStatus('booting…');
+            // Poll until the game exposes the tour API
+            const start = Date.now();
+            const poll = setInterval(() => {
+                try {
+                    const g = frame.contentWindow && frame.contentWindow._game;
+                    if (g && typeof g._startGuidedTour === 'function') {
+                        clearInterval(poll);
+                        setStatus('ready', 'ok');
+                    } else if (Date.now() - start > 20000) {
+                        clearInterval(poll);
+                        setStatus('timeout', 'err');
+                    }
+                } catch (_) {
+                    // Cross-origin guard (shouldn't happen for same-origin iframe)
+                }
+            }, 250);
+        });
+
+        restartBtn.addEventListener('click', () => {
+            setStatus('reloading…');
+            // Force a fresh load — bust any cached state
+            frame.src = 'index.html?tutorial=1&_t=' + Date.now();
+        });
+
+        relaunchBtn.addEventListener('click', () => {
+            try {
+                const g = frame.contentWindow && frame.contentWindow._game;
+                if (!g) { setStatus('no game', 'err'); return; }
+                // Stop any active tour first
+                if (g._guidedTour && g._guidedTour.active && g._stopGuidedTour) {
+                    g._stopGuidedTour(false);
+                }
+                // Reset the bonus button to clean state
+                try {
+                    const bb = frame.contentDocument.getElementById('bonus-btn');
+                    if (bb) {
+                        bb.classList.add('hidden');
+                        bb.style.top = '';
+                    }
+                } catch (_) {}
+                // Ensure a profile is active
+                try {
+                    if (g.profileMgr && !g.profileMgr.getActive()) {
+                        if (g.profileMgr.profiles.length === 0) {
+                            g.profileMgr.create('TutorialTester');
+                        }
+                        g.profileMgr.activeId = g.profileMgr.profiles[0]?.id || null;
+                        g.profileMgr._save && g.profileMgr._save();
+                        g._loadActiveProfile && g._loadActiveProfile();
+                    }
+                } catch (e) { console.warn(e); }
+                setTimeout(() => {
+                    g._showScreen && g._showScreen('menu');
+                    setTimeout(() => {
+                        g._startGuidedTour('guided-first-profile');
+                        setStatus('relaunched', 'ok');
+                    }, 200);
+                }, 100);
+            } catch (e) {
+                console.warn(e);
+                setStatus('err: ' + e.message, 'err');
+            }
+        });
+
+        openDirectBtn.addEventListener('click', () => {
+            window.open('index.html?tutorial=1', '_blank');
+        });
+    </script>
+</body>
+</html>

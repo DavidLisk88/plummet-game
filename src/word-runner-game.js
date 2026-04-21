@@ -353,7 +353,8 @@ class WRScene {
         this.app = app;
         this.screenW = app.screen.width;
         this.screenH = app.screen.height;
-        this.chance = new Chance();
+        this.seed = options.seed;
+        this.chance = this.seed != null ? new Chance(this.seed) : new Chance();
 
         // Options from host
         this.highScore = options.highScore || 0;
@@ -363,6 +364,28 @@ class WRScene {
         this.letterValuesRef = options.letterValuesRef || {};
         this.coinsForWordFn = options.coinsForWordFn || ((len) => len * 2);
         this.callbacks = options.callbacks || {};
+        this.autoPilot = !!options.autoPilot;
+        this.autoCollectWords = !!options.autoCollectWords;
+        this.cinematicMode = !!options.cinematicMode;
+        this.countdownDuration = Number.isFinite(options.countdownSeconds) ? Math.max(0, options.countdownSeconds) : 3;
+        this.initialSpeed = Number.isFinite(options.initialSpeed) ? options.initialSpeed : CFG.INITIAL_SPEED;
+        this.maxSpeed = Number.isFinite(options.maxSpeed) ? options.maxSpeed : CFG.MAX_SPEED;
+        this.speedRamp = Number.isFinite(options.speedRamp) ? options.speedRamp : CFG.SPEED_RAMP;
+        this.wordBoost = Number.isFinite(options.wordBoost) ? options.wordBoost : CFG.WORD_BOOST;
+        this.overlayTitle = typeof options.overlayTitle === "string" ? options.overlayTitle.trim() : "";
+        this.overlaySubtitle = typeof options.overlaySubtitle === "string" ? options.overlaySubtitle.trim() : "";
+        this.overlayDuration = Number.isFinite(options.overlayDuration) ? Math.max(0, options.overlayDuration) : 5.5;
+        this.targetWords = Array.isArray(options.targetWords)
+            ? options.targetWords
+                .filter((w) => typeof w === "string")
+                .map((w) => w.toUpperCase().trim())
+                .filter((w) => w.length >= 3 && w.length <= CFG.MAX_LETTERS)
+            : [];
+        this.targetWordIndex = 0;
+        this.targetWordStallTimer = 0;
+        this.targetWordStallLimit = Number.isFinite(options.targetWordStallSeconds)
+            ? Math.max(0.8, options.targetWordStallSeconds)
+            : 2.4;
 
         // Trie for prefix checking
         this.trie = new WordTrie(this.dictionaryRef);
@@ -400,7 +423,7 @@ class WRScene {
         };
 
         // ── Game state ──
-        this.scrollSpeed = CFG.INITIAL_SPEED;
+        this.scrollSpeed = this.initialSpeed;
         this.distance = 0;
         this.score = 0;
         this.wordScore = 0;
@@ -414,6 +437,11 @@ class WRScene {
         this.gameOver = false;
         this.countdownTimer = 0;
         this._lastCountSec = 0;
+        this.autoPilotJumpCooldown = 0;
+        this.autoCollectJumpCooldown = 0;
+        this.autoCollectTarget = null;
+        this.autoCollectPlan = null;
+        this.overlayTimer = 0;
 
         // ── World objects ──
         this.columns = new Map();
@@ -438,6 +466,24 @@ class WRScene {
         this.hiScoreText.anchor.set(1, 0);
         this.hiScoreText.position.set(this.screenW - 12, 10);
         this.hudLayer.addChild(this.hiScoreText);
+
+        this.overlayTitleText = new Text({
+            text: this.overlayTitle,
+            style: { fontFamily: "sans-serif", fontSize: 28, fontWeight: "bold", fill: "#f4d35e", letterSpacing: 1 },
+        });
+        this.overlayTitleText.position.set(24, 22);
+        this.overlayTitleText.alpha = 0;
+        this.overlayTitleText.visible = false;
+        this.hudLayer.addChild(this.overlayTitleText);
+
+        this.overlaySubtitleText = new Text({
+            text: this.overlaySubtitle,
+            style: { fontFamily: "sans-serif", fontSize: 14, fontWeight: "bold", fill: "#8fd3ff", letterSpacing: 3 },
+        });
+        this.overlaySubtitleText.position.set(26, 58);
+        this.overlaySubtitleText.alpha = 0;
+        this.overlaySubtitleText.visible = false;
+        this.hudLayer.addChild(this.overlaySubtitleText);
 
         this.streakText = new Text({
             text: "",
@@ -508,6 +554,7 @@ class WRScene {
         } else {
             this._freshStart();
         }
+        this.overlayTimer = (this.overlayTitle || this.overlaySubtitle) ? this.overlayDuration : 0;
         this.runner.startRun();
         if (this.callbacks.onResumed && savedState) {
             this.callbacks.onResumed(this.collectedLetters);
@@ -517,9 +564,18 @@ class WRScene {
     }
 
     _startCountdown() {
+        if (this.countdownDuration <= 0) {
+            this.countdownTimer = 0;
+            this.countdownText.visible = false;
+            this.countdownLabel.visible = false;
+            this.isPaused = false;
+            if (this.runner._runTl) this.runner._runTl.resume();
+            return;
+        }
         this.countdownTimer = 3.0;
         this._lastCountSec = 0;
-        this.countdownText.text = "3";
+        this.countdownTimer = this.countdownDuration;
+        this.countdownText.text = String(Math.max(1, Math.ceil(this.countdownDuration)));
         this.countdownText.visible = true;
         this.countdownText.alpha = 1;
         this.countdownText.scale.set(1);
@@ -545,7 +601,7 @@ class WRScene {
         this.player.worldX = saved.player?.worldX || 120;
         this.player.y = saved.player?.y || this.baseGroundY - PHY.PLAYER_H;
         this.player.vy = saved.player?.vy || 0;
-        this.scrollSpeed = saved.scrollSpeed || CFG.INITIAL_SPEED;
+        this.scrollSpeed = saved.scrollSpeed || this.initialSpeed;
         this.score = saved.score || 0;
         this.wordScore = saved.wordScore || 0;
         this.coins = saved.coins || 0;
@@ -660,7 +716,7 @@ class WRScene {
         p.prevVy = p.vy;
 
         // Speed ramp
-        this.scrollSpeed = Math.min(CFG.MAX_SPEED, this.scrollSpeed + CFG.SPEED_RAMP * dt);
+        this.scrollSpeed = Math.min(this.maxSpeed, this.scrollSpeed + this.speedRamp * dt);
 
         // Forward motion
         const dx = this.scrollSpeed * dt;
@@ -731,15 +787,22 @@ class WRScene {
         this.worldLayer.x = -this.cameraX + shakeX;
         this.worldLayer.y = shakeY;
 
-        // ── Spawn & cull ──
+        // ── Spawn & cull (terrain/platforms also needed before autopilot jumps) ──
         this._spawnTerrain();
         this._spawnPlatforms();
+        if (this.autoPilot) this._updateAutoPilot(dt);
         this._spawnLetters();
         this._cullObjects();
 
         // ── Letter collection (contact only, no magnet) ──
+        if (this.autoCollectWords) this._updateAutoCollector(dt);
         for (const l of this.letters) {
             if (l.collected) continue;
+            // In target-word mode: always strict — only collect the designated target
+            // (null target means we're waiting for a plan; skip everything).
+            // In free-form mode: skip only when there's an explicit non-matching target.
+            if (this.autoCollectWords && this.targetWords.length > 0 && l !== this.autoCollectTarget) continue;
+            if (this.autoCollectWords && this.targetWords.length === 0 && this.autoCollectTarget && l !== this.autoCollectTarget) continue;
             // AABB overlap: player box vs letter box
             const halfPW = PHY.PLAYER_W / 2;
             const halfPH = PHY.PLAYER_H / 2;
@@ -759,7 +822,17 @@ class WRScene {
         this._checkSpikeCollision();
 
         // ── Fall death ──
-        if (p.y > this.screenH + 30) { this._die(); return; }
+        if (p.y > this.screenH + 30) {
+            if (this.cinematicMode) {
+                // Snap back to ground — never let the showcase die from a fall.
+                const safeGround = this._getGroundAt(p.worldX) ?? this.baseGroundY;
+                p.y = safeGround - PHY.PLAYER_H / 2;
+                p.vy = PHY.JUMP_VY * 0.6;
+                p.grounded = false;
+            } else {
+                this._die(); return;
+            }
+        }
 
         // ── Score ──
         this.score = this.wordScore + Math.floor(this.distance / 15);
@@ -804,6 +877,7 @@ class WRScene {
         }
 
         // HUD
+        this._updateShowcaseOverlay(dt);
         this._updateHUD();
 
         // Callback
@@ -834,12 +908,14 @@ class WRScene {
 
         // Gap detection (separate noise layer)
         const gn = fbm(worldX * 0.007 + 500, 2, 0.4);
-        const gapThresh = 0.13 + diff * 0.07;
+        let gapThresh = 0.13 + diff * 0.07;
+        if (this.cinematicMode) gapThresh *= 0.25;
 
         // Max gap enforcement (based on jump distance at current speed)
         const airTime = 2 * Math.abs(PHY.JUMP_VY) / PHY.GRAVITY + Math.abs(PHY.AIR_JUMP_VY) / PHY.GRAVITY;
         const maxGapPx = Math.max(80, this.scrollSpeed * airTime * 0.7);
-        const maxGapCols = Math.max(1, Math.floor(maxGapPx / CFG.COL_W));
+        let maxGapCols = Math.max(1, Math.floor(maxGapPx / CFG.COL_W));
+        if (this.cinematicMode) maxGapCols = Math.max(1, Math.floor(maxGapCols * 0.55));
 
         if (gn < gapThresh && this._gapRun < maxGapCols && worldX > 500) {
             this._gapRun++;
@@ -875,7 +951,8 @@ class WRScene {
 
         // Spike obstacle
         let spikeGfx = null, spikeBox = null;
-        if (diff > 0.08 && this.chance.bool({ likelihood: 4 + diff * 14 })) {
+        const spikeLikelihood = this.cinematicMode ? 0.8 + diff * 3 : 4 + diff * 14;
+        if (diff > 0.08 && this.chance.bool({ likelihood: spikeLikelihood })) {
             let canSpike = true;
             for (let j = ci - 4; j < ci; j++) {
                 const prev = this.columns.get(j);
@@ -984,7 +1061,8 @@ class WRScene {
 
         while (this._nextPlatX < rightEdge) {
             const diff = clamp(this.distance / 10000, 0, 1);
-            if (this.chance.bool({ likelihood: 30 + diff * 20 })) {
+            const platformLikelihood = this.cinematicMode ? 55 + diff * 18 : 30 + diff * 20;
+            if (this.chance.bool({ likelihood: platformLikelihood })) {
                 const groundY = this._getGroundAt(this._nextPlatX);
                 if (groundY !== null) {
                     // FORCE: no floating platform above holes
@@ -999,7 +1077,9 @@ class WRScene {
                     }
                 }
             }
-            this._nextPlatX += 180 + this.chance.floating({ min: 0, max: 150 });
+            const minGap = this.cinematicMode ? 130 : 180;
+            const gapVariance = this.cinematicMode ? 95 : 150;
+            this._nextPlatX += minGap + this.chance.floating({ min: 0, max: gapVariance });
         }
     }
 
@@ -1105,6 +1185,15 @@ class WRScene {
 
     _collectLetter(l) {
         l.collected = true;
+        if (this.autoCollectTarget === l) this.autoCollectTarget = null;
+        if (this.autoCollectPlan && this.autoCollectPlan.seq && this.autoCollectPlan.seq.length > 0) {
+            if (this.autoCollectPlan.seq[0] === l) {
+                this.autoCollectPlan.seq.shift();
+            } else {
+                this.autoCollectPlan = null;
+            }
+            if (this.autoCollectPlan && this.autoCollectPlan.seq.length === 0) this.autoCollectPlan = null;
+        }
         this.collectedLetters.push(l.letter);
 
         gsap.to(l.container, {
@@ -1123,6 +1212,330 @@ class WRScene {
         if (this.callbacks.onLetterCollected) this.callbacks.onLetterCollected([...this.collectedLetters]);
     }
 
+    _getForwardLetters(minAhead = 12, maxAhead = 380, maxCount = 20) {
+        const p = this.player;
+        const minX = p.worldX + minAhead;
+        const maxX = p.worldX + maxAhead;
+        const letters = [];
+
+        for (const l of this.letters) {
+            if (l.collected) continue;
+            if (l.worldX < minX || l.worldX > maxX) continue;
+            letters.push(l);
+        }
+        letters.sort((a, b) => a.worldX - b.worldX);
+        return letters.slice(0, maxCount);
+    }
+
+    _isAutoLetterReachable(letter) {
+        const p = this.player;
+        const dx = letter.worldX - p.worldX;
+        if (dx < 12 || dx > 380) return false;
+
+        const dy = letter.worldY - p.y;
+        // Too high relative to current runner position tends to produce misses.
+        if (dy < -230) return false;
+        // Too far below usually means it is effectively missed while airborne.
+        if (dy > 250) return false;
+
+        return true;
+    }
+
+    _letterRiskPenalty(letter) {
+        let penalty = 0;
+
+        if (this._isNearSpike(letter.worldX, 70)) penalty += 180;
+
+        // Hole-adjacent low letters are risky because pathing often requires
+        // awkward descent timing.
+        if (this._isNearHole(letter.worldX, 70) && letter.worldY > this.baseGroundY - 100) {
+            penalty += 145;
+        }
+
+        return penalty;
+    }
+
+    _buildWordPlanFromPrefix(prefix) {
+        const p = this.player;
+        const forward = this._getForwardLetters();
+        if (forward.length === 0) return null;
+
+        const maxDepth = Math.min(6, CFG.MAX_LETTERS - prefix.length);
+        if (maxDepth <= 0) return null;
+
+        let nodeBudget = 1400;
+
+        let frontier = [{
+            word: prefix,
+            seq: [],
+            lastIndex: -1,
+            score: 0,
+            hasWord: prefix.length >= 3 && this.dictionaryRef.has(prefix),
+        }];
+
+        const beamWidth = 16;
+
+        for (let depth = 0; depth < maxDepth; depth++) {
+            const nextFrontier = [];
+
+            for (const state of frontier) {
+                for (let i = state.lastIndex + 1; i < forward.length; i++) {
+                    if (--nodeBudget <= 0) break;
+                    const l = forward[i];
+                    if (!this._isAutoLetterReachable(l)) continue;
+
+                    const nextWord = state.word + l.letter;
+                    if (nextWord.length > CFG.MAX_LETTERS) continue;
+
+                    const isWord = nextWord.length >= 3 && this.dictionaryRef.has(nextWord);
+                    const isPrefix = this.trie.isPrefix(nextWord);
+                    if (!isWord && !isPrefix) continue;
+
+                    const dx = l.worldX - p.worldX;
+                    const dy = Math.abs(l.worldY - p.y);
+                    const risk = this._letterRiskPenalty(l);
+
+                    // Score rewards word completion and coherent continuation,
+                    // while penalizing risky/awkward letters.
+                    let delta = 0;
+                    if (isWord) delta += 240 + nextWord.length * 20;
+                    if (isPrefix) delta += 24;
+                    delta += Math.max(0, 210 - dx) * 0.25;
+                    delta += Math.max(0, 220 - dy) * 0.09;
+                    delta -= risk;
+
+                    // Avoid spending starters on letters that don't progress far.
+                    if (state.word.length < 2 && !isWord) delta -= 16;
+
+                    nextFrontier.push({
+                        word: nextWord,
+                        seq: [...state.seq, l],
+                        lastIndex: i,
+                        score: state.score + delta,
+                        hasWord: state.hasWord || isWord,
+                    });
+                }
+                if (nodeBudget <= 0) break;
+            }
+
+            if (nextFrontier.length === 0) break;
+
+            nextFrontier.sort((a, b) => b.score - a.score);
+            frontier = nextFrontier.slice(0, beamWidth);
+        }
+
+        if (frontier.length === 0) return null;
+
+        // Prefer plans that actually complete at least one word. Only fall back
+        // to prefix-only chains when already mid-sequence.
+        let ranked = frontier.filter((s) => s.seq.length > 0 && s.hasWord);
+        if (ranked.length === 0 && prefix.length >= 1) {
+            ranked = frontier.filter((s) => s.seq.length > 0);
+        }
+        if (ranked.length === 0) return null;
+
+        ranked.sort((a, b) => b.score - a.score);
+        const best = ranked[0];
+
+        // Avoid starting weak 3-letter plans when we have no committed letters.
+        if (prefix.length === 0 && best.word.length < 4) return null;
+
+        return {
+            word: best.word,
+            seq: [...best.seq],
+            score: best.score,
+        };
+    }
+
+    _currentTargetWord() {
+        if (!this.targetWords.length) return null;
+        return this.targetWords[this.targetWordIndex % this.targetWords.length] || null;
+    }
+
+    _advanceTargetWord() {
+        if (!this.targetWords.length) return;
+        this.targetWordIndex = (this.targetWordIndex + 1) % this.targetWords.length;
+        this.targetWordStallTimer = 0;
+        this.autoCollectPlan = null;
+        this.autoCollectTarget = null;
+    }
+
+    _buildPlanForTargetWord(prefix, targetWord) {
+        if (!targetWord) return null;
+        if (!targetWord.startsWith(prefix)) return null;
+
+        const remaining = targetWord.slice(prefix.length);
+        if (remaining.length === 0) {
+            return { word: targetWord, seq: [], score: 9999 };
+        }
+
+        const p = this.player;
+        const forward = this._getForwardLetters(12, 460, 28);
+        if (!forward.length) return null;
+
+        let states = [{ seq: [], lastIndex: -1, step: 0, score: 0 }];
+        const beamWidth = 12;
+
+        for (let step = 0; step < remaining.length; step++) {
+            const ch = remaining[step];
+            const nextStates = [];
+
+            for (const state of states) {
+                for (let i = state.lastIndex + 1; i < forward.length; i++) {
+                    const l = forward[i];
+                    if (l.letter !== ch) continue;
+                    if (!this._isAutoLetterReachable(l)) continue;
+
+                    const dx = l.worldX - p.worldX;
+                    const dy = Math.abs(l.worldY - p.y);
+                    const risk = this._letterRiskPenalty(l);
+
+                    let delta = 140;
+                    delta += Math.max(0, 260 - dx) * 0.22;
+                    delta += Math.max(0, 220 - dy) * 0.08;
+                    delta -= risk;
+
+                    nextStates.push({
+                        seq: [...state.seq, l],
+                        lastIndex: i,
+                        step: state.step + 1,
+                        score: state.score + delta,
+                    });
+                }
+            }
+
+            if (nextStates.length === 0) return null;
+            nextStates.sort((a, b) => b.score - a.score);
+            states = nextStates.slice(0, beamWidth);
+        }
+
+        if (!states.length) return null;
+        states.sort((a, b) => b.score - a.score);
+        return {
+            word: targetWord,
+            seq: [...states[0].seq],
+            score: states[0].score,
+        };
+    }
+
+    _isPlanStillValid(plan) {
+        if (!plan || !plan.seq || plan.seq.length === 0) return false;
+        const next = plan.seq[0];
+        if (!next || next.collected) return false;
+        if (!this._isAutoLetterReachable(next)) return false;
+        return true;
+    }
+
+    _refreshAutoCollectPlan(dt) {
+        const prefix = this.collectedLetters.join("");
+
+        if (this.targetWords.length > 0) {
+            const targetWord = this._currentTargetWord();
+            if (!targetWord) { this.autoCollectTarget = null; return; }
+
+            // If collected letters drift from the target prefix, reset.
+            if (prefix.length > 0 && !targetWord.startsWith(prefix)) {
+                this.collectedLetters = [];
+                this.autoCollectPlan = null;
+                this.autoCollectTarget = null;
+            }
+
+            const cleanPrefix = this.collectedLetters.join("");
+
+            // Whole word collected — validate it.
+            if (cleanPrefix === targetWord) {
+                const result = this.validateWord();
+                if (!result || result.word !== targetWord) {
+                    this.collectedLetters = [];
+                    this._advanceTargetWord();
+                }
+                return;
+            }
+
+            // Simple next-letter targeting: no beam search needed because the
+            // letter tape is deterministic and the needed letter WILL appear ahead.
+            const nextLetterNeeded = targetWord[cleanPrefix.length];
+            if (!nextLetterNeeded) return;
+
+            // Keep current target if it's still valid.
+            if (
+                this.autoCollectTarget &&
+                !this.autoCollectTarget.collected &&
+                this.autoCollectTarget.letter === nextLetterNeeded
+            ) {
+                this.targetWordStallTimer = 0;
+                return;
+            }
+
+            // Find nearest uncollected matching letter in the forward window.
+            const forward = this._getForwardLetters(12, 900, 50);
+            let found = null;
+            for (const l of forward) {
+                if (l.letter === nextLetterNeeded) { found = l; break; }
+            }
+
+            if (found) {
+                this.targetWordStallTimer = 0;
+                this.autoCollectTarget = found;
+            } else {
+                this.targetWordStallTimer += dt;
+                if (this.targetWordStallTimer >= this.targetWordStallLimit) {
+                    this.collectedLetters = [];
+                    this._advanceTargetWord();
+                }
+                this.autoCollectTarget = null;
+            }
+            return;
+        }
+
+        // If current prefix is already invalid, drop it to avoid spiraling into
+        // bad picks. This is showcase-only behavior.
+        if (prefix.length > 0 && !this.trie.isPrefix(prefix) && !this.dictionaryRef.has(prefix)) {
+            this.collectedLetters = [];
+        }
+
+        if (this._isPlanStillValid(this.autoCollectPlan)) return;
+
+        const effectivePrefix = this.collectedLetters.join("");
+        this.autoCollectPlan = this._buildWordPlanFromPrefix(effectivePrefix);
+        this.autoCollectTarget = this.autoCollectPlan?.seq?.[0] || null;
+    }
+
+    _updateAutoCollector(dt) {
+        this.autoCollectJumpCooldown = Math.max(0, this.autoCollectJumpCooldown - dt);
+        if (this.autoCollectJumpCooldown > 0) {
+            if (this.autoCollectTarget && this.autoCollectTarget.collected) this.autoCollectTarget = null;
+            return;
+        }
+        if (this.collectedLetters.length >= CFG.MAX_LETTERS) return;
+
+        this._refreshAutoCollectPlan(dt);
+
+        const p = this.player;
+        const target = this.autoCollectTarget;
+        if (!target) return;
+
+        // No magnetic pull: we only steer jump timing so the runner physically
+        // passes through letters in sequence.
+        const dx = target.worldX - p.worldX;
+        const dy = target.worldY - p.y;
+        const inApproachWindow = dx > 12 && dx < 500;
+        if (!inApproachWindow) return;
+
+        // Only jump if the letter is well above ground level (i.e., on a platform).
+        // Ground-level letters (dy ≈ -10..30) are collected by simply running through them.
+        if (p.grounded && dy < -38) {
+            this._tryJump();
+            this.autoCollectJumpCooldown = 0.12;
+            return;
+        }
+
+        if (!p.grounded && p.vy > 80 && dy < -30 && p.airJumps < PHY.AIR_JUMPS) {
+            this._tryJump();
+            this.autoCollectJumpCooldown = 0.14;
+        }
+    }
+
     // ── Spike collision ─────────────────────────────────────────────────────
 
     _checkSpikeCollision() {
@@ -1136,8 +1549,109 @@ class WRScene {
             if (!col || !col.spikeBox) continue;
             const s = col.spikeBox;
             if (px < s.x + s.w && px + PHY.PLAYER_W > s.x && py < s.y + s.h && py + PHY.PLAYER_H > s.y) {
+                if (this.cinematicMode) {
+                    // Bounce over the spike — never die in cinematic mode.
+                    p.vy = PHY.JUMP_VY;
+                    p.airJumps = 0;
+                    this.autoPilotJumpCooldown = 0.22;
+                    return;
+                }
                 this._die();
                 return;
+            }
+        }
+    }
+
+    _hasHoleAhead(distanceAhead) {
+        const startX = this.player.worldX + PHY.PLAYER_W * 0.75;
+        const endX = startX + distanceAhead;
+        const step = Math.max(12, CFG.COL_W * 0.5);
+        for (let x = startX; x <= endX; x += step) {
+            if (this._getGroundAt(x) === null) return true;
+        }
+        return false;
+    }
+
+    _hasSpikeAhead(distanceAhead) {
+        const startX = this.player.worldX + PHY.PLAYER_W * 0.75;
+        const endX = startX + distanceAhead;
+        const startCol = Math.floor(startX / CFG.COL_W) - 1;
+        const endCol = Math.ceil(endX / CFG.COL_W) + 1;
+        for (let ci = startCol; ci <= endCol; ci++) {
+            const col = this.columns.get(ci);
+            if (!col || !col.spikeBox) continue;
+            if (col.spikeBox.x < endX && col.spikeBox.x + col.spikeBox.w > startX) return true;
+        }
+        return false;
+    }
+
+    _hasPlatformAhead(worldX) {
+        for (const plat of this.platforms) {
+            if (worldX >= plat.worldX - 18 && worldX <= plat.worldX + plat.w + 18) return true;
+        }
+        return false;
+    }
+
+    // Returns true if a non-target letter is at roughly the player's height
+    // within distanceAhead pixels. Used by autopilot to jump over wrong letters.
+    _hasWrongLetterAhead(distanceAhead) {
+        if (!this.autoCollectWords) return false;
+        const p = this.player;
+        const minX = p.worldX + PHY.PLAYER_W;
+        const maxX = p.worldX + distanceAhead;
+        for (const l of this.letters) {
+            if (l.collected) continue;
+            if (l === this.autoCollectTarget) continue; // the letter we WANT is not an obstacle
+            if (l.worldX < minX || l.worldX > maxX) continue;
+            // Only treat letters in the player's travel plane as obstacles:
+            // roughly ground-level (within ~55px above or 35px below player center).
+            const dy = l.worldY - p.y;
+            if (dy > -55 && dy < 35) return true;
+        }
+        return false;
+    }
+
+    _updateAutoPilot(dt) {
+        this.autoPilotJumpCooldown = Math.max(0, this.autoPilotJumpCooldown - dt);
+
+        const p = this.player;
+        const speedRatio = clamp(this.scrollSpeed / Math.max(this.maxSpeed, 1), 0, 1);
+
+        // ── Emergency: spike or hole directly underfoot / imminent ──
+        // Bypass cooldown for life-threatening situations.
+        const emergencySpike = this._hasSpikeAhead(32);
+        const emergencyHole  = p.grounded && this._hasHoleAhead(28);
+        if ((emergencySpike || emergencyHole) && p.grounded) {
+            this.autoPilotJumpCooldown = 0;
+        }
+
+        if (this.autoPilotJumpCooldown > 0) return;
+
+        const holeTrigger        = 150 + speedRatio * 110;
+        const spikeTrigger       = 120 + speedRatio * 90;
+        const wrongLetterTrigger = 90  + speedRatio * 60;
+
+        if (p.grounded && (
+            this._hasHoleAhead(holeTrigger) ||
+            this._hasSpikeAhead(spikeTrigger) ||
+            this._hasWrongLetterAhead(wrongLetterTrigger)
+        )) {
+            this._tryJump();
+            this.autoPilotJumpCooldown = 0.14;
+            return;
+        }
+
+        // ── Airborne rescue: keep jumping if falling toward a gap or spike ──
+        if (!p.grounded && p.airJumps < PHY.AIR_JUMPS) {
+            const tooLow = p.y > this.baseGroundY - 90 || p.y > this.screenH * 0.58;
+            const spikeBelow = this._hasSpikeAhead(Math.max(30, this.scrollSpeed * 0.12));
+            const rescueProbe = p.worldX + Math.max(30, this.scrollSpeed * 0.15);
+            const noGroundAhead = this._getGroundAt(rescueProbe) === null;
+            const noPlatformAhead = !this._hasPlatformAhead(rescueProbe);
+
+            if (p.vy > 120 && (spikeBelow || (tooLow && noGroundAhead && noPlatformAhead))) {
+                this._tryJump();
+                this.autoPilotJumpCooldown = 0.16;
             }
         }
     }
@@ -1225,7 +1739,7 @@ class WRScene {
         const wordCoins = this.coinsForWordFn(word.length);
         this.coins += wordCoins;
         this.wordsFormed.push({ word, pts });
-        this.scrollSpeed = Math.min(CFG.MAX_SPEED, this.scrollSpeed + CFG.WORD_BOOST);
+        this.scrollSpeed = Math.min(this.maxSpeed, this.scrollSpeed + this.wordBoost);
 
         this.flash = { timer: 0.4, color: PAL.FLASH_VALID };
         this.shake = { timer: 0.2, intensity: 4 };
@@ -1238,6 +1752,12 @@ class WRScene {
 
         // Clear all letters after extracting the word
         this.collectedLetters = [];
+
+        // In target-word mode, advance to the next word automatically whenever
+        // the validated word matches the current target.
+        if (this.targetWords.length > 0 && word === this._currentTargetWord()) {
+            this._advanceTargetWord();
+        }
 
         return { word, pts, coins: wordCoins, streak: this.wordStreak, startIndex: bestStart };
     }
@@ -1263,6 +1783,19 @@ class WRScene {
         } else {
             this.streakText.visible = false;
         }
+    }
+
+    _updateShowcaseOverlay(dt) {
+        if (!this.overlayTitle && !this.overlaySubtitle) return;
+        if (this.overlayTimer > 0) this.overlayTimer = Math.max(0, this.overlayTimer - dt);
+
+        const fadeWindow = Math.min(1.25, Math.max(0.35, this.overlayDuration || 1.25));
+        const alpha = this.overlayTimer > fadeWindow ? 1 : clamp(this.overlayTimer / fadeWindow, 0, 1);
+
+        this.overlayTitleText.visible = !!this.overlayTitle && alpha > 0.01;
+        this.overlaySubtitleText.visible = !!this.overlaySubtitle && alpha > 0.01;
+        this.overlayTitleText.alpha = alpha;
+        this.overlaySubtitleText.alpha = alpha;
     }
 
     // ── Culling ─────────────────────────────────────────────────────────────
@@ -1379,6 +1912,8 @@ class WRScene {
         this.screenH = h;
         this.baseGroundY = Math.floor(h * CFG.GROUND_Y_PCT);
         this.hiScoreText.position.set(w - 12, 10);
+        this.overlayTitleText.position.set(24, 22);
+        this.overlaySubtitleText.position.set(26, 58);
         this.streakText.position.set(w / 2, 14);
         this.goText.position.set(w / 2, h * 0.4);
         this.goScore.position.set(w / 2, h * 0.4 + 35);
@@ -1433,8 +1968,11 @@ export class WordRunnerGame {
     }
 
     async start(savedState) {
-        const cw = this.container.clientWidth || 800;
-        const ch = this.container.clientHeight || Math.floor(window.innerHeight * 0.45);
+        const cw = this.options.width || this.container.clientWidth || 800;
+        const ch = this.options.height || this.container.clientHeight || Math.floor(window.innerHeight * 0.45);
+        const resolution = Number.isFinite(this.options.resolution)
+            ? this.options.resolution
+            : Math.min(window.devicePixelRatio || 1, 2);
 
         this.app = new Application();
         await this.app.init({
@@ -1442,15 +1980,14 @@ export class WordRunnerGame {
             height: ch,
             background: PAL.BG,
             antialias: true,
-            resolution: Math.min(window.devicePixelRatio || 1, 2),
+            resolution,
             autoDensity: true,
         });
 
         if (this._destroyed) { this.app.destroy(true); return; }
         this.container.appendChild(this.app.canvas);
 
-        this.scene = new WRScene(this.app, this.options);
-        this.scene.init(savedState);
+        this._createScene(savedState);
 
         let _lastTime = performance.now();
         this.app.ticker.add(() => {
@@ -1463,7 +2000,27 @@ export class WordRunnerGame {
         });
     }
 
+    _createScene(savedState) {
+        this.scene = new WRScene(this.app, this.options);
+        this.scene.init(savedState);
+    }
+
+    async restart(savedState, nextOptions) {
+        if (nextOptions) this.options = { ...this.options, ...nextOptions };
+        if (!this.app) {
+            await this.start(savedState);
+            return;
+        }
+        if (this.scene) {
+            gsap.killTweensOf(this.scene);
+            try { this.scene.destroy(); } catch (e) { console.warn('[WR] scene restart destroy error:', e); }
+        }
+        this.scene = null;
+        this._createScene(savedState);
+    }
+
     getScene() { return this.scene; }
+    getCanvas() { return this.app?.canvas || null; }
     validateWord() { return this.scene ? this.scene.validateWord() : null; }
     getCollectedLetters() { return this.scene ? [...this.scene.collectedLetters] : []; }
     getState() { return this.scene ? this.scene.getState() : null; }

@@ -1,0 +1,308 @@
+<!-- SEAMLESS-LOOP VERSION — all animation periods divide exactly into 10 s -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PLUMMET — Title Card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #111;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 20px;
+    font-family: -apple-system, sans-serif;
+    padding: 20px;
+  }
+
+  /* ── Canvas: 1920×1080 rendered, shown at half size ── */
+  #stage {
+    width: 960px;
+    height: 540px;
+    border-radius: 4px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .ctrl-btn {
+    padding: 10px 28px;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .ctrl-btn.record { background: #c0392b; color: #fff; }
+  .ctrl-btn.stop   { background: #444;    color: #fff; }
+
+  #status { color: #666; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <button class="ctrl-btn record" id="rec-btn">⏺ Record&nbsp;10s&nbsp;loop</button>
+  <button class="ctrl-btn stop"   id="stop-btn" disabled>⏹ Stop&nbsp;&amp;&nbsp;Download</button>
+  <span id="status">Preview (960×540) — recording outputs full 1920×1080</span>
+</div>
+
+<canvas id="stage" width="1920" height="1080"></canvas>
+
+<script>
+// =============================================================================
+// SEAMLESS-LOOP DESIGN
+// Every animation is a pure function f(t) where the period divides LOOP.
+// Therefore f(0) === f(LOOP) exactly, so playhead can jump from end→start
+// with zero visual discontinuity.
+//
+// PLUMMET letter bobs  →  dur = LOOP/k  (k ∈ {1,2,3,4,5})
+// Particle vertical    →  cycleTime = LOOP/k
+// Particle horizontal  →  wobFreq = k/LOOP Hz  → integer cycles per loop
+// =============================================================================
+const LOOP = 10;       // seconds — the seamless loop duration
+const W = 1920, H = 1080;
+const ALPHA  = Math.PI * 2;
+const ALPH   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+// ── Seeded RNG (Mulberry32) — same particles every page load ───────────────
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s += 0x6D2B79F5;
+    let t = Math.imul(s ^ (s >>> 15), s | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ── App palette ────────────────────────────────────────────────────────────
+const COLORS = [
+  [226, 216, 166],  // cream   (#e2d8a6)
+  [140, 184,  96],  // green   (#8cb860)
+  [176, 168, 120],  // tan     (#b0a878)
+  [212, 160,  96],  // amber   (#d4a060)
+  [122, 166, 142],  // teal    (#7aa68e)
+];
+
+// ── Background particles ────────────────────────────────────────────────────
+// cycleTime must divide LOOP.  Choose k = 1..5  →  cycleTime = LOOP/k
+// wobFreq = k/LOOP Hz  →  integer cycles in LOOP seconds (=> seamless)
+const CYCLE_TIMES = [10, 5, 10/3, 2.5, 2];   // 1,2,3,4,5 passes per loop
+const WOB_FREQS   = [0.1, 0.2, 0.3, 0.4, 0.5];
+const BG_SIZES    = [22, 30, 40, 52, 68, 88];
+const PAD         = 120;  // px above/below screen where particles are invisible
+
+function buildParticles() {
+  const rng = makeRng(0xDEADBEEF);
+  return Array.from({ length: 110 }, (_, i) => {
+    const ct = CYCLE_TIMES[i % CYCLE_TIMES.length];
+    const wf = WOB_FREQS[Math.floor(rng() * WOB_FREQS.length)];
+    return {
+      x0:          rng() * (W + 200) - 100,
+      phaseOffset: rng(),                      // 0-1: vertical start within cycle
+      cycleTime:   ct,
+      wobFreq:     wf,
+      wobPhase:    rng() * ALPHA,
+      wobAmp:      10 + rng() * 32,
+      rotOffset:   (rng() - 0.5) * 0.8,
+      rotAmp:      (rng() - 0.5) * 0.5,
+      rotFreq:     wf,
+      rotPhase:    rng() * ALPHA,
+      col:         COLORS[Math.floor(rng() * COLORS.length)],
+      alpha:       0.04 + rng() * 0.13,
+      size:        BG_SIZES[Math.floor(rng() * BG_SIZES.length)],
+      letter:      ALPH[Math.floor(rng() * 26)],
+    };
+  });
+}
+const PARTICLES = buildParticles();
+
+// Particle positions are pure functions of t (no mutable state)
+function pX(p, t) { return p.x0 + p.wobAmp * Math.sin(ALPHA * p.wobFreq * t + p.wobPhase); }
+function pY(p, t) {
+  const progress = ((t / p.cycleTime) + p.phaseOffset) % 1;
+  // progress 0 → bottom off-screen, progress 1 → top off-screen
+  return (H + PAD) * (1 - progress) - PAD * 0.5;
+}
+function pRot(p, t) { return p.rotOffset + p.rotAmp * Math.sin(ALPHA * p.rotFreq * t + p.rotPhase); }
+
+// ── PLUMMET letter float config ─────────────────────────────────────────────
+// dur = LOOP/k  (k ∈ {1,2,3,4,5})  so 10/dur = integer → f(0)===f(LOOP) ✓
+// delay can be anything — it shifts starting phase but doesn't break looping
+const FLOAT = [
+  { dur: LOOP/3, delay:  0.00, amp: 34, rotAmp: 0.9 }, // P — 3 bobs/loop
+  { dur: LOOP/2, delay: -1.25, amp: 28, rotAmp: 0.7 }, // L — 2 bobs/loop
+  { dur: LOOP/4, delay: -0.63, amp: 40, rotAmp: 0.5 }, // U — 4 bobs/loop
+  { dur: LOOP/1, delay: -2.50, amp: 30, rotAmp: 1.0 }, // M — 1 bob/loop  (very slow)
+  { dur: LOOP/5, delay: -0.40, amp: 24, rotAmp: 0.6 }, // M — 5 bobs/loop (fast)
+  { dur: LOOP/2, delay: -1.80, amp: 38, rotAmp: 0.4 }, // E — 2 bobs/loop (different phase from L)
+  { dur: LOOP/3, delay: -1.50, amp: 31, rotAmp: 0.8 }, // T — 3 bobs/loop (different phase from P)
+];
+const PLUMMET = 'PLUMMET';
+
+function letterDY(i, t) {
+  const f = FLOAT[i];
+  // -cos gives ease-in-out feel: −1 at phase=0, +1 at phase=π
+  const phase = ((t - f.delay) / f.dur) * ALPHA;
+  const e = -Math.cos(phase);
+  return { dy: e * f.amp, drot: e * f.rotAmp * Math.PI / 180 };
+}
+
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+let letterWidths = null;
+
+// ── Drawing ──────────────────────────────────────────────────────────────────
+function drawFrame(t) {
+  // Background
+  ctx.fillStyle = '#2f3029';
+  ctx.fillRect(0, 0, W, H);
+
+  // Particles
+  ctx.textBaseline = 'alphabetic';
+  for (const p of PARTICLES) {
+    const [r, g, b] = p.col;
+    ctx.save();
+    ctx.globalAlpha = p.alpha;
+    ctx.font = `700 ${p.size}px Inter,-apple-system,sans-serif`;
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.translate(pX(p, t), pY(p, t));
+    ctx.rotate(pRot(p, t));
+    ctx.fillText(p.letter, 0, 0);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // Vignette
+  const vg = ctx.createRadialGradient(W/2, H/2, H * 0.20, W/2, H/2, H * 0.75);
+  vg.addColorStop(0, 'transparent');
+  vg.addColorStop(1, 'rgba(0,0,0,0.42)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  // PLUMMET letters
+  if (!letterWidths) return;
+  const GAP    = 6;
+  const totalW = letterWidths.reduce((s, w) => s + w, 0) + GAP * (PLUMMET.length - 1);
+  let dx = (W - totalW) / 2;
+
+  ctx.font         = '900 240px Inter,-apple-system,sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign    = 'center';
+
+  for (let i = 0; i < PLUMMET.length; i++) {
+    const { dy, drot } = letterDY(i, t);
+    const cx = dx + letterWidths[i] / 2;
+    ctx.save();
+    ctx.shadowColor   = 'rgba(0,0,0,0.65)';
+    ctx.shadowBlur    = 40;
+    ctx.shadowOffsetY = 8;
+    ctx.fillStyle     = '#e2d8a6';
+    ctx.translate(cx, H / 2 + dy);
+    ctx.rotate(drot);
+    ctx.fillText(PLUMMET[i], 0, 0);
+    ctx.restore();
+    dx += letterWidths[i] + GAP;
+  }
+  ctx.shadowBlur    = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.textAlign     = 'left';
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+let epoch = 0;
+
+function getT() {
+  return ((performance.now() / 1000 - epoch) % LOOP + LOOP) % LOOP;
+}
+
+function loop() {
+  drawFrame(getT());
+  requestAnimationFrame(loop);
+}
+
+// ── Start after fonts load ────────────────────────────────────────────────────
+document.fonts.ready.then(() => {
+  ctx.font     = '900 240px Inter,-apple-system,sans-serif';
+  letterWidths = Array.from(PLUMMET).map(ch => ctx.measureText(ch).width);
+  epoch        = performance.now() / 1000;
+  loop();
+});
+
+// ── Recording ─────────────────────────────────────────────────────────────────
+// When Record is clicked:
+//   1. epoch resets → animation (and recording) starts at t=0 of the loop.
+//   2. Recording runs for exactly LOOP seconds then auto-stops.
+//   3. Because every period divides LOOP, frame[0] === frame[LOOP] exactly.
+let recorder  = null;
+let recChunks = [];
+let countdown = null;
+
+const statusEl = document.getElementById('status');
+function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+
+document.getElementById('rec-btn').addEventListener('click', () => {
+  if (recorder && recorder.state === 'recording') return;
+  recChunks = [];
+
+  // Reset loop so the 10-second recording covers exactly one full loop
+  epoch = performance.now() / 1000;
+
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9' : 'video/webm';
+
+  const stream = canvas.captureStream(60);
+  recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 25_000_000 });
+  recorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(recChunks, { type: mimeType });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `plummet-title-${Date.now()}.webm`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    setStatus('Download started!');
+    document.getElementById('rec-btn').disabled  = false;
+    document.getElementById('stop-btn').disabled = true;
+  };
+
+  recorder.start();
+  document.getElementById('rec-btn').disabled  = true;
+  document.getElementById('stop-btn').disabled = false;
+
+  // Countdown
+  let remaining = LOOP;
+  setStatus(`Recording… ${remaining}s remaining`);
+  countdown = setInterval(() => {
+    remaining -= 1;
+    if (remaining > 0) setStatus(`Recording… ${remaining}s remaining`);
+    else { clearInterval(countdown); setStatus('Finishing…'); }
+  }, 1000);
+
+  // Auto-stop at exactly LOOP seconds from now
+  setTimeout(() => {
+    clearInterval(countdown);
+    if (recorder && recorder.state === 'recording') recorder.stop();
+  }, LOOP * 1000);
+});
+
+document.getElementById('stop-btn').addEventListener('click', () => {
+  clearInterval(countdown);
+  if (recorder && recorder.state === 'recording') recorder.stop();
+  document.getElementById('rec-btn').disabled  = false;
+  document.getElementById('stop-btn').disabled = true;
+  setStatus('Stopped — download starting…');
+});
+</script>
+</body>
+</html>

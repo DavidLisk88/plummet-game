@@ -4490,6 +4490,19 @@ body.touch-input #mobile-controls {
     cursor: pointer;
 }
 
+/* Half-dim mode (post-first-game welcome tour): keep the spotlight
+   highlight but lighten the surrounding darkness ~50%. Overrides both
+   the full-screen dim element and the spotlight focus's box-shadow,
+   since both are sources of the dark backdrop. */
+#guided-tour-overlay.gt-half-dim #guided-tour-dim {
+    background: rgba(0, 0, 0, 0.15);
+}
+#guided-tour-overlay.gt-half-dim #guided-tour-focus {
+    box-shadow:
+        0 0 0 9999px rgba(0, 0, 0, 0.15),
+        0 0 24px 4px rgba(255, 255, 255, 0.08);
+}
+
 /* ── Spotlight cutout ──────────────────────────────────────── */
 #guided-tour-focus {
     position: fixed;
@@ -4591,6 +4604,31 @@ body.touch-input #mobile-controls {
     display: none;
 }
 
+/* Cell-target hotspot: ring around the letter, no fill, gentle pulse. */
+#guided-tour-hotspot.gt-hotspot-ring {
+    border-radius: 50% !important;
+    box-shadow:
+        0 0 0 3px rgba(140, 184, 96, 0.95),
+        0 0 18px 4px rgba(140, 184, 96, 0.55),
+        inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+    animation: gtHotspotRingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes gtHotspotRingPulse {
+    0%, 100% {
+        box-shadow:
+            0 0 0 3px rgba(140, 184, 96, 0.95),
+            0 0 18px 4px rgba(140, 184, 96, 0.55),
+            inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+    }
+    50% {
+        box-shadow:
+            0 0 0 5px rgba(140, 184, 96, 1),
+            0 0 26px 8px rgba(140, 184, 96, 0.7),
+            inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+    }
+}
+
 /* ── Tooltip Card ─────────────────────────────────────────── */
 #guided-tour-card {
     position: fixed;
@@ -4621,6 +4659,48 @@ body.touch-input #mobile-controls {
     opacity: 0 !important;
     transform: translateY(10px) scale(0.96) !important;
     pointer-events: none !important;
+}
+
+/* Compact variant: ~3x smaller for tight placements (e.g. under bonus btn) */
+#guided-tour-card.gt-card-compact {
+    width: min(150px, calc(100vw - 24px));
+    padding: 7px 9px 6px;
+    border-radius: 10px;
+}
+#guided-tour-card.gt-card-compact #guided-tour-title {
+    font-size: 0.62rem;
+    margin: 0 0 3px;
+    line-height: 1.15;
+}
+#guided-tour-card.gt-card-compact #guided-tour-body {
+    font-size: 0.54rem;
+    line-height: 1.3;
+}
+#guided-tour-card.gt-card-compact #guided-tour-counter {
+    font-size: 0.45rem;
+}
+#guided-tour-card.gt-card-compact #guided-tour-exit-btn {
+    font-size: 0.5rem;
+}
+#guided-tour-card.gt-card-compact #guided-tour-dots {
+    margin-top: 6px;
+    gap: 3px;
+}
+#guided-tour-card.gt-card-compact .gt-dot {
+    width: 4px;
+    height: 4px;
+}
+#guided-tour-card.gt-card-compact #guided-tour-continue-btn {
+    font-size: 0.6rem;
+    padding: 5px 10px;
+    margin-top: 6px;
+}
+#guided-tour-card.gt-card-compact #guided-tour-back-btn {
+    font-size: 0.55rem;
+    padding: 4px 8px;
+}
+#guided-tour-card.gt-card-compact #guided-tour-hint {
+    font-size: 0.5rem;
 }
 
 /* ── Card top row (counter + skip) ──────────────────────── */
@@ -4846,42 +4926,123 @@ body.touch-input #mobile-controls {
     }
 }
 
-/* ── Guided Teaching Grid ────────────────────────────── */
+/* ── Guided Teaching Grid ──────────────────────────────
+   Now a body-level fixed overlay that mirrors #canvas-wrapper's
+   bounding rect (positioned via JS). This lives outside the
+   canvas-wrapper stacking context so .guided-tour-focus-target
+   (z-index 10024) on a .gt-cell can rise above the dim layer
+   (z-index 10020) and become clickable during tap-target steps.
+   Visual style mimics the default "flat" block style of the
+   real game: cream letters on the dark canvas backdrop with
+   thin grid lines. */
 .guided-teaching-grid {
-    position: absolute;
-    inset: 0;
+    position: fixed;
     display: grid;
     grid-template-columns: repeat(var(--gt-cols, 5), 1fr);
     grid-template-rows: repeat(var(--gt-rows, 5), 1fr);
-    gap: 4px;
-    padding: 6px;
-    z-index: 5;
+    gap: 0;
+    padding: 0;
+    background: #0d1117;
+    border: 1px solid rgba(126, 184, 255, 0.18);
+    border-radius: 4px;
+    z-index: 10022; /* above dim (10020) so filled cells receive clicks */
+    pointer-events: none; /* container is passive — only filled cells take taps */
+    box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.45);
 }
 
 .gt-cell {
-    border-radius: 8px;
+    border: 0.5px solid rgba(126, 184, 255, 0.08);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: clamp(16px, 4.5vw, 28px);
+    font-family: monospace;
+    font-size: clamp(18px, 5vw, 32px);
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     user-select: none;
     transition: background 0.2s ease, transform 0.15s ease;
+    pointer-events: none;
 }
 
 .gt-empty {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: transparent;
     color: transparent;
 }
 
 .gt-filled {
-    background: linear-gradient(145deg, rgba(60, 80, 120, 0.85), rgba(40, 55, 90, 0.9));
-    border: 1px solid rgba(226, 216, 166, 0.35);
-    color: #fff;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: #e2d8a6;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+    pointer-events: auto; /* clickable target during tap-target steps */
+    cursor: pointer;
+}
+
+/* Word-validation celebration pulse for the manufactured tutorial */
+.gt-cell.gt-celebrate {
+    animation: gtCelebratePulse 0.85s ease-out;
+    color: #b8f0b8;
+    text-shadow: 0 0 12px rgba(184, 240, 184, 0.95), 0 0 24px rgba(120, 220, 120, 0.6);
+}
+@keyframes gtCelebratePulse {
+    0%   { transform: scale(1);    }
+    40%  { transform: scale(1.25); }
+    100% { transform: scale(1);    }
+}
+
+/* Bomb explosion clearing animation */
+.gt-cell.gt-exploding {
+    animation: gtBombExplode 0.55s ease-in forwards;
+}
+@keyframes gtBombExplode {
+    0%   { transform: scale(1);   opacity: 1;
+           color: #ffb060; text-shadow: 0 0 20px rgba(255,160,40,0.95); }
+    60%  { transform: scale(1.6); opacity: 0.7; }
+    100% { transform: scale(0.3); opacity: 0; }
+}
+
+/* Frozen falling letter ghost (positioned by JS over canvas-wrapper) */
+.guided-falling-letter {
+    position: fixed;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: monospace;
+    font-weight: 700;
+    color: #e2d8a6;
+    background: transparent;
+    text-shadow: 0 0 14px rgba(226, 216, 166, 0.8), 0 1px 2px rgba(0, 0, 0, 0.6);
+    z-index: 10022;
+    pointer-events: none;
+    animation: gtFallingBob 1.4s ease-in-out infinite;
+    /* Font-size sized relative to the dynamic width set by JS */
+    font-size: 32px;
+}
+@keyframes gtFallingBob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(6px); }
+}
+
+/* Fake bomb activation modal (manufactured tutorial only) */
+.guided-fake-bomb-content,
+.guided-ready-content {
+    text-align: center;
+    max-width: 340px;
+}
+.guided-fake-bomb-icon {
+    font-size: 56px;
+    margin-bottom: 4px;
+    animation: gtBombIconBob 1.6s ease-in-out infinite;
+}
+@keyframes gtBombIconBob {
+    0%, 100% { transform: translateY(0)   rotate(-4deg); }
+    50%      { transform: translateY(-6px) rotate(4deg);  }
+}
+#guided-fake-bomb-modal,
+#guided-ready-modal {
+    /* Sit above the guided-tour spotlight shadow (z 10021) but below
+       the explanation card (z 10023) so both stay readable. */
+    z-index: 10022;
 }
 
 @media (max-width: 480px) {

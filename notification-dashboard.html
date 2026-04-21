@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plummet — Push Notifications</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext x='50%25' y='56%25' text-anchor='middle' font-size='52'%3E%F0%9F%93%AC%3C/text%3E%3C/svg%3E">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -201,6 +202,31 @@
         let SUPABASE_URL = '';
         let SERVICE_ROLE_KEY = '';
 
+        function normalizeSupabaseUrl(raw) {
+            let value = String(raw || '').trim();
+            if (!value) return '';
+
+            // Common typo from pasted/edited values.
+            if (value.startsWith('ttps://')) {
+                value = `h${value}`;
+            }
+
+            // Allow users to paste just the host.
+            if (!/^https?:\/\//i.test(value)) {
+                value = `https://${value}`;
+            }
+
+            value = value.replace(/\/+$/, '');
+
+            try {
+                const parsed = new URL(value);
+                if (!/^https?:$/i.test(parsed.protocol)) return '';
+                return `${parsed.protocol}//${parsed.host}`;
+            } catch {
+                return '';
+            }
+        }
+
         function buildAuthHeaders() {
             const key = (SERVICE_ROLE_KEY || '').trim();
             const headers = {
@@ -216,12 +242,14 @@
 
         // ── Config ──
         function saveConfig() {
-            SUPABASE_URL = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
+            const rawUrl = document.getElementById('cfg-url').value;
+            SUPABASE_URL = normalizeSupabaseUrl(rawUrl);
             SERVICE_ROLE_KEY = document.getElementById('cfg-key').value.trim();
             if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-                showToast('Fill in both fields', 'error');
+                showToast('Enter a valid Supabase URL and service role key', 'error');
                 return;
             }
+            document.getElementById('cfg-url').value = SUPABASE_URL;
             // Persist in sessionStorage (not localStorage for security)
             sessionStorage.setItem('plummet_notif_url', SUPABASE_URL);
             sessionStorage.setItem('plummet_notif_key', SERVICE_ROLE_KEY);
@@ -252,6 +280,9 @@
 
         // ── Supabase REST helper ──
         function sbFetch(path, opts = {}) {
+            if (!/^https?:\/\//i.test(SUPABASE_URL)) {
+                return Promise.reject(new Error('Invalid Supabase URL. Reconnect from setup first.'));
+            }
             return fetch(`${SUPABASE_URL}${path}`, {
                 ...opts,
                 headers: {
@@ -338,7 +369,26 @@
                 const result = await res.json();
 
                 if (res.ok && result.sent !== undefined) {
-                    showToast(`Sent to ${result.sent} device(s)`, 'success');
+                    const sent = Number(result.sent || 0);
+                    const failed = Number(result.failed || 0);
+                    const total = Number(result.total_tokens || 0);
+                    const ios = Number(result.ios_tokens || 0);
+                    const android = Number(result.android_tokens || 0);
+
+                    if (sent > 0) {
+                        let msg = `Sent to ${sent} device(s)`;
+                        if (failed > 0) msg += `, ${failed} failed`;
+                        showToast(msg, 'success');
+                    } else if (total === 0) {
+                        showToast('Sent to 0 devices: no push tokens are registered yet', 'error');
+                    } else if ((ios + android) === 0) {
+                        showToast(`Sent to 0 devices: ${total} token(s) found, but none are iOS/Android`, 'error');
+                    } else {
+                        const sampleErr = result.error_samples?.[0]?.error;
+                        const detail = sampleErr ? ` (${sampleErr})` : '';
+                        showToast(`Sent to 0 devices: ${failed} failed${detail}`, 'error');
+                    }
+
                     document.getElementById('notif-title').value = '';
                     document.getElementById('notif-body').value = '';
                     updatePreview();
@@ -408,11 +458,14 @@
         (function init() {
             const savedUrl = sessionStorage.getItem('plummet_notif_url');
             const savedKey = sessionStorage.getItem('plummet_notif_key');
-            if (savedUrl && savedKey) {
-                document.getElementById('cfg-url').value = savedUrl;
+            const normalizedSavedUrl = normalizeSupabaseUrl(savedUrl || '');
+            if (normalizedSavedUrl && savedKey) {
+                document.getElementById('cfg-url').value = normalizedSavedUrl;
                 document.getElementById('cfg-key').value = savedKey;
-                SUPABASE_URL = savedUrl;
+                SUPABASE_URL = normalizedSavedUrl;
                 SERVICE_ROLE_KEY = savedKey;
+                // Repair any previously malformed URL in this session.
+                sessionStorage.setItem('plummet_notif_url', normalizedSavedUrl);
                 testConnection();
             }
         })();

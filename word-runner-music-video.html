@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLUMMET Word Runner Music Video</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-1: #f3efe4;
+            --bg-2: #d9e6dd;
+            --ink: #182126;
+            --muted: rgba(24, 33, 38, 0.62);
+            --panel: rgba(255, 251, 242, 0.78);
+            --panel-border: rgba(24, 33, 38, 0.12);
+            --accent: #ef7d57;
+            --accent-2: #0f9f9a;
+            --accent-3: #e2b13c;
+            --shadow: 0 24px 80px rgba(21, 29, 33, 0.16);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Space Grotesk", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(239, 125, 87, 0.30), transparent 34%),
+                radial-gradient(circle at top right, rgba(15, 159, 154, 0.22), transparent 28%),
+                linear-gradient(135deg, var(--bg-1), var(--bg-2));
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+            gap: 24px;
+            padding: 28px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 28px;
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+        }
+
+        .controls {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+
+        .eyebrow {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--accent-2);
+        }
+
+        h1 {
+            margin: 4px 0 0;
+            font-family: "Bebas Neue", sans-serif;
+            font-size: 64px;
+            line-height: 0.95;
+            letter-spacing: 0.02em;
+            font-weight: 400;
+        }
+
+        .lede {
+            margin: 0;
+            font-size: 15px;
+            line-height: 1.55;
+            color: var(--muted);
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .metric {
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.66);
+            border: 1px solid rgba(24, 33, 38, 0.08);
+        }
+
+        .metric-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .metric-value {
+            margin-top: 6px;
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .field-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .field label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .field input {
+            width: 100%;
+            border: 1px solid rgba(24, 33, 38, 0.12);
+            border-radius: 14px;
+            padding: 12px 14px;
+            font: inherit;
+            background: rgba(255, 255, 255, 0.82);
+            color: var(--ink);
+        }
+
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        button {
+            appearance: none;
+            border: none;
+            border-radius: 16px;
+            padding: 13px 16px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 26px rgba(24, 33, 38, 0.12);
+        }
+
+        .primary {
+            background: linear-gradient(135deg, var(--accent), #f09c66);
+            color: #fff8f2;
+        }
+
+        .secondary {
+            background: linear-gradient(135deg, var(--accent-2), #43b9af);
+            color: #effbf9;
+        }
+
+        .ghost {
+            background: rgba(255, 255, 255, 0.68);
+            color: var(--ink);
+            border: 1px solid rgba(24, 33, 38, 0.10);
+        }
+
+        .take-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .take-btn {
+            text-align: left;
+            background: rgba(255, 255, 255, 0.65);
+            color: var(--ink);
+            border: 1px solid rgba(24, 33, 38, 0.08);
+        }
+
+        .take-btn strong,
+        .take-btn span {
+            display: block;
+        }
+
+        .take-btn span {
+            margin-top: 3px;
+            font-size: 13px;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .take-btn.active {
+            background: linear-gradient(135deg, rgba(226, 177, 60, 0.22), rgba(239, 125, 87, 0.18));
+            border-color: rgba(226, 177, 60, 0.45);
+        }
+
+        .stage-panel {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+        }
+
+        .stage-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: end;
+        }
+
+        .stage-title {
+            font-family: "Bebas Neue", sans-serif;
+            font-size: 40px;
+            line-height: 0.95;
+            letter-spacing: 0.03em;
+        }
+
+        .stage-subtitle {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .status-pill {
+            border-radius: 999px;
+            padding: 9px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(24, 33, 38, 0.10);
+        }
+
+        .stage-wrap {
+            position: relative;
+            border-radius: 26px;
+            overflow: hidden;
+            background:
+                linear-gradient(180deg, rgba(16, 24, 38, 0.92), rgba(7, 11, 20, 0.94)),
+                linear-gradient(135deg, #25536b, #171922);
+            box-shadow: 0 34px 90px rgba(12, 17, 23, 0.26);
+        }
+
+        .stage-shell {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            position: relative;
+        }
+
+        #video-stage {
+            width: 100%;
+            height: 100%;
+        }
+
+        #video-stage canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+        }
+
+        .stage-overlay {
+            position: absolute;
+            inset: auto 18px 18px auto;
+            display: flex;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .chip {
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(248, 240, 223, 0.14);
+            border: 1px solid rgba(248, 240, 223, 0.14);
+            color: rgba(245, 241, 231, 0.86);
+            backdrop-filter: blur(8px);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .notes {
+            display: grid;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .notes strong {
+            color: var(--ink);
+        }
+
+        @media (max-width: 1180px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .controls {
+                position: static;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="layout">
+        <section class="panel controls">
+            <div>
+                <div class="eyebrow">YouTube 16:9</div>
+                <h1>Word Runner Reel</h1>
+            </div>
+            <p class="lede">This page renders the active game at 1920×1080, drives it in autoplay, and can export a single long take or a five-take stitched reel as WebM straight from the browser.</p>
+
+            <div class="metric-grid">
+                <div class="metric">
+                    <div class="metric-label">Output</div>
+                    <div class="metric-value">1920×1080</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Aspect</div>
+                    <div class="metric-value">16:9</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Score</div>
+                    <div class="metric-value" id="metric-score">00000</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Distance</div>
+                    <div class="metric-value" id="metric-distance">0m</div>
+                </div>
+            </div>
+
+            <div class="field-row">
+                <div class="field">
+                    <label for="take-duration">Seconds Per Take</label>
+                    <input id="take-duration" type="number" min="10" max="600" step="5" value="45">
+                </div>
+                <div class="field">
+                    <label for="record-fps">Capture FPS</label>
+                    <input id="record-fps" type="number" min="24" max="60" step="1" value="60">
+                </div>
+            </div>
+
+            <div class="button-grid">
+                <button class="primary" id="play-current">Play Current Take</button>
+                <button class="secondary" id="play-reel">Play Full Reel</button>
+                <button class="primary" id="record-current">Record Current Take</button>
+                <button class="secondary" id="record-reel">Record Full Reel</button>
+                <button class="ghost" id="stop-recording">Stop Recording</button>
+                <button class="ghost" id="restart-take">Restart Take</button>
+            </div>
+
+            <div class="take-list" id="take-list"></div>
+
+            <div class="notes">
+                <div><strong>Workflow:</strong> open this page with Vite, pick a take, then use the record button. The browser downloads a WebM automatically when the capture finishes.</div>
+                <div><strong>Five takes:</strong> the reel mode rotates through five seeded autoplay runs without replacing the canvas, so recording stays continuous.</div>
+            </div>
+        </section>
+
+        <section class="panel stage-panel">
+            <div class="stage-head">
+                <div>
+                    <div class="stage-title" id="stage-title">Take 1</div>
+                    <div class="stage-subtitle" id="stage-subtitle">Loading showcase...</div>
+                </div>
+                <div class="status-pill" id="status-pill">Preparing</div>
+            </div>
+
+            <div class="stage-wrap">
+                <div class="stage-shell">
+                    <div id="video-stage"></div>
+                    <div class="stage-overlay">
+                        <div class="chip">Autoplay Enabled</div>
+                        <div class="chip" id="recording-chip">Recorder Idle</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="./src/music-video-showcase.js"></script>
+</body>
+</html>

@@ -144,6 +144,44 @@ export function getTodaysDailyWord(wordsData) {
 }
 
 /**
+ * Push today's universal Word of the Day into the iOS App Group so the
+ * home-screen widget displays it. Safe to call on every app launch — it
+ * is a silent no-op on Android/web and on iOS builds without the native
+ * PlummetAppGroup plugin. Independent of notification permission.
+ */
+export async function pushDailyWordToWidget(wordsData) {
+    if (!wordsData) return false;
+    const wordEntry = selectWordOfDay(wordsData);
+    if (!wordEntry) return false;
+    try {
+        const today = new Date().toISOString().slice(0, 10);
+        const def = wordEntry.definitions?.[0];
+        const { setWordOfDay: setWidgetWord, getWordOfDay: getWidgetWord, reloadWidget } = await import('./app-group.js');
+
+        // Skip if the widget already holds today's word (avoids unnecessary
+        // WidgetKit timeline reloads which can drain budget on iOS).
+        try {
+            const existing = await getWidgetWord();
+            if (existing && existing.word === wordEntry.word.toUpperCase() && existing.date === today) {
+                return true;
+            }
+        } catch { /* fall through and write */ }
+
+        await setWidgetWord({
+            word:       wordEntry.word.toUpperCase(),
+            pos:        def?.pos?.replace(' satellite', '') ?? '',
+            definition: def?.definition ?? '',
+            date:       today,
+        });
+        try { await reloadWidget(); } catch { /* widget reload best-effort */ }
+        return true;
+    } catch (e) {
+        console.warn('[WOTD] pushDailyWordToWidget failed:', e);
+        return false;
+    }
+}
+
+/**
  * Format a word entry for notification display
  */
 export function formatWordForNotification(wordEntry) {
