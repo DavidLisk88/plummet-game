@@ -14811,7 +14811,7 @@ class Game {
                     // ── 5. Hand off to live game ──────────────────
                     {
                         title: 'Your turn — 60 seconds',
-                        body: 'Slide falling letters with the side arrows. Drop fast with the down arrow. Score as much as you can!',
+                        body: 'Swipe left or right to slide the falling letters. Swipe down to drop fast. Score as much as you can!',
                         mode: 'continue',
                         centerCard: true,
                         onAdvance: [
