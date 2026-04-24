@@ -7075,6 +7075,11 @@ class Game {
         document.addEventListener('click', route, true);
         document.addEventListener('pointerup', route, true);
         document.addEventListener('touchend', route, true);
+        // F7: some upstream handler in this codebase calls preventDefault
+        // on touchstart/pointerdown for game gestures, which can cancel
+        // the click. Also route on pointerdown as a last resort —
+        // gateway buttons don't need drag/long-press semantics.
+        document.addEventListener('pointerdown', route, true);
     }
 
     _getMinWordLength() {
