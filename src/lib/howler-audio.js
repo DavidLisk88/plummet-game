@@ -783,45 +783,67 @@ export class HowlerMusicPlayer {
      */
     _rekindleTrack() {
         if (!this.currentTrackId) return;
-        const track = this.plMgr.getTrack(this.currentTrackId);
-        if (!track) return;
-        // Save position before we destroy
-        let pos = 0;
-        try { pos = this._currentHowl ? this._currentHowl.seek() || 0 : 0; } catch {}
-        // Clean up the dead Howl
-        try { if (this._currentHowl) this._currentHowl.unload(); } catch {}
-        this._currentHowl = null;
+        // BUGFIX: re-entrancy guard. If a rekindle is already in flight
+        // (e.g. play() → onplayerror → play() bounce, or watchdog firing
+        // on a half-loaded Howl), skip — otherwise we can stack-overflow
+        // or freeze the main thread synchronously creating Howl objects.
+        if (this._rekindleInFlight) return;
+        // Throttle rekindle attempts — if something keeps tearing down
+        // the Howl (e.g. OS killing decoder), don't burn the CPU.
+        const now = Date.now();
+        if (this._lastRekindleAt && now - this._lastRekindleAt < 1500) return;
+        this._lastRekindleAt = now;
+        this._rekindleInFlight = true;
+        try {
+            const track = this.plMgr.getTrack(this.currentTrackId);
+            if (!track) return;
+            // Save position before we destroy
+            let pos = 0;
+            try { pos = this._currentHowl ? this._currentHowl.seek() || 0 : 0; } catch {}
+            // Clean up the dead Howl
+            try { if (this._currentHowl) this._currentHowl.unload(); } catch {}
+            this._currentHowl = null;
 
-        this._currentHowl = new Howl({
-            src: [track.file],
-            html5: true,
-            volume: this._volume,
-            mute: this.muted,
-            onend: () => this._onTrackEnded(),
-            onload: () => {
-                this._connectHowlToGain(this._currentHowl);
-                this._applyVolume();
-                // Restore position if we had one
-                if (pos > 0 && this._currentHowl.duration() > 0) {
-                    this._currentHowl.seek(Math.min(pos, this._currentHowl.duration()));
-                }
-            },
-            onloaderror: (id, err) => {
-                console.warn('\u266a Rekindle load error:', err);
-                this.playing = false;
-                this._notify();
-            },
-            onplayerror: (id, err) => {
-                console.warn('\u266a Rekindle play error:', err);
-                if (Howler.ctx) Howler.ctx.resume().catch(() => {});
-                try { this._currentHowl.play(); } catch {}
-            },
-        });
+            this._currentHowl = new Howl({
+                src: [track.file],
+                html5: true,
+                volume: this._volume,
+                mute: this.muted,
+                onend: () => this._onTrackEnded(),
+                onload: () => {
+                    this._connectHowlToGain(this._currentHowl);
+                    this._applyVolume();
+                    if (pos > 0 && this._currentHowl.duration() > 0) {
+                        this._currentHowl.seek(Math.min(pos, this._currentHowl.duration()));
+                    }
+                },
+                onloaderror: (id, err) => {
+                    console.warn('\u266a Rekindle load error:', err);
+                    this.playing = false;
+                    this._notify();
+                },
+                onplayerror: (id, err) => {
+                    console.warn('\u266a Rekindle play error:', err);
+                    if (Howler.ctx) Howler.ctx.resume().catch(() => {});
+                    // Do NOT call play() again here synchronously — that
+                    // can re-enter onplayerror in a tight loop. Defer.
+                    setTimeout(() => { try { this._currentHowl && this._currentHowl.play(); } catch {} }, 200);
+                },
+            });
 
-        this._currentHowl.play();
-        this.playing = true;
-        this._startTimeUpdates();
-        this._notify();
+            try { this._currentHowl.play(); } catch (e) { console.warn('\u266a Rekindle play threw:', e); }
+            this.playing = true;
+            this._startTimeUpdates();
+            this._notify();
+        } catch (e) {
+            console.warn('\u266a Rekindle failed:', e);
+            this.playing = false;
+            this._notify();
+        } finally {
+            // Release the guard on the next tick so legitimate later
+            // rekindles can still run.
+            setTimeout(() => { this._rekindleInFlight = false; }, 0);
+        }
     }
 
     _audioWatchdog() {

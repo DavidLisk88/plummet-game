@@ -8563,15 +8563,25 @@ class Game {
     }
 
     _autoplayMusicFromUserAction() {
-        if (this.music.playing) return;
-        // Respect the user's manual pause — don't auto-start if they paused
-        if (localStorage.getItem("wf_music_paused") === "1") return;
-        if (this.music.queue.length === 0) {
-            this.music.refreshQueue();
-        }
-        if (this.music.queue.length > 0) {
-            this.music.play();
-        }
+        // BUGFIX: defer entirely off the click handler thread so any
+        // synchronous hang inside Howler/Web Audio (rekindle paths, dead
+        // Howl unload, decoder stalls on this OS/browser combo) cannot
+        // freeze the game start. Also wrap in try/catch so audio failures
+        // never propagate to the gameplay loop.
+        setTimeout(() => {
+            try {
+                if (this.music.playing) return;
+                if (localStorage.getItem("wf_music_paused") === "1") return;
+                if (this.music.queue.length === 0) {
+                    this.music.refreshQueue();
+                }
+                if (this.music.queue.length > 0) {
+                    this.music.play();
+                }
+            } catch (err) {
+                console.warn('[music] autoplay failed:', err?.message || err);
+            }
+        }, 0);
     }
 
     _checkBonusUnlock(prevScore, newScore) {
