@@ -6166,8 +6166,18 @@ class Game {
                 if (btn.classList.contains('locked')) return;
                 const minutes = parseInt(btn.dataset.minutes, 10);
                 if (!Number.isFinite(minutes)) return;
-                this._closeTimeSelectModal();
-                this._maybeShowPerkSelect(minutes * 60);
+                window.__dbg?.('[trace] direct time-btn click ' + minutes + 'm');
+                setTimeout(() => {
+                    try {
+                        window.__dbg?.('[trace] direct: closing modal');
+                        this._closeTimeSelectModal();
+                        window.__dbg?.('[trace] direct: -> _maybeShowPerkSelect');
+                        this._maybeShowPerkSelect(minutes * 60);
+                        window.__dbg?.('[trace] direct: _maybeShowPerkSelect returned');
+                    } catch (err) {
+                        window.__dbg?.('[trace ERR direct] ' + (err?.stack || err?.message || err));
+                    }
+                }, 50);
             });
         });
 
