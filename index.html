@@ -45,6 +45,13 @@
             window.addEventListener('unhandledrejection', (ev) => {
                 log('[reject] ' + (ev.reason?.message || ev.reason || 'unknown'));
             });
+            // Log EVERY pointerdown so we can see if input reaches JS at all,
+            // and what element is actually at the tap point.
+            window.addEventListener('pointerdown', (ev) => {
+                const top = document.elementFromPoint(ev.clientX, ev.clientY);
+                const desc = top ? (top.id ? '#' + top.id : top.tagName + '.' + (top.className || '').toString().slice(0, 40)) : 'null';
+                log('[tap ' + Math.round(ev.clientX) + ',' + Math.round(ev.clientY) + '] top=' + desc + ' z=' + (top ? getComputedStyle(top).zIndex : '-') + ' pe=' + (top ? getComputedStyle(top).pointerEvents : '-'));
+            }, true);
             document.addEventListener('DOMContentLoaded', () => document.body.prepend(banner));
         })();
     </script>
