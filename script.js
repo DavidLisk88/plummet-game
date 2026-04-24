@@ -5398,6 +5398,7 @@ class Game {
         this._bindWelcome();
         this._bindSignUpPrompt();
         this._installClickBlockerLogger();
+        this._installGatewayClickFallback();
         this._bindLeaderboard();
         this._bindWordSearch();
         this._bindWordRunner();
@@ -7003,6 +7004,69 @@ class Game {
     _closeTimeSelectModal() {
         this.pendingStartMode = null;
         this.els.timeSelectModal.classList.remove("active");
+    }
+
+    /**
+     * F6: Last-resort fallback. Captures clicks/taps at the document
+     * level (capture phase, before any other handler) and routes them
+     * to the correct gateway-modal handler if the target is inside an
+     * active gateway modal. Idempotent — only attaches once.
+     */
+    _installGatewayClickFallback() {
+        if (this._gatewayClickFallbackInstalled) return;
+        this._gatewayClickFallbackInstalled = true;
+        const route = (ev) => {
+            const target = ev.target;
+            if (!target || !target.closest) return;
+            // Time select
+            const timeBtn = target.closest('.time-select-btn');
+            if (timeBtn && this.els.timeSelectModal?.classList.contains('active')) {
+                if (timeBtn.classList.contains('locked')) return;
+                const minutes = parseInt(timeBtn.dataset.minutes, 10);
+                if (!Number.isFinite(minutes)) return;
+                ev.stopPropagation();
+                ev.preventDefault();
+                this._closeTimeSelectModal();
+                this._maybeShowPerkSelect(minutes * 60);
+                return;
+            }
+            const timeCancel = target.closest('#time-select-cancel-btn');
+            if (timeCancel && this.els.timeSelectModal?.classList.contains('active')) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                this._closeTimeSelectModal();
+                return;
+            }
+            // Perk select skip
+            const perkSkip = target.closest('#perk-select-skip-btn');
+            if (perkSkip && this.els.perkSelectModal?.classList.contains('active')) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                this._chosenPerk = null;
+                this._closePerkSelectModal();
+                this._beginNewGame(this._pendingTimeLimitSeconds || 0);
+                return;
+            }
+            // Confirm new game
+            const confirmYes = target.closest('#confirm-new-game-btn');
+            if (confirmYes && this.els.confirmNewGameModal?.classList.contains('active')) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                this._proceedWithNewGame();
+                this._closeConfirmNewGameModal();
+                return;
+            }
+            const confirmNo = target.closest('#confirm-new-game-cancel-btn');
+            if (confirmNo && this.els.confirmNewGameModal?.classList.contains('active')) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                this._closeConfirmNewGameModal();
+                return;
+            }
+        };
+        document.addEventListener('click', route, true);
+        document.addEventListener('pointerup', route, true);
+        document.addEventListener('touchend', route, true);
     }
 
     _getMinWordLength() {
