@@ -381,6 +381,8 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'apikey': ANON_KEY,
+                        'Authorization': `Bearer ${ANON_KEY}`,
                         'X-Admin-Token': ADMIN_TOKEN,
                     },
                     body: JSON.stringify({ title, body, target }),
