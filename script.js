@@ -6993,6 +6993,16 @@ class Game {
     }
 
     _openTimeSelectModal() {
+        // Diagnostic: dump active-profile data sizes to find the bloat field.
+        try {
+            const p = this.profileMgr.getActive() || {};
+            const sz = (v) => {
+                try { return JSON.stringify(v).length; } catch { return -1; }
+            };
+            window.__dbg?.('[diag profile] uw=' + sz(p.uniqueWordsFound) + ' cm=' + sz(p.claimedMilestones) + ' perks=' + sz(p.perks) + ' bonus=' + sz(p.bonusSlotContents) + ' chal=' + sz(p.challengeStats) + ' ug=' + sz(p.unlockedGrids) + ' eq=' + sz(p.equipped));
+        } catch (e) {
+            window.__dbg?.('[diag profile ERR] ' + (e?.message || e));
+        }
         // F1/F3: clear any deferred post-game prompts and queued welcome
         // tour before showing a gateway modal. Without this, a setTimeout
         // from _checkSignUpPrompt or the guided-tour poller can race and
