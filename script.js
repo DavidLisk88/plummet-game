@@ -7042,6 +7042,10 @@ class Game {
                 ev.stopPropagation();
                 ev.preventDefault();
                 window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type);
+                // Diagnostic ladder: which async levels still fire?
+                Promise.resolve().then(() => window.__dbg?.('[trace] microtask OK'));
+                requestAnimationFrame(() => window.__dbg?.('[trace] rAF OK'));
+                setTimeout(() => window.__dbg?.('[trace] setTimeout(0) OK'), 0);
                 // Defer to next frame so the banner repaints BEFORE we
                 // potentially hang inside _maybeShowPerkSelect/_beginNewGame.
                 setTimeout(() => {
