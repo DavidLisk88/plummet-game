@@ -7032,15 +7032,19 @@ class Game {
                 ev.stopPropagation();
                 ev.preventDefault();
                 window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type);
-                try {
-                    this._closeTimeSelectModal();
-                    window.__dbg?.('[trace] time modal closed');
-                    this._maybeShowPerkSelect(minutes * 60);
-                    window.__dbg?.('[trace] _maybeShowPerkSelect returned');
-                } catch (err) {
-                    window.__dbg?.('[trace ERR] ' + (err?.stack || err?.message || err));
-                    throw err;
-                }
+                // Defer to next frame so the banner repaints BEFORE we
+                // potentially hang inside _maybeShowPerkSelect/_beginNewGame.
+                setTimeout(() => {
+                    try {
+                        window.__dbg?.('[trace] closing time modal');
+                        this._closeTimeSelectModal();
+                        window.__dbg?.('[trace] calling _maybeShowPerkSelect');
+                        this._maybeShowPerkSelect(minutes * 60);
+                        window.__dbg?.('[trace] _maybeShowPerkSelect returned OK');
+                    } catch (err) {
+                        window.__dbg?.('[trace ERR] ' + (err?.stack || err?.message || err));
+                    }
+                }, 50);
                 return;
             }
             const timeCancel = target.closest('#time-select-cancel-btn');
@@ -9305,6 +9309,7 @@ class Game {
 
     /** Check if player has perks; if so show selection modal, otherwise start immediately */
     _maybeShowPerkSelect(timeLimitSeconds) {
+        window.__dbg?.('[trace] _maybeShowPerkSelect start');
         this._pendingTimeLimitSeconds = timeLimitSeconds;
         this._chosenPerk = null;
 
@@ -9315,12 +9320,16 @@ class Game {
                 ownedPerks.push({ id, ...item, count: this.profileMgr.getPerkCount(id) });
             }
         }
+        window.__dbg?.('[trace] perks owned=' + ownedPerks.length);
 
         if (ownedPerks.length === 0) {
+            window.__dbg?.('[trace] -> _beginNewGame(direct)');
             this._beginNewGame(timeLimitSeconds);
+            window.__dbg?.('[trace] _beginNewGame returned');
             return;
         }
 
+        window.__dbg?.('[trace] -> _openPerkSelectModal');
         this._openPerkSelectModal(ownedPerks);
     }
 
@@ -9349,6 +9358,7 @@ class Game {
     }
 
     _beginNewGame(timeLimitSeconds = 0) {
+        window.__dbg?.('[trace] _beginNewGame start, time=' + timeLimitSeconds);
         this.grid = new Grid(this.gridSize, this.gridSize);
         this.score = 0;
         this.timeLimitSeconds = timeLimitSeconds;
@@ -9374,7 +9384,9 @@ class Game {
         this.renderer.validatedCells = new Set();
         this._activeHintKey = null;
         this.pendingGravityMoves = [];
+        window.__dbg?.('[trace] _beginNewGame: about to _pickNextLetter');
         this.nextLetter = this._pickNextLetter();
+        window.__dbg?.('[trace] _beginNewGame: _pickNextLetter OK');
         this.wordsFound = [];  // track all words found this round
         this.foundWordsThisGame = new Set();
         this.categoryWordsFound = [];  // track category words found this round
@@ -9526,10 +9538,13 @@ class Game {
         });
 
         // Start or resume music from the player's start-game action.
+        window.__dbg?.('[trace] _beginNewGame: -> _autoplayMusicFromUserAction');
         this._autoplayMusicFromUserAction();
+        window.__dbg?.('[trace] _beginNewGame: music OK');
 
         // Keep screen awake during gameplay
         this._keepAwake(true);
+        window.__dbg?.('[trace] _beginNewGame: keepAwake OK');
 
         // Resize canvas immediately
         requestAnimationFrame(() => {
@@ -9553,8 +9568,11 @@ class Game {
             this._openTutorialCategory(0, 'root');
             this.els.tutorialOverlay.classList.add('active');
         } else {
+            window.__dbg?.('[trace] _beginNewGame: -> _spawnBlock');
             this._spawnBlock();
+            window.__dbg?.('[trace] _beginNewGame: _spawnBlock OK');
         }
+        window.__dbg?.('[trace] _beginNewGame done');
     }
 
     /**
