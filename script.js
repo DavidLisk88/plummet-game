@@ -7042,10 +7042,16 @@ class Game {
                 ev.stopPropagation();
                 ev.preventDefault();
                 window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type);
+                // Reset _loop trace counter so we capture next 3 ticks
+                this._loopTraceCount = 0;
                 // Diagnostic ladder: which async levels still fire?
                 Promise.resolve().then(() => window.__dbg?.('[trace] microtask OK'));
-                requestAnimationFrame(() => window.__dbg?.('[trace] rAF OK'));
+                requestAnimationFrame(() => {
+                    window.__dbg?.('[trace] rAF OK');
+                    requestAnimationFrame(() => window.__dbg?.('[trace] rAF#2 OK'));
+                });
                 setTimeout(() => window.__dbg?.('[trace] setTimeout(0) OK'), 0);
+                queueMicrotask(() => window.__dbg?.('[trace] queueMicrotask OK'));
                 // Defer to next frame so the banner repaints BEFORE we
                 // potentially hang inside _maybeShowPerkSelect/_beginNewGame.
                 setTimeout(() => {
@@ -20018,6 +20024,11 @@ class Game {
 
     // ── Main loop ──
     _loop(timestamp) {
+        if (this._loopTraceCount === undefined) this._loopTraceCount = 0;
+        if (this._loopTraceCount < 3) {
+            window.__dbg?.('[trace] _loop tick #' + this._loopTraceCount + ' state=' + this.state);
+            this._loopTraceCount++;
+        }
         const dt = this.lastTime ? Math.min((timestamp - this.lastTime) / 1000, 0.1) : 0;
         this.lastTime = timestamp;
 
