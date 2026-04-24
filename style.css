@@ -1687,6 +1687,18 @@ body.touch-input #mobile-controls {
     animation: overlayFadeIn 0.25s var(--ease-out-3, ease);
 }
 
+/* Gateway modals (start a game): MUST stack above ambient post-game
+   prompts (signup, milestone toasts, etc.) which share the base .overlay
+   z-index of 10. Without this bump, a deferred signup-prompt could
+   render later in the DOM and silently swallow taps on the time/perk
+   buttons. Stays below #level-up-overlay (z-index 200) which the user
+   must explicitly dismiss. */
+#time-select-modal.active,
+#perk-select-modal.active,
+#confirm-new-game-modal.active {
+    z-index: 50;
+}
+
 @keyframes overlayFadeIn {
     from { opacity: 0; }
     to { opacity: 1; }

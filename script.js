@@ -5397,6 +5397,7 @@ class Game {
         this._bindAuth();
         this._bindWelcome();
         this._bindSignUpPrompt();
+        this._installClickBlockerLogger();
         this._bindLeaderboard();
         this._bindWordSearch();
         this._bindWordRunner();
@@ -6188,6 +6189,9 @@ class Game {
     }
 
     _openConfirmNewGameModal(gameType, challengeType = null) {
+        // F1/F3: see _openTimeSelectModal — clear racy deferred overlays
+        // before showing this gateway modal.
+        this._dismissBlockingOverlays('confirm-new-game');
         this._pendingNewGameType = gameType; // "main" or "challenge"
         this._pendingNewGameChallenge = challengeType;
         
@@ -6978,6 +6982,12 @@ class Game {
     }
 
     _openTimeSelectModal() {
+        // F1/F3: clear any deferred post-game prompts and queued welcome
+        // tour before showing a gateway modal. Without this, a setTimeout
+        // from _checkSignUpPrompt or the guided-tour poller can race and
+        // render a higher-DOM-order overlay on top of time-select,
+        // silently swallowing every tap on the time buttons.
+        this._dismissBlockingOverlays('time-select');
         this.pendingStartMode = this._getSelectedGameMode();
         const level = this.profileMgr.getActive()?.level || 1;
         document.querySelectorAll('.time-select-btn').forEach(btn => {
@@ -7185,6 +7195,21 @@ class Game {
         const homePage = this.els.menuSlideStrip?.children[3];
         if (homePage) homePage.scrollTop = 0;
 
+        // F2: unconditionally dismiss leftover post-game XP/level-up
+        // overlays when entering the menu. Previously this cleanup only
+        // ran when the welcome tour was about to start, so on subsequent
+        // games a leveled-up popup could remain `.active` over the menu
+        // and silently intercept taps on Timed/Start/etc.
+        try {
+            if (this.els.xpTutorialOverlay?.classList.contains('active')) {
+                this._stopXPTutorialAnim?.();
+                this.els.xpTutorialOverlay.classList.remove('active');
+            }
+            if (this.els.levelUpOverlay?.classList.contains('active')) {
+                this.els.levelUpOverlay.classList.remove('active');
+            }
+        } catch (_) {}
+
         // G1: profile-backed source of truth. The transient flag
         // `_pendingFirstGameMenuTour` can be missed (e.g. if the user
         // navigates back to gameover and re-enters menu). The post-
@@ -7200,17 +7225,6 @@ class Game {
 
         if (shouldTriggerFirstGameTour) {
             this._pendingFirstGameMenuTour = false;
-            // G2: dismiss any first-game XP tutorial overlay still open so
-            // attemptStart's blocked-check can pass on the first tick.
-            try {
-                if (this.els.xpTutorialOverlay?.classList.contains('active')) {
-                    this._stopXPTutorialAnim?.();
-                    this.els.xpTutorialOverlay.classList.remove('active');
-                }
-                if (this.els.levelUpOverlay?.classList.contains('active')) {
-                    this.els.levelUpOverlay.classList.remove('active');
-                }
-            } catch (_) {}
             this._queueFirstGameGuidedTour();
         }
     }
@@ -9225,6 +9239,9 @@ class Game {
     }
 
     _openPerkSelectModal(ownedPerks) {
+        // F1/F3: see _openTimeSelectModal — clear racy deferred overlays
+        // before showing this gateway modal.
+        this._dismissBlockingOverlays('perk-select');
         const grid = this.els.perkSelectGrid;
         grid.innerHTML = "";
         for (const perk of ownedPerks) {
@@ -20566,6 +20583,89 @@ class Game {
     }
 
     /**
+     * F1/F3: dismiss ambient post-game prompts and cancel any queued
+     * welcome tour before opening a "gateway" modal (time-select,
+     * perk-select, confirm-new-game). These fire from setTimeouts and
+     * can race with the user, silently overlaying gateway taps.
+     * @param {string} _source - debug tag for the caller
+     */
+    _dismissBlockingOverlays(_source) {
+        // Cancel any queued/scheduled signup prompt
+        if (this._signupRedeferTimer) {
+            clearTimeout(this._signupRedeferTimer);
+            this._signupRedeferTimer = null;
+        }
+        this._pendingSignUpPromptReason = null;
+        const sp = document.getElementById('signup-prompt-overlay');
+        if (sp?.classList.contains('active')) sp.classList.remove('active');
+
+        // Dismiss leftover XP / level-up popups
+        try {
+            if (this.els.xpTutorialOverlay?.classList.contains('active')) {
+                this._stopXPTutorialAnim?.();
+                this.els.xpTutorialOverlay.classList.remove('active');
+            }
+            if (this.els.levelUpOverlay?.classList.contains('active')) {
+                this.els.levelUpOverlay.classList.remove('active');
+            }
+        } catch (_) {}
+
+        // Cancel queued first-game guided tour — user is starting a
+        // new game, the tour can wait for the next menu visit.
+        if (this._firstGameTourTimer) {
+            clearTimeout(this._firstGameTourTimer);
+            this._firstGameTourTimer = null;
+        }
+        this._firstGameTourQueued = false;
+    }
+
+    /** F1: true if a modal/popup is on screen that the user must dismiss. */
+    _isAnyBlockingOverlayActive() {
+        const ids = [
+            'time-select-modal',
+            'perk-select-modal',
+            'confirm-new-game-modal',
+            'level-up-overlay',
+            'xp-tutorial-overlay',
+            'pause-overlay',
+            'ws-pause-overlay',
+            'wr-pause-overlay',
+        ];
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            if (el?.classList.contains('active')) return true;
+        }
+        if (this._guidedTour?.active) return true;
+        return false;
+    }
+
+    /**
+     * F5: optional click-blocker diagnostic. Toggle with
+     *   window._game._debugClickBlockers = true
+     * Logs whenever a tap lands on something other than its intended
+     * target (i.e. an invisible overlay swallowed the click).
+     */
+    _installClickBlockerLogger() {
+        if (this._clickBlockerLoggerInstalled) return;
+        this._clickBlockerLoggerInstalled = true;
+        document.addEventListener('click', (ev) => {
+            if (!this._debugClickBlockers) return;
+            const top = document.elementFromPoint(ev.clientX, ev.clientY);
+            if (top && top !== ev.target && !top.contains(ev.target) && !ev.target.contains(ev.target === top ? null : top)) {
+                console.warn('[click-blocker]', {
+                    intended: ev.target,
+                    intendedId: ev.target?.id,
+                    intendedClass: ev.target?.className,
+                    actualTop: top,
+                    actualTopId: top?.id,
+                    actualTopClass: top?.className,
+                    activeOverlays: [...document.querySelectorAll('.overlay.active')].map(e => e.id || e.className),
+                });
+            }
+        }, true);
+    }
+
+    /**
      * Show the sign-up prompt modal.
      * @param {string} reason - 'milestone_5', 'milestone_20', 'profile_limit', 'manual'
      */
@@ -20578,6 +20678,18 @@ class Game {
             if (reason !== 'manual') {
                 this._pendingSignUpPromptReason = reason;
             }
+            return;
+        }
+
+        // F1: never cover an active gateway/blocking overlay (time-select,
+        // perk-select, confirm-new-game, level-up, xp-tutorial, pause,
+        // challenge setup, etc.). Re-defer in 1500ms instead of stacking.
+        if (reason !== 'manual' && this._isAnyBlockingOverlayActive()) {
+            if (this._signupRedeferTimer) clearTimeout(this._signupRedeferTimer);
+            this._signupRedeferTimer = setTimeout(() => {
+                this._signupRedeferTimer = null;
+                this._showSignUpPrompt(reason);
+            }, 1500);
             return;
         }
 

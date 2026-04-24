@@ -1,6 +1,6 @@
 {
   "name": "plummet",
-  "version": "1.2.1",
+  "version": "1.4.5",
   "description": "A falling-letter word puzzle game",
   "scripts": {
     "dev": "vite",
