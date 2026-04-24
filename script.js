@@ -7052,6 +7052,7 @@ class Game {
                 ev.stopPropagation();
                 ev.preventDefault();
                 window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type + ' mtask=' + (window.__getMtaskCount?.() || '?'));
+                document.title = 'TAP@' + Math.round(performance.now());
                 // Reset _loop trace counter so we capture next 3 ticks
                 this._loopTraceCount = 0;
                 // Diagnostic ladder: which async levels still fire?
@@ -7062,17 +7063,29 @@ class Game {
                 });
                 setTimeout(() => window.__dbg?.('[trace] setTimeout(0) OK'), 0);
                 queueMicrotask(() => window.__dbg?.('[trace] queueMicrotask OK'));
+                // Probe: bare 50ms timer that does nothing but set title.
+                // If this fires but the heavy one below doesn't, the fault
+                // is inside the body (sync hang). If neither fires, the
+                // 50ms macrotask queue itself is starved (microtask flood).
+                setTimeout(() => { document.title = 'BARE50@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(50) OK'); }, 50);
+                setTimeout(() => { document.title = 'BARE100@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(100) OK'); }, 100);
+                setTimeout(() => { document.title = 'BARE500@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(500) OK'); }, 500);
+                setTimeout(() => { document.title = 'BARE2000@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(2000) OK'); }, 2000);
                 // Defer to next frame so the banner repaints BEFORE we
                 // potentially hang inside _maybeShowPerkSelect/_beginNewGame.
                 setTimeout(() => {
+                    document.title = 'DEFER@' + Math.round(performance.now()) + ' mt=' + (window.__getMtaskCount?.() || '?');
+                    window.__dbg?.('[trace] DEFER entered mt=' + (window.__getMtaskCount?.() || '?'));
                     try {
                         window.__dbg?.('[trace] closing time modal');
                         this._closeTimeSelectModal();
                         window.__dbg?.('[trace] calling _maybeShowPerkSelect');
                         this._maybeShowPerkSelect(minutes * 60);
                         window.__dbg?.('[trace] _maybeShowPerkSelect returned OK');
+                        document.title = 'DEFER_OK@' + Math.round(performance.now());
                     } catch (err) {
                         window.__dbg?.('[trace ERR] ' + (err?.stack || err?.message || err));
+                        document.title = 'DEFER_ERR ' + (err?.message || err);
                     }
                 }, 50);
                 return;
