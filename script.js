@@ -6166,18 +6166,8 @@ class Game {
                 if (btn.classList.contains('locked')) return;
                 const minutes = parseInt(btn.dataset.minutes, 10);
                 if (!Number.isFinite(minutes)) return;
-                window.__dbg?.('[trace] direct time-btn click ' + minutes + 'm');
-                setTimeout(() => {
-                    try {
-                        window.__dbg?.('[trace] direct: closing modal');
-                        this._closeTimeSelectModal();
-                        window.__dbg?.('[trace] direct: -> _maybeShowPerkSelect');
-                        this._maybeShowPerkSelect(minutes * 60);
-                        window.__dbg?.('[trace] direct: _maybeShowPerkSelect returned');
-                    } catch (err) {
-                        window.__dbg?.('[trace ERR direct] ' + (err?.stack || err?.message || err));
-                    }
-                }, 50);
+                this._closeTimeSelectModal();
+                this._maybeShowPerkSelect(minutes * 60);
             });
         });
 
@@ -6993,22 +6983,26 @@ class Game {
     }
 
     _openTimeSelectModal() {
-        // Diagnostic: dump active-profile data sizes to find the bloat field.
-        try {
-            const p = this.profileMgr.getActive() || {};
-            const sz = (v) => {
-                try { return JSON.stringify(v).length; } catch { return -1; }
-            };
-            window.__dbg?.('[PIN] profile uw=' + sz(p.uniqueWordsFound) + ' cm=' + sz(p.claimedMilestones) + ' perks=' + sz(p.perks) + ' bonus=' + sz(p.bonusSlotContents) + ' chal=' + sz(p.challengeStats) + ' ug=' + sz(p.unlockedGrids) + ' eq=' + sz(p.equipped) + ' all=' + sz(p));
-        } catch (e) {
-            window.__dbg?.('[diag profile ERR] ' + (e?.message || e));
-        }
         // F1/F3: clear any deferred post-game prompts and queued welcome
         // tour before showing a gateway modal. Without this, a setTimeout
         // from _checkSignUpPrompt or the guided-tour poller can race and
         // render a higher-DOM-order overlay on top of time-select,
         // silently swallowing every tap on the time buttons.
         this._dismissBlockingOverlays('time-select');
+        // BUGFIX: hard-cancel the post-first-game tour poller. The user
+        // is actively trying to start another game; the tour must not
+        // fire on top of (or after) this gateway modal. Without this,
+        // the recurring 350ms attemptStart from _queueFirstGameGuidedTour
+        // could trigger _startGuidedTour during the click handler chain,
+        // freezing the page.
+        this._firstGameTourQueued = false;
+        if (this._firstGameTourTimer) {
+            try { clearTimeout(this._firstGameTourTimer); } catch (_) {}
+            this._firstGameTourTimer = null;
+        }
+        if (this._guidedTour?.active) {
+            try { this._stopGuidedTour(false); } catch (_) {}
+        }
         this.pendingStartMode = this._getSelectedGameMode();
         const level = this.profileMgr.getActive()?.level || 1;
         document.querySelectorAll('.time-select-btn').forEach(btn => {
@@ -7051,43 +7045,8 @@ class Game {
                 this._lastGatewayRouteAt = now;
                 ev.stopPropagation();
                 ev.preventDefault();
-                window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type + ' mtask=' + (window.__getMtaskCount?.() || '?'));
-                document.title = 'TAP@' + Math.round(performance.now());
-                // Reset _loop trace counter so we capture next 3 ticks
-                this._loopTraceCount = 0;
-                // Diagnostic ladder: which async levels still fire?
-                Promise.resolve().then(() => window.__dbg?.('[trace] microtask OK'));
-                requestAnimationFrame(() => {
-                    window.__dbg?.('[trace] rAF OK');
-                    requestAnimationFrame(() => window.__dbg?.('[trace] rAF#2 OK'));
-                });
-                setTimeout(() => window.__dbg?.('[trace] setTimeout(0) OK'), 0);
-                queueMicrotask(() => window.__dbg?.('[trace] queueMicrotask OK'));
-                // Probe: bare 50ms timer that does nothing but set title.
-                // If this fires but the heavy one below doesn't, the fault
-                // is inside the body (sync hang). If neither fires, the
-                // 50ms macrotask queue itself is starved (microtask flood).
-                setTimeout(() => { document.title = 'BARE50@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(50) OK'); }, 50);
-                setTimeout(() => { document.title = 'BARE100@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(100) OK'); }, 100);
-                setTimeout(() => { document.title = 'BARE500@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(500) OK'); }, 500);
-                setTimeout(() => { document.title = 'BARE2000@' + Math.round(performance.now()); window.__dbg?.('[trace] BARE setTimeout(2000) OK'); }, 2000);
-                // Defer to next frame so the banner repaints BEFORE we
-                // potentially hang inside _maybeShowPerkSelect/_beginNewGame.
-                setTimeout(() => {
-                    document.title = 'DEFER@' + Math.round(performance.now()) + ' mt=' + (window.__getMtaskCount?.() || '?');
-                    window.__dbg?.('[trace] DEFER entered mt=' + (window.__getMtaskCount?.() || '?'));
-                    try {
-                        window.__dbg?.('[trace] closing time modal');
-                        this._closeTimeSelectModal();
-                        window.__dbg?.('[trace] calling _maybeShowPerkSelect');
-                        this._maybeShowPerkSelect(minutes * 60);
-                        window.__dbg?.('[trace] _maybeShowPerkSelect returned OK');
-                        document.title = 'DEFER_OK@' + Math.round(performance.now());
-                    } catch (err) {
-                        window.__dbg?.('[trace ERR] ' + (err?.stack || err?.message || err));
-                        document.title = 'DEFER_ERR ' + (err?.message || err);
-                    }
-                }, 50);
+                this._closeTimeSelectModal();
+                this._maybeShowPerkSelect(minutes * 60);
                 return;
             }
             const timeCancel = target.closest('#time-select-cancel-btn');
@@ -10857,7 +10816,16 @@ class Game {
                 this._guidedTour.active ||
                 this.els.levelUpOverlay?.classList.contains('active') ||
                 this.els.xpTutorialOverlay?.classList.contains('active') ||
-                document.getElementById('signup-prompt-overlay')?.classList.contains('active');
+                document.getElementById('signup-prompt-overlay')?.classList.contains('active') ||
+                // BUGFIX: also wait if user has any gateway modal open — they
+                // are mid-flow toward starting a game and the tour would
+                // collide with their interaction (causing the tap-to-play
+                // freeze on accounts that completed their first game).
+                this.els.timeSelectModal?.classList.contains('active') ||
+                this.els.perkSelectModal?.classList.contains('active') ||
+                this.els.confirmNewGameModal?.classList.contains('active') ||
+                // Also skip if user has navigated away from the menu screen.
+                this._activeScreen !== 'menu';
 
             if (blocked) {
                 this._firstGameTourTimer = setTimeout(attemptStart, 350);
