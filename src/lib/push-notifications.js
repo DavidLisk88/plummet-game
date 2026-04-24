@@ -37,7 +37,6 @@ export async function registerPushNotifications() {
             console.log('[push] Registered with token:', token.value.substring(0, 20) + '...');
             _currentToken = token.value;
             await _saveToken(token.value);
-            _registered = true;
         });
 
         // Listen for registration errors
@@ -65,10 +64,24 @@ export async function registerPushNotifications() {
 }
 
 /**
- * Save push token to Supabase via RPC
+ * Save push token to Supabase via RPC.
+ * If no session is active yet, waits for SIGNED_IN before retrying.
  */
 async function _saveToken(token) {
     try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData?.session?.user) {
+            // No active session yet — wait for sign-in then retry once
+            console.log('[push] No session yet, deferring token save until sign-in');
+            const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+                if (event === 'SIGNED_IN') {
+                    subscription.unsubscribe();
+                    _saveToken(token);
+                }
+            });
+            return;
+        }
+
         const platform = Capacitor.getPlatform(); // 'ios' | 'android'
         const { error } = await supabase.rpc('register_push_token', {
             p_token: token,
@@ -78,6 +91,7 @@ async function _saveToken(token) {
             console.warn('[push] Failed to save token:', error.message);
         } else {
             console.log('[push] Token saved to Supabase');
+            _registered = true;
         }
     } catch (err) {
         console.warn('[push] Token save error:', err);
