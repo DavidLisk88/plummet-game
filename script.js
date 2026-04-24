@@ -2940,6 +2940,8 @@ class Renderer {
     }
 
     draw(grid, block, dt) {
+        const __dbg = window.__drawTrace;
+        if (__dbg) console.log('[draw] enter cs=' + this.cellSize + ' rows=' + grid.rows + ' cols=' + grid.cols + ' hasBlock=' + !!block);
         const ctx = this.ctx;
         const cs = this.cellSize;
         const rows = grid.rows;
@@ -2984,6 +2986,7 @@ class Renderer {
         ctx.stroke();
 
         // Grid cells
+        if (__dbg) console.log('[draw] before grid cells loop');
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
                 const x = this.offsetX + c * cs;
@@ -3058,6 +3061,7 @@ class Renderer {
         }
 
         // Gravity animations (letters sliding down)
+        if (__dbg) console.log('[draw] grid cells OK, gravityAnims=' + this.gravityAnims.length);
         for (const anim of this.gravityAnims) {
             const currentRow = anim.fromRow + (anim.toRow - anim.fromRow) * anim.progress;
             const x = this.offsetX + anim.col * cs;
@@ -3086,6 +3090,7 @@ class Renderer {
         }
 
         // Grid lines
+        if (__dbg) console.log('[draw] before grid lines');
         ctx.strokeStyle = T.gridLine;
         ctx.lineWidth = 1;
         for (let r = 0; r <= rows; r++) {
@@ -3101,7 +3106,9 @@ class Renderer {
             ctx.stroke();
         }
 
+        if (__dbg) console.log('[draw] before getGhostRow');
         const ghostRow = block ? this.getGhostRow(grid, block) : null;
+        if (__dbg) console.log('[draw] getGhostRow OK ghostRow=' + ghostRow);
 
         if (block && ghostRow !== null) {
             const ghostX = this.offsetX + block.col * cs;
@@ -3117,6 +3124,7 @@ class Renderer {
         }
 
         // Falling block (smooth position)
+        if (__dbg) console.log('[draw] before falling block draw');
         if (block) {
             const x = this.offsetX + block.col * cs;
             const y = this.offsetY + block.visualRow * cs;
@@ -3131,6 +3139,7 @@ class Renderer {
         }
 
         // Impact rings (landing effect)
+        if (__dbg) console.log('[draw] before impact rings impactRings=' + this.impactRings.length + ' particles=' + this.particles.length);
         for (let i = this.impactRings.length - 1; i >= 0; i--) {
             const ring = this.impactRings[i];
             ring.progress += dt * 4; // complete in ~0.25s
@@ -3159,6 +3168,7 @@ class Renderer {
 
         // End shake transform
         ctx.restore();
+        if (__dbg) console.log('[draw] DONE');
     }
 
     // Spawn particles at cell centers
@@ -9372,6 +9382,9 @@ class Game {
     _beginNewGame(timeLimitSeconds = 0) {
         console.log('[bng] start time=' + timeLimitSeconds);
         this._loopTraceN = 0;
+        window.__drawTrace = true;
+        // Auto-disable draw trace after 3 seconds so console doesn't flood
+        setTimeout(() => { window.__drawTrace = false; }, 3000);
         this.grid = new Grid(this.gridSize, this.gridSize);
         console.log('[bng] grid OK');
         this.score = 0;
