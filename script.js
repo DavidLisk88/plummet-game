@@ -7052,10 +7052,6 @@ class Game {
                 ev.stopPropagation();
                 ev.preventDefault();
                 window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type);
-                // Enable rAF tracing for the next ~1 second so we can see
-                // exactly which animation-frame callback hangs.
-                window.__rafTrace = true;
-                setTimeout(() => { window.__rafTrace = false; }, 1500);
                 // Reset _loop trace counter so we capture next 3 ticks
                 this._loopTraceCount = 0;
                 // Diagnostic ladder: which async levels still fire?
