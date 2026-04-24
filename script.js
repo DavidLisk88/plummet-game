@@ -2942,6 +2942,12 @@ class Renderer {
     draw(grid, block, dt) {
         const __dbg = window.__drawTrace;
         if (__dbg) console.log('[draw] enter cs=' + this.cellSize + ' rows=' + grid.rows + ' cols=' + grid.cols + ' hasBlock=' + !!block);
+        // Defensive: if canvas hasn't been sized yet, skip this frame.
+        if (!this.cellSize || this.cellSize <= 0 || !isFinite(this.cellSize)) {
+            if (__dbg) console.warn('[draw] skipping frame: invalid cellSize=' + this.cellSize);
+            try { this.resize(grid.rows, grid.cols); } catch (_) {}
+            if (!this.cellSize || this.cellSize <= 0) return;
+        }
         const ctx = this.ctx;
         const cs = this.cellSize;
         const rows = grid.rows;
@@ -9578,7 +9584,9 @@ class Game {
         // Keep screen awake during gameplay
         this._keepAwake(true);
 
-        // Resize canvas immediately
+        // Resize canvas immediately (synchronously) so first draw has a valid cellSize.
+        // Also schedule a follow-up resize in case the layout hasn't settled yet.
+        try { this.renderer.resize(this.gridSize, this.gridSize); } catch (e) { console.error('[bng] sync resize failed', e); }
         requestAnimationFrame(() => {
             this.renderer.resize(this.gridSize, this.gridSize);
         });
