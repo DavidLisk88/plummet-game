@@ -6999,7 +6999,7 @@ class Game {
             const sz = (v) => {
                 try { return JSON.stringify(v).length; } catch { return -1; }
             };
-            window.__dbg?.('[diag profile] uw=' + sz(p.uniqueWordsFound) + ' cm=' + sz(p.claimedMilestones) + ' perks=' + sz(p.perks) + ' bonus=' + sz(p.bonusSlotContents) + ' chal=' + sz(p.challengeStats) + ' ug=' + sz(p.unlockedGrids) + ' eq=' + sz(p.equipped));
+            window.__dbg?.('[PIN] profile uw=' + sz(p.uniqueWordsFound) + ' cm=' + sz(p.claimedMilestones) + ' perks=' + sz(p.perks) + ' bonus=' + sz(p.bonusSlotContents) + ' chal=' + sz(p.challengeStats) + ' ug=' + sz(p.unlockedGrids) + ' eq=' + sz(p.equipped) + ' all=' + sz(p));
         } catch (e) {
             window.__dbg?.('[diag profile ERR] ' + (e?.message || e));
         }
