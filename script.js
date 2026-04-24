@@ -9432,21 +9432,23 @@ class Game {
             this._dailyWordClaimed = true;
         }
 
-        // Load universal daily word from enriched dictionary
-        if (ENRICHED_DICT && Object.keys(ENRICHED_DICT).length > 0) {
-            import('./src/lib/word-of-day.js').then(({ getTodaysDailyWord }) => {
-                this._todaysDailyWord = getTodaysDailyWord(ENRICHED_DICT);
-                if (this._todaysDailyWord) {
-                    console.log(`[WotD] Today's daily word loaded: ${this._todaysDailyWord}`);
-                } else {
-                    console.warn('[WotD] No eligible daily word found');
-                }
-            }).catch(err => {
-                console.warn('[WotD] Failed to load daily word module:', err);
-            });
-        } else {
-            console.warn('[WotD] Enriched dictionary not available, daily word disabled');
-        }
+        // Load universal daily word from the FROZEN shipped pool (so all
+        // users get the same word regardless of how much of the in-app
+        // ENRICHED_DICT they've unlocked). The module loads the pool
+        // internally; we still pass ENRICHED_DICT as a first-call fallback.
+        import('./src/lib/word-of-day.js').then(async ({ getTodaysDailyWord, preloadDailyWordPool, debugWordOfDay }) => {
+            await preloadDailyWordPool();
+            this._todaysDailyWord = getTodaysDailyWord(ENRICHED_DICT);
+            if (this._todaysDailyWord) {
+                console.log(`[WotD] Today's daily word loaded: ${this._todaysDailyWord}`);
+            } else {
+                console.warn('[WotD] No eligible daily word found');
+            }
+            // Expose debug helper: window._game._wotdDebug()
+            this._wotdDebug = () => debugWordOfDay(ENRICHED_DICT);
+        }).catch(err => {
+            console.warn('[WotD] Failed to load daily word module:', err);
+        });
 
         this.availableBonusType = null;
         this.bonusBag = [];

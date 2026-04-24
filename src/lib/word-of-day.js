@@ -46,9 +46,32 @@ const HISTORY_SIZE = 500;
 const NOTIFICATION_CHANNEL_ID = 'plummet-word-of-day';
 const NOTIFICATION_ID = 9001; // Unique ID for the recurring notification
 
-// Cache today's universal word so we only compute once per session
+// Cache today's universal word so we only compute once per session.
+// Cache key is the LOCAL day string so it flips at local midnight (matching
+// the noon notification + widget timeline refresh, which both use local time).
 let _cachedDailyWord = null;
 let _cachedDailyDate = null;
+
+// Frozen, shipped enriched dictionary used as the canonical pool for
+// universal Word-of-the-Day selection. This MUST be identical for every
+// user/device so they all get the same word. Loaded lazily once and
+// cached for the session.
+let _frozenPoolPromise = null;
+let _frozenPool = null;     // Sorted array of eligible entries
+let _frozenPoolHash = null; // Stable identifier for diagnostics
+const FROZEN_POOL_URL = '/words-enriched.json';
+
+/**
+ * Get today's day key in LOCAL time (YYYY-MM-DD).
+ * Using local time keeps JS, the noon notification, and the widget
+ * (Calendar.current) all in sync — UTC would drift across timezones.
+ */
+function getLocalDayKey(date = new Date()) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
 
 /**
  * Simple deterministic hash from a string → integer.
@@ -62,6 +85,82 @@ function hashString(str) {
         hash |= 0; // Convert to 32-bit int
     }
     return Math.abs(hash);
+}
+
+/**
+ * Stable ASCII comparison so sort order is identical regardless of OS locale.
+ * (localeCompare without a locale arg can flip 'i'/'I' under tr/az/etc.)
+ */
+function asciiCompare(a, b) {
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+}
+
+/**
+ * Load and cache the FROZEN, SHIPPED enriched dictionary.
+ * This is the canonical source of truth for daily word selection — it
+ * never changes per user (unlike the in-app ENRICHED_DICT which grows
+ * incrementally as users encounter new words).
+ *
+ * Returns a sorted, filtered array of { word, definitions } entries
+ * suitable for deterministic indexing.
+ */
+async function loadFrozenPool() {
+    if (_frozenPool) return _frozenPool;
+    if (_frozenPoolPromise) return _frozenPoolPromise;
+
+    _frozenPoolPromise = (async () => {
+        try {
+            const resp = await fetch(FROZEN_POOL_URL, { cache: 'force-cache' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const raw = await resp.json();
+            // Accept either { word: entry, ... } map or array form
+            const entries = Array.isArray(raw) ? raw : Object.values(raw);
+            const filtered = entries.filter(entry => {
+                if (!entry || !entry.word) return false;
+                const word = entry.word;
+                return (
+                    word.length >= 4 &&
+                    !BASIC_WORDS.has(word.toLowerCase()) &&
+                    Array.isArray(entry.definitions) && entry.definitions.length > 0
+                );
+            });
+            // Stable ASCII sort by word so index → entry mapping is identical everywhere
+            filtered.sort((a, b) => asciiCompare(a.word, b.word));
+            _frozenPool = filtered;
+            _frozenPoolHash = hashString('plummet-pool-' + filtered.length + '-' +
+                (filtered[0]?.word ?? '') + '-' + (filtered[filtered.length - 1]?.word ?? ''));
+            console.log(`[WOTD] Frozen pool loaded: ${filtered.length} eligible words (hash=${_frozenPoolHash})`);
+            return _frozenPool;
+        } catch (e) {
+            console.warn('[WOTD] Failed to load frozen pool, will fall back to in-app dict:', e);
+            _frozenPool = null;
+            return null;
+        } finally {
+            _frozenPoolPromise = null;
+        }
+    })();
+    return _frozenPoolPromise;
+}
+
+/**
+ * Synchronous helper that returns the frozen pool if it has already been
+ * loaded; otherwise null. Used by sync `selectWordOfDay` so it can prefer
+ * the universal pool the moment it becomes available, but still works on
+ * the very first call (when the fetch hasn't resolved yet) by falling
+ * back to whatever ENRICHED_DICT was passed in.
+ */
+function getFrozenPoolSync() {
+    return _frozenPool;
+}
+
+/**
+ * Kick off loading the frozen pool early (call from app boot). Returns
+ * a promise that resolves once the pool is ready (or fails silently).
+ */
+export async function preloadDailyWordPool() {
+    return loadFrozenPool();
 }
 
 /**
@@ -91,37 +190,51 @@ function addToWordHistory(word) {
 
 /**
  * Select the universal Word of the Day — same word for every player on a given date.
- * Uses a deterministic hash of today's date string to pick from eligible words.
- * - 4+ letters
- * - Not a basic/common word
- * - Has at least one definition
+ * Uses a deterministic hash of today's LOCAL date string to pick from the
+ * shipped frozen pool (`/words-enriched.json`). If that pool isn't loaded
+ * yet (very first call before fetch resolves), falls back to the in-app
+ * `wordsData` map so callers still get *a* word — but this is only a
+ * stopgap; the next call will use the frozen pool.
  */
 export function selectWordOfDay(wordsData) {
-    const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const today = getLocalDayKey();
 
     // Return cached if already computed today
     if (_cachedDailyWord && _cachedDailyDate === today) {
         return _cachedDailyWord;
     }
 
-    // Build a stable eligible pool (sorted alphabetically for determinism)
-    const eligible = Object.values(wordsData).filter(entry => {
-        if (!entry || !entry.word) return false;
-        const word = entry.word;
-        return (
-            word.length >= 4 &&
-            !BASIC_WORDS.has(word.toLowerCase()) &&
-            entry.definitions?.length > 0
-        );
-    }).sort((a, b) => a.word.localeCompare(b.word));
+    // Prefer the frozen, shipped pool — this is what makes the word
+    // universal across users/devices.
+    const frozen = getFrozenPoolSync();
+    let eligible = frozen;
 
-    if (eligible.length === 0) {
+    if (!eligible) {
+        // First-call fallback: build from whatever in-app dict we got.
+        // (Will be replaced by the frozen pool on the next selection.)
+        eligible = Object.values(wordsData || {}).filter(entry => {
+            if (!entry || !entry.word) return false;
+            const word = entry.word;
+            return (
+                word.length >= 4 &&
+                !BASIC_WORDS.has(word.toLowerCase()) &&
+                Array.isArray(entry.definitions) && entry.definitions.length > 0
+            );
+        }).sort((a, b) => asciiCompare(a.word, b.word));
+
+        // Kick off loading the frozen pool so subsequent calls are universal.
+        loadFrozenPool();
+    }
+
+    if (!eligible || eligible.length === 0) {
         return null;
     }
 
     // Deterministic selection using date hash
     const index = hashString('plummet-wotd-' + today) % eligible.length;
     const selected = eligible[index];
+
+    console.log(`[WOTD] Selected "${selected.word}" for ${today} (pool=${eligible.length}${frozen ? ' frozen' : ' fallback'}, index=${index})`);
 
     // Still add to history for notification tracking
     addToWordHistory(selected.word);
@@ -131,6 +244,15 @@ export function selectWordOfDay(wordsData) {
     _cachedDailyDate = today;
 
     return selected;
+}
+
+/**
+ * Async variant that guarantees the frozen pool is loaded before selecting.
+ * Prefer this when you can `await`.
+ */
+export async function selectWordOfDayAsync(wordsData) {
+    await loadFrozenPool();
+    return selectWordOfDay(wordsData);
 }
 
 /**
@@ -150,11 +272,12 @@ export function getTodaysDailyWord(wordsData) {
  * PlummetAppGroup plugin. Independent of notification permission.
  */
 export async function pushDailyWordToWidget(wordsData) {
-    if (!wordsData) return false;
+    // Make sure we use the universal frozen pool, not the per-user dict
+    await loadFrozenPool();
     const wordEntry = selectWordOfDay(wordsData);
     if (!wordEntry) return false;
     try {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getLocalDayKey();
         const def = wordEntry.definitions?.[0];
         const { setWordOfDay: setWidgetWord, getWordOfDay: getWidgetWord, reloadWidget } = await import('./app-group.js');
 
@@ -163,6 +286,7 @@ export async function pushDailyWordToWidget(wordsData) {
         try {
             const existing = await getWidgetWord();
             if (existing && existing.word === wordEntry.word.toUpperCase() && existing.date === today) {
+                console.log(`[WOTD] Widget already has "${wordEntry.word}" for ${today}, skipping push`);
                 return true;
             }
         } catch { /* fall through and write */ }
@@ -174,6 +298,7 @@ export async function pushDailyWordToWidget(wordsData) {
             date:       today,
         });
         try { await reloadWidget(); } catch { /* widget reload best-effort */ }
+        console.log(`[WOTD] Pushed "${wordEntry.word}" to widget for ${today}`);
         return true;
     } catch (e) {
         console.warn('[WOTD] pushDailyWordToWidget failed:', e);
@@ -270,7 +395,9 @@ export async function scheduleWordOfDay(wordsData) {
     
     // Cancel any existing scheduled notification
     await LocalNotifications.cancel({ notifications: [{ id: NOTIFICATION_ID }] });
-    
+
+    // Make sure we use the universal frozen pool
+    await loadFrozenPool();
     // Select the word
     const wordEntry = selectWordOfDay(wordsData);
     const formatted = formatWordForNotification(wordEntry);
@@ -283,7 +410,7 @@ export async function scheduleWordOfDay(wordsData) {
             word:       wordEntry.word.toUpperCase(),
             pos:        def?.pos?.replace(' satellite', '') ?? '',
             definition: def?.definition ?? '',
-            date:       new Date().toISOString().slice(0, 10),
+            date:       getLocalDayKey(),
         });
     } catch {
         // Non-iOS or bridge not available — silent no-op
@@ -459,6 +586,40 @@ export function getNotificationPreview(wordsData) {
         history.pop();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
     }
-    
+
     return formatWordForNotification(wordEntry);
 }
+
+/**
+ * Diagnostic helper — exposes today's selection state for debugging.
+ * Call via `window._game._wotdDebug()` once script.js wires it up.
+ */
+export async function debugWordOfDay(wordsData) {
+    await loadFrozenPool();
+    const today = getLocalDayKey();
+    const utcToday = new Date().toISOString().slice(0, 10);
+    const frozen = getFrozenPoolSync();
+    const entry = selectWordOfDay(wordsData);
+    const info = {
+        localDayKey: today,
+        utcDayKey: utcToday,
+        timezoneOffsetMin: new Date().getTimezoneOffset(),
+        frozenPoolLoaded: !!frozen,
+        frozenPoolSize: frozen?.length ?? 0,
+        frozenPoolHash: _frozenPoolHash,
+        cachedFor: _cachedDailyDate,
+        selectedWord: entry?.word ?? null,
+        selectedIndex: entry && frozen ? frozen.findIndex(e => e.word === entry.word) : null,
+    };
+    console.table(info);
+    try {
+        const { getWordOfDay: getWidgetWord } = await import('./app-group.js');
+        const w = await getWidgetWord();
+        console.log('[WOTD] Widget storage:', w);
+        info.widget = w;
+    } catch (e) {
+        console.log('[WOTD] Widget bridge unavailable:', e?.message || e);
+    }
+    return info;
+}
+
