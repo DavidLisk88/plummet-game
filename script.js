@@ -7051,7 +7051,7 @@ class Game {
                 this._lastGatewayRouteAt = now;
                 ev.stopPropagation();
                 ev.preventDefault();
-                window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type);
+                window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type + ' mtask=' + (window.__getMtaskCount?.() || '?'));
                 // Reset _loop trace counter so we capture next 3 ticks
                 this._loopTraceCount = 0;
                 // Diagnostic ladder: which async levels still fire?
