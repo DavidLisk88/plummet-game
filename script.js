@@ -9321,6 +9321,7 @@ class Game {
 
     /** Check if player has perks; if so show selection modal, otherwise start immediately */
     _maybeShowPerkSelect(timeLimitSeconds) {
+        console.log('[mpsp] start');
         this._pendingTimeLimitSeconds = timeLimitSeconds;
         this._chosenPerk = null;
 
@@ -9331,12 +9332,16 @@ class Game {
                 ownedPerks.push({ id, ...item, count: this.profileMgr.getPerkCount(id) });
             }
         }
+        console.log('[mpsp] perks=' + ownedPerks.length);
 
         if (ownedPerks.length === 0) {
+            console.log('[mpsp] -> _beginNewGame direct');
             this._beginNewGame(timeLimitSeconds);
+            console.log('[mpsp] _beginNewGame returned');
             return;
         }
 
+        console.log('[mpsp] -> _openPerkSelectModal');
         this._openPerkSelectModal(ownedPerks);
     }
 
@@ -9365,7 +9370,9 @@ class Game {
     }
 
     _beginNewGame(timeLimitSeconds = 0) {
+        console.log('[bng] start time=' + timeLimitSeconds);
         this.grid = new Grid(this.gridSize, this.gridSize);
+        console.log('[bng] grid OK');
         this.score = 0;
         this.timeLimitSeconds = timeLimitSeconds;
         this.timeRemainingSeconds = timeLimitSeconds;
@@ -9390,7 +9397,9 @@ class Game {
         this.renderer.validatedCells = new Set();
         this._activeHintKey = null;
         this.pendingGravityMoves = [];
+        console.log('[bng] before pickNextLetter');
         this.nextLetter = this._pickNextLetter();
+        console.log('[bng] pickNextLetter OK');
         this.wordsFound = [];  // track all words found this round
         this.foundWordsThisGame = new Set();
         this.categoryWordsFound = [];  // track category words found this round
@@ -9451,7 +9460,9 @@ class Game {
 
         // ── Coin tracking for this game ──
         this._coinsThisGame = 0;
+        console.log('[bng] before recordDailyPlay');
         this._dailyInfo = this.profileMgr.recordDailyPlay();
+        console.log('[bng] recordDailyPlay OK');
 
         // ── Apply equipped theme ──
         const equipped = this.profileMgr.getEquipped();
@@ -9487,7 +9498,9 @@ class Game {
         }
 
         // Sync daily streak + perk consumption to cloud (prevents data loss on crash)
+        console.log('[bng] before debouncedSync');
         this._debouncedSyncProfileToCloud();
+        console.log('[bng] debouncedSync OK');
 
         // Reset challenge state (activeChallenge is set before calling this for challenges)
         this.targetWord = null;
@@ -9513,7 +9526,9 @@ class Game {
         }
 
         // ── Sync full state to Preact store at game start ──
+        console.log('[bng] before getLevelInfo');
         const lvlInfo = this.profileMgr.getLevelInfo();
+        console.log('[bng] getLevelInfo OK, before gameStore.set');
         gameStore.set({
             score: 0,
             highScore: this.highScore,
@@ -9540,9 +9555,11 @@ class Game {
             isNewHighScore: false,
             finalScore: 0,
         });
+        console.log('[bng] gameStore.set OK');
 
         // Start or resume music from the player's start-game action.
         this._autoplayMusicFromUserAction();
+        console.log('[bng] autoplayMusic returned');
 
         // Keep screen awake during gameplay
         this._keepAwake(true);
@@ -9561,6 +9578,7 @@ class Game {
         // its own teaching cards and doesn't want this in the way.
         const guidedTourActive = !!this._guidedTour?.active || !!this._guidedFirstProfileRunning;
         if (!guidedTourActive && (isFirstGame || shouldShowLegacyIntro)) {
+            console.log('[bng] showing legacy intro / first-game tutorial');
             if (shouldShowLegacyIntro) this._markLegacyIntroShown();
             this.state = State.PAUSED; // pause until tutorial + countdown finish
             this._initTutorialSlides();
@@ -9569,7 +9587,9 @@ class Game {
             this._openTutorialCategory(0, 'root');
             this.els.tutorialOverlay.classList.add('active');
         } else {
+            console.log('[bng] -> _spawnBlock');
             this._spawnBlock();
+            console.log('[bng] _spawnBlock OK, done');
         }
     }
 
