@@ -30,7 +30,7 @@
         // Shows JS errors as a banner since DevTools isn't always available.
         (function () {
             if (!/[?&]debug=1\b/.test(location.search)) return;
-            const BUILD_ID = 'BUILD-HB-V9';
+            const BUILD_ID = 'BUILD-RAF-V10';
             const banner = document.createElement('div');
             banner.id = '__debug_banner__';
             banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#900;color:#fff;font:11px/1.25 monospace;padding:6px;max-height:40vh;overflow:auto;white-space:pre-wrap;word-break:break-all;border-bottom:2px solid #f00;pointer-events:none;';
@@ -38,12 +38,26 @@
             const lines = [banner.textContent];
             const log = (msg) => {
                 lines.push(msg);
-                if (lines.length > 40) lines.splice(0, lines.length - 40);
+                if (lines.length > 60) lines.splice(0, lines.length - 60);
                 banner.textContent = lines.join('\n');
                 banner.scrollTop = banner.scrollHeight;
                 if (!banner.parentNode && document.body) document.body.prepend(banner);
             };
             window.__dbg = log;
+            // Patch requestAnimationFrame to log each callback name + duration.
+            // Helps identify WHICH rAF callback hangs synchronously.
+            const _rAF = window.requestAnimationFrame.bind(window);
+            window.__rafTrace = false;
+            window.requestAnimationFrame = function (cb) {
+                return _rAF(function (t) {
+                    if (!window.__rafTrace) return cb(t);
+                    const name = (cb.name || cb.toString().slice(0, 60).replace(/\s+/g, ' '));
+                    const start = performance.now();
+                    log('[rAF in] ' + name);
+                    try { cb(t); } catch (e) { log('[rAF ERR] ' + (e?.message || e)); throw e; }
+                    log('[rAF out] ' + name + ' dt=' + Math.round(performance.now() - start) + 'ms');
+                });
+            };
             window.addEventListener('error', (ev) => {
                 log('[err] ' + (ev.message || ev.error?.message || 'unknown') + ' @ ' + (ev.filename || '?') + ':' + (ev.lineno || '?'));
             });
