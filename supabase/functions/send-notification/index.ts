@@ -22,30 +22,78 @@ const APNS_KEY_ID           = Deno.env.get('APNS_KEY_ID')!
 const APNS_TEAM_ID          = Deno.env.get('APNS_TEAM_ID')!
 const APNS_PRIVATE_KEY_B64  = Deno.env.get('APNS_PRIVATE_KEY')!
 const APNS_BUNDLE_ID        = Deno.env.get('APNS_BUNDLE_ID') || 'com.plummetgame.app'
-const APNS_HOST             = 'https://api.push.apple.com'    // Production APNs
-// const APNS_HOST          = 'https://api.sandbox.push.apple.com'  // Dev/sandbox builds
+// APNS environment: 'production' (default, TestFlight + App Store) or 'sandbox' (Xcode dev builds).
+// Set APNS_ENV=sandbox when sending to development tokens.
+const APNS_ENV              = (Deno.env.get('APNS_ENV') || 'production').toLowerCase()
+const APNS_HOST             = APNS_ENV === 'sandbox'
+    ? 'https://api.sandbox.push.apple.com'
+    : 'https://api.push.apple.com'
 
-const FCM_SERVER_KEY        = Deno.env.get('FCM_SERVER_KEY') || ''  // Optional; Android only
+const FCM_SERVER_KEY        = Deno.env.get('FCM_SERVER_KEY') || ''  // DEPRECATED: FCM legacy API was retired June 2024. See README.
 const FCM_ENDPOINT          = 'https://fcm.googleapis.com/fcm/send'
 const NOTIFICATION_SOUND    = 'wotd_chime.wav'
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'authorization, content-type, apikey',
+// Admin token: a long random secret known only to the dashboard operator.
+// Set via `supabase secrets set ADMIN_PUSH_TOKEN=<random>`.
+// The dashboard sends this in the X-Admin-Token header instead of the
+// service_role key, so the service role never leaves the server.
+const ADMIN_PUSH_TOKEN      = Deno.env.get('ADMIN_PUSH_TOKEN') || ''
+
+// CORS allowlist — only these origins can invoke the function from a browser.
+// Add custom dashboards here. '*' is intentionally NOT used post-hardening.
+const CORS_ALLOWED_ORIGINS  = new Set([
+    'https://plummet.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://127.0.0.1:5500',
+    'file://', // local file:// dashboard usage
+])
+
+function buildCorsHeaders(origin: string | null): Record<string, string> {
+    const allowOrigin = origin && CORS_ALLOWED_ORIGINS.has(origin) ? origin : 'null'
+    return {
+        'Access-Control-Allow-Origin': allowOrigin,
+        'Vary': 'Origin',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'authorization, content-type, apikey, x-admin-token',
+        'Access-Control-Max-Age': '600',
+    }
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: unknown, status = 200, origin: string | null = null): Response {
     return new Response(JSON.stringify(body), {
         status,
         headers: {
             'Content-Type': 'application/json',
-            ...CORS_HEADERS,
+            ...buildCorsHeaders(origin),
         },
     })
+}
+
+// In-memory rate limit: 1 send / 30 seconds per admin token (best-effort —
+// Edge Functions cold-start so this resets often, which is fine for a guard
+// against accidental double-clicks; abuse defence is the admin token itself).
+const RATE_WINDOW_MS = 30_000
+const _lastSendByToken = new Map<string, number>()
+function checkRateLimit(adminToken: string): { ok: boolean; retryAfterMs: number } {
+    const now = Date.now()
+    const last = _lastSendByToken.get(adminToken) || 0
+    if (now - last < RATE_WINDOW_MS) {
+        return { ok: false, retryAfterMs: RATE_WINDOW_MS - (now - last) }
+    }
+    _lastSendByToken.set(adminToken, now)
+    return { ok: true, retryAfterMs: 0 }
+}
+
+// Constant-time string compare to avoid timing attacks on the admin token.
+function safeEqual(a: string, b: string): boolean {
+    if (a.length !== b.length) return false
+    let diff = 0
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+    return diff === 0
 }
 
 // ---------------------------------------------------------------------------
@@ -215,39 +263,51 @@ async function sendToFCM(tokens: string[], title: string, body: string): Promise
 // ---------------------------------------------------------------------------
 
 Deno.serve(async (req) => {
+    const origin = req.headers.get('origin')
+
     // CORS preflight
     if (req.method === 'OPTIONS') {
-        return new Response(null, { headers: CORS_HEADERS })
+        return new Response(null, { headers: buildCorsHeaders(origin) })
     }
 
     try {
-        console.log('✓ send-notification handler called')
-        
         if (req.method !== 'POST') {
-            return jsonResponse({ error: 'Method not allowed' }, 405)
+            return jsonResponse({ error: 'Method not allowed' }, 405, origin)
         }
 
-        console.log('✓ POST request verified')
+        // ---- AUTH (N1 fix) ----
+        // Require X-Admin-Token header that matches the ADMIN_PUSH_TOKEN secret.
+        // Service role key is NOT accepted from clients anymore.
+        if (!ADMIN_PUSH_TOKEN) {
+            console.error('ADMIN_PUSH_TOKEN secret not configured')
+            return jsonResponse({ error: 'Server misconfigured: ADMIN_PUSH_TOKEN missing' }, 500, origin)
+        }
+        const provided = (req.headers.get('x-admin-token') || '').trim()
+        if (!provided || !safeEqual(provided, ADMIN_PUSH_TOKEN)) {
+            // Don't leak which header was wrong.
+            return jsonResponse({ error: 'Unauthorized' }, 401, origin)
+        }
 
-        // Auth is disabled for testing; remove comments to re-enable
-        // const authHeader = (req.headers.get('authorization') || '').trim()
-        // const apiKeyHeader = (req.headers.get('apikey') || '').trim()
-        // if (!authHeader && !apiKeyHeader) {
-        //     return jsonResponse({ error: 'Missing authorization headers' }, 401)
-        // }
+        // ---- RATE LIMIT (N5 fix) ----
+        const rl = checkRateLimit(provided)
+        if (!rl.ok) {
+            return jsonResponse({
+                error: 'Rate limited',
+                retry_after_seconds: Math.ceil(rl.retryAfterMs / 1000),
+            }, 429, origin)
+        }
 
         const { title, body, target = 'all' } = await req.json()
-        console.log(`✓ Parsed JSON: target=${target}, title length=${title?.length || 0}`)
         if (!title || !body) {
-            return jsonResponse({ error: 'title and body required' }, 400)
+            return jsonResponse({ error: 'title and body required' }, 400, origin)
+        }
+        // Length caps (defence in depth; APNs/FCM also reject oversize payloads).
+        if (title.length > 200 || body.length > 1000) {
+            return jsonResponse({ error: 'title/body too long' }, 400, origin)
         }
 
-        console.log('✓ Validation passed')
-
         // Fetch tokens from DB
-        console.log(`Connecting to Supabase: ${SUPABASE_URL}`)
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        console.log('✓ Supabase client created')
         let query = supabase.from('push_tokens').select('token, account_id, platform')
 
         if (target !== 'all') {
@@ -255,11 +315,10 @@ Deno.serve(async (req) => {
         }
 
         const { data: rows, error: dbError } = await query
-        console.log(`✓ DB query returned: rows=${rows?.length || 0}, error=${dbError?.message || 'none'}`)
-        
+
         if (dbError) {
             console.error(`DB Error: ${dbError.message}`)
-            return jsonResponse({ error: dbError.message }, 500)
+            return jsonResponse({ error: dbError.message }, 500, origin)
         }
         if (!rows || rows.length === 0) {
             return jsonResponse({
@@ -269,7 +328,7 @@ Deno.serve(async (req) => {
                 ios_tokens: 0,
                 android_tokens: 0,
                 message: 'No push tokens found',
-            })
+            }, 200, origin)
         }
 
         const iosTokens     = rows.filter(r => r.platform === 'ios').map(r => r.token)
@@ -308,13 +367,17 @@ Deno.serve(async (req) => {
             console.log(`Cleaned up ${invalidTokens.length} invalid tokens`)
         }
 
-        // Log the notification
+        // Log the notification (N10 fix: redact token fragments to last-4)
+        const redactedErrors = errors.map(e => ({
+            token_tail: e.token ? '…' + e.token.slice(-4) : '',
+            error: e.error,
+        }))
         await supabase.from('notification_log').insert({
             title,
             body,
             target,
             tokens_sent: successes,
-            errors: errors.length > 0 ? errors : [],
+            errors: redactedErrors.length > 0 ? redactedErrors : [],
         })
 
         return jsonResponse({
@@ -324,11 +387,12 @@ Deno.serve(async (req) => {
             total_tokens: rows.length,
             ios_tokens:   iosTokens.length,
             android_tokens: androidTokens.length,
+            apns_env:     APNS_ENV,
             message: successes > 0 ? 'Notification sent' : 'No devices accepted the push',
-            error_samples: errors.slice(0, 3).map(e => ({ token: e.token.slice(0, 12), error: e.error })),
-        })
+            error_samples: redactedErrors.slice(0, 3),
+        }, 200, origin)
     } catch (error) {
         console.error('send-notification unhandled error:', error)
-        return jsonResponse({ error: String(error) }, 500)
+        return jsonResponse({ error: String(error) }, 500, origin)
     }
 })

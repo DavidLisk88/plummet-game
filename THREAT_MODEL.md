@@ -371,3 +371,77 @@ Backend (Supabase)
 ---
 
 *Generated: Comprehensive threat model covering client-side game logic, server-side database, authentication, scoring integrity, and deployment pipeline for the PLUMMET word game.*
+
+
+---
+
+## 12. WIDGET + NOTIFICATION SUBSYSTEM (added 2026-04-24, pre-Apple-review)
+
+### 12.1 Architecture
+```
+JS (browser/Capacitor)               iOS app process                Widget process (separate sandbox)
+---------------------                ------------------              -----------------------------
+word-of-day.js                        PlummetAppGroupPlugin           PlummetWordOfDayWidget
+  +-- selectWordOfDay()  --Bridge--?  setWordOfDay()  --UserDefaults--?  WotdProvider.getTimeline()
+  +-- pushDailyWordToWidget()         (App Group:                       +-- reads same App Group
+  +-- debugWordOfDay()                 group.com.plummetgame.app)       +-- widgetURL deep-link
+
+push-notifications.js                                                  Apple APNs / Google FCM
+  +-- registerPushNotifications() --- PushNotifications plugin ---?    push_tokens table (RLS=auth.uid())
+  +-- unregisterPushToken()                                              ¦
+                                                                         ?
+notification-dashboard.html  --X-Admin-Token-?  send-notification edge function
+  (no service-role in browser)                    +-- createAPNsJWT() (ES256)
+                                                  +-- sendToAPNs/sendToFCM
+                                                  +-- notification_log insert
+```
+
+### 12.2 Trust boundaries
+| Boundary | Crossed by | Validated by |
+|---|---|---|
+| JS ? Swift plugin | Capacitor bridge | Plugin sanitizes inputs (string casts) |
+| Swift ? App Group | UserDefaults(suiteName:) | App Group entitlement (Apple-enforced) |
+| App Group ? Widget | OS sandbox shared container | Same entitlement on widget target |
+| Widget ? App | widgetURL ? Universal Link | associatedDomains entitlement + apple-app-site-association |
+| Browser ? Edge function | HTTPS POST | X-Admin-Token (vault secret) + CORS allowlist |
+| Edge function ? APNs | ES256 JWT | Apple .p8 key |
+
+### 12.3 Threats and mitigations
+| ID | Threat | Status |
+|---|---|---|
+| W1 | Plugin missing from App target ? silent placeholder data | OPEN — Tier 1 user action in Xcode |
+| W2 | App Group entitlement missing on either target | OPEN — Tier 1 verify in Xcode |
+| W3 | Widget tap with no deep link | FIXED — widgetURL added |
+| W4 | Stale challenge timer past expiry | FIXED already — `endDate > Date()` check |
+| W5 | App Group write race | ACCEPTED — idempotent |
+| W6 | PII in App Group container | CLEAN — only WOTD strings |
+| N1 | Edge function had auth disabled (anyone could spam push) | FIXED — X-Admin-Token + constant-time compare |
+| N2 | Service role key sent to browser | FIXED — dashboard uses anon key + admin token; admin RPCs gate reads |
+| N3 | FCM legacy API retired June 2024 | DOCUMENTED — Android push will 404 until migrated to FCM HTTP v1 (needs service account JSON) |
+| N4 | APNs host hardcoded to production | FIXED — APNS_ENV=sandbox|production env switch |
+| N5 | No rate limiting | FIXED — 30s/token in-memory window |
+| N6 | CORS wildcard origin | FIXED — explicit allowlist |
+| N7 | iOS permission request without user context | OK — `enableWordOfDay()` is opt-in via WOTD setting |
+| N8 | UIBackgroundModes remote-notification missing | OPEN — verify in Xcode Info.plist (Tier 1) |
+| N9 | Push token leak on app uninstall | ACCEPTED — APNs returns 410 ? auto-pruned |
+| N10 | Token fragments stored in notification_log.errors | FIXED — redact to last-4 |
+
+### 12.4 Apple Review checklist (pre-submit)
+- [ ] App Groups capability enabled on **both** App + Widget targets in Xcode
+- [ ] App Groups capability enabled in Apple Developer portal App ID
+- [ ] `PlummetAppGroupPlugin.swift` is in the **App** target's Compile Sources (not widget)
+- [ ] `aps-environment` entitlement (= production for App Store)
+- [ ] Push background mode in Info.plist if you use silent push (currently not used)
+- [ ] `NSUserNotificationsUsageDescription` not required (LocalNotifications/PushNotifications use system dialog)
+- [ ] Universal Link `associatedDomains` entitlement: `applinks:plummet.netlify.app`
+- [ ] `apple-app-site-association` file served at `https://plummet.netlify.app/.well-known/apple-app-site-association` with `appID = TEAMID.com.plummetgame.app` and matching paths
+- [ ] WOTD permission request only fires after user opt-in (verified)
+- [ ] Test that revoking notification permission in Settings doesn't crash
+- [ ] Test widget on real device with App Groups configured
+- [ ] Test Universal Link tap from widget while app is killed, foreground, background
+
+### 12.5 Pending follow-ups (post Tier 1)
+- Migrate FCM legacy ? HTTP v1 (when Android push is needed)
+- Move admin token validation into Postgres Vault (migration 038 prepared)
+- Add `apple-app-site-association` JSON to Netlify
+- Wire web app to read `?intent=wotd|challenge` from URL on boot

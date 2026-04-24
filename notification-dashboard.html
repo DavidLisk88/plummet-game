@@ -136,8 +136,15 @@
             <h2>⚙ Connection Setup</h2>
             <label>Supabase URL</label>
             <input id="cfg-url" type="url" placeholder="https://your-project.supabase.co" />
-            <label>Service Role Key <span style="color:#f87171">(keep secret!)</span></label>
-            <input id="cfg-key" type="password" placeholder="eyJhbGci..." />
+            <label>Anon (public) Key</label>
+            <input id="cfg-anon" type="password" placeholder="eyJhbGci... (anon key, safe in browser)" />
+            <label>Admin Push Token <span style="color:#f87171">(matches ADMIN_PUSH_TOKEN secret)</span></label>
+            <input id="cfg-admin" type="password" placeholder="long random secret you set via supabase secrets set" />
+            <p style="font-size:0.7rem;color:#666;margin-bottom:0.75rem">
+                The service role key is no longer accepted from the browser.
+                Set <code>ADMIN_PUSH_TOKEN</code> with <code>supabase secrets set ADMIN_PUSH_TOKEN=&lt;random&gt;</code>
+                and paste it above.
+            </p>
             <button class="btn-save" onclick="saveConfig()">Connect</button>
             <span id="conn-status" style="margin-left:0.75rem"></span>
         </div>
@@ -200,7 +207,8 @@
 
     <script>
         let SUPABASE_URL = '';
-        let SERVICE_ROLE_KEY = '';
+        let ANON_KEY = '';
+        let ADMIN_TOKEN = '';
 
         function normalizeSupabaseUrl(raw) {
             let value = String(raw || '').trim();
@@ -227,39 +235,46 @@
             }
         }
 
+        // PostgREST headers — use the ANON key (safe in browser, RLS protects rows).
+        // Stats / history queries below use a tiny read-only RPC instead of
+        // service-role SELECT, so this is fine.
         function buildAuthHeaders() {
-            const key = (SERVICE_ROLE_KEY || '').trim();
-            const headers = {
+            const key = (ANON_KEY || '').trim();
+            return {
                 'apikey': key,
+                'Authorization': `Bearer ${key}`,
                 'Content-Type': 'application/json',
             };
-            // Only set Bearer if the key looks like a JWT (legacy service_role key).
-            if (key.split('.').length === 3) {
-                headers['Authorization'] = `Bearer ${key}`;
-            }
-            return headers;
         }
 
         // ── Config ──
         function saveConfig() {
             const rawUrl = document.getElementById('cfg-url').value;
             SUPABASE_URL = normalizeSupabaseUrl(rawUrl);
-            SERVICE_ROLE_KEY = document.getElementById('cfg-key').value.trim();
-            if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-                showToast('Enter a valid Supabase URL and service role key', 'error');
+            ANON_KEY    = document.getElementById('cfg-anon').value.trim();
+            ADMIN_TOKEN = document.getElementById('cfg-admin').value.trim();
+            if (!SUPABASE_URL || !ANON_KEY || !ADMIN_TOKEN) {
+                showToast('Enter Supabase URL, anon key, and admin token', 'error');
                 return;
             }
             document.getElementById('cfg-url').value = SUPABASE_URL;
-            // Persist in sessionStorage (not localStorage for security)
-            sessionStorage.setItem('plummet_notif_url', SUPABASE_URL);
-            sessionStorage.setItem('plummet_notif_key', SERVICE_ROLE_KEY);
+            // sessionStorage clears on tab close; never localStorage.
+            sessionStorage.setItem('plummet_notif_url',   SUPABASE_URL);
+            sessionStorage.setItem('plummet_notif_anon',  ANON_KEY);
+            sessionStorage.setItem('plummet_notif_admin', ADMIN_TOKEN);
             testConnection();
         }
 
         async function testConnection() {
             const status = document.getElementById('conn-status');
             try {
-                const res = await sbFetch('/rest/v1/push_tokens?select=token&limit=1');
+                // Use the admin-stats RPC (public, returns aggregate counts only).
+                // Falls back to a no-op ping so we don't require row-level access.
+                const res = await sbFetch('/rest/v1/rpc/admin_notif_stats', {
+                    method: 'POST',
+                    headers: { 'X-Admin-Token': ADMIN_TOKEN },
+                    body: '{}',
+                });
                 if (res.ok) {
                     status.innerHTML = '<span class="connected-badge ok">Connected</span>';
                     document.getElementById('setup-section').style.display = 'none';
@@ -272,6 +287,7 @@
                 } else {
                     const err = await res.text();
                     status.innerHTML = `<span class="connected-badge err">Error: ${res.status}</span>`;
+                    console.warn('Connect error:', err);
                 }
             } catch (e) {
                 status.innerHTML = `<span class="connected-badge err">Failed to connect</span>`;
@@ -293,32 +309,35 @@
             });
         }
 
-        // ── Stats ──
+        // ── Stats (uses the admin_notif_stats RPC; no service role needed) ──
         async function loadStats() {
             try {
-                // Token count
-                const tokRes = await sbFetch('/rest/v1/push_tokens?select=id', { headers: { 'Prefer': 'count=exact' } });
-                const tokCount = tokRes.headers.get('content-range')?.split('/')[1] || '0';
-                document.getElementById('stat-tokens').textContent = tokCount;
-
-                // Notification count
-                const notifRes = await sbFetch('/rest/v1/notification_log?select=id', { headers: { 'Prefer': 'count=exact' } });
-                const notifCount = notifRes.headers.get('content-range')?.split('/')[1] || '0';
-                document.getElementById('stat-sent').textContent = notifCount;
-
-                // User count
-                const userRes = await sbFetch('/rest/v1/profiles?select=id', { headers: { 'Prefer': 'count=exact' } });
-                const userCount = userRes.headers.get('content-range')?.split('/')[1] || '0';
-                document.getElementById('stat-users').textContent = userCount;
+                const res = await sbFetch('/rest/v1/rpc/admin_notif_stats', {
+                    method: 'POST',
+                    headers: { 'X-Admin-Token': ADMIN_TOKEN },
+                    body: '{}',
+                });
+                if (!res.ok) throw new Error('stats ' + res.status);
+                const stats = await res.json();
+                // RPC returns either a single object or an array of one row.
+                const s = Array.isArray(stats) ? stats[0] : stats;
+                document.getElementById('stat-tokens').textContent = s?.token_count ?? '-';
+                document.getElementById('stat-sent').textContent   = s?.notif_count ?? '-';
+                document.getElementById('stat-users').textContent  = s?.user_count  ?? '-';
             } catch (e) {
                 console.error('Stats load failed:', e);
             }
         }
 
-        // ── Load users for target dropdown ──
+        // ── Load users for target dropdown (admin RPC) ──
         async function loadUsers() {
             try {
-                const res = await sbFetch('/rest/v1/profiles?select=id,username,account_id&order=username.asc');
+                const res = await sbFetch('/rest/v1/rpc/admin_notif_users', {
+                    method: 'POST',
+                    headers: { 'X-Admin-Token': ADMIN_TOKEN },
+                    body: '{}',
+                });
+                if (!res.ok) return;
                 const profiles = await res.json();
                 const select = document.getElementById('notif-target');
                 profiles.forEach(p => {
@@ -361,7 +380,8 @@
                 const res = await fetch(`${SUPABASE_URL}/functions/v1/send-notification`, {
                     method: 'POST',
                     headers: {
-                        ...buildAuthHeaders(),
+                        'Content-Type': 'application/json',
+                        'X-Admin-Token': ADMIN_TOKEN,
                     },
                     body: JSON.stringify({ title, body, target }),
                 });
@@ -376,7 +396,7 @@
                     const android = Number(result.android_tokens || 0);
 
                     if (sent > 0) {
-                        let msg = `Sent to ${sent} device(s)`;
+                        let msg = `Sent to ${sent} device(s) [APNs ${result.apns_env}]`;
                         if (failed > 0) msg += `, ${failed} failed`;
                         showToast(msg, 'success');
                     } else if (total === 0) {
@@ -394,6 +414,10 @@
                     updatePreview();
                     loadStats();
                     loadHistory();
+                } else if (res.status === 401) {
+                    showToast('Unauthorized — admin token is wrong', 'error');
+                } else if (res.status === 429) {
+                    showToast(`Rate limited; retry in ${result.retry_after_seconds}s`, 'error');
                 } else {
                     showToast(result.error || 'Send failed', 'error');
                 }
@@ -405,13 +429,18 @@
             }
         }
 
-        // ── History ──
+        // ── History (admin RPC) ──
         async function loadHistory() {
             try {
-                const res = await sbFetch('/rest/v1/notification_log?select=*&order=sent_at.desc&limit=20');
+                const res = await sbFetch('/rest/v1/rpc/admin_notif_history', {
+                    method: 'POST',
+                    headers: { 'X-Admin-Token': ADMIN_TOKEN },
+                    body: JSON.stringify({ p_limit: 20 }),
+                });
+                if (!res.ok) return;
                 const logs = await res.json();
                 const list = document.getElementById('history-list');
-                
+
                 if (!logs.length) {
                     list.innerHTML = '<p style="color:#666;font-size:0.85rem">No notifications sent yet</p>';
                     return;
@@ -456,15 +485,17 @@
 
         // ── Auto-restore session ──
         (function init() {
-            const savedUrl = sessionStorage.getItem('plummet_notif_url');
-            const savedKey = sessionStorage.getItem('plummet_notif_key');
+            const savedUrl   = sessionStorage.getItem('plummet_notif_url');
+            const savedAnon  = sessionStorage.getItem('plummet_notif_anon');
+            const savedAdmin = sessionStorage.getItem('plummet_notif_admin');
             const normalizedSavedUrl = normalizeSupabaseUrl(savedUrl || '');
-            if (normalizedSavedUrl && savedKey) {
-                document.getElementById('cfg-url').value = normalizedSavedUrl;
-                document.getElementById('cfg-key').value = savedKey;
+            if (normalizedSavedUrl && savedAnon && savedAdmin) {
+                document.getElementById('cfg-url').value   = normalizedSavedUrl;
+                document.getElementById('cfg-anon').value  = savedAnon;
+                document.getElementById('cfg-admin').value = savedAdmin;
                 SUPABASE_URL = normalizedSavedUrl;
-                SERVICE_ROLE_KEY = savedKey;
-                // Repair any previously malformed URL in this session.
+                ANON_KEY     = savedAnon;
+                ADMIN_TOKEN  = savedAdmin;
                 sessionStorage.setItem('plummet_notif_url', normalizedSavedUrl);
                 testConnection();
             }

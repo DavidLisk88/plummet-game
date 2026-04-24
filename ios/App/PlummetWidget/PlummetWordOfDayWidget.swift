@@ -2,6 +2,17 @@ import SwiftUI
 import WidgetKit
 
 // ---------------------------------------------------------------------------
+// MARK: - Deep link URLs (Universal Link — must match associatedDomains entitlement)
+// ---------------------------------------------------------------------------
+
+/// Tap target for the Word-of-the-Day widget views.
+/// Use a Universal Link (https) so it survives App Store review and works
+/// even if the URL scheme is not registered. The host page should JS-route
+/// to the WOTD modal on load.
+private let kWidgetWotdURL      = URL(string: "https://plummet.netlify.app/?source=widget&intent=wotd")!
+private let kWidgetChallengeURL = URL(string: "https://plummet.netlify.app/?source=widget&intent=challenge")!
+
+// ---------------------------------------------------------------------------
 // MARK: - Design tokens (match game's dark-olive palette)
 // ---------------------------------------------------------------------------
 
@@ -183,23 +194,28 @@ struct PlummetWordOfDayWidgetView: View {
     let entry: WotdEntry
 
     var body: some View {
-        if entry.challengeActive, let endDate = entry.challengeEndDate {
-            switch family {
-            case .systemSmall:          ChallengeSmallView(entry: entry, endDate: endDate)
-            case .systemMedium:         ChallengeMediumView(entry: entry, endDate: endDate)
-            case .accessoryRectangular: ChallengeLockScreenView(entry: entry, endDate: endDate)
-            case .accessoryInline:      ChallengeInlineView(entry: entry, endDate: endDate)
-            default:                    ChallengeSmallView(entry: entry, endDate: endDate)
-            }
-        } else {
-            switch family {
-            case .systemSmall:          WotdSmallView(entry: entry)
-            case .systemMedium:         WotdMediumView(entry: entry)
-            case .accessoryRectangular: WotdLockScreenView(entry: entry)
-            case .accessoryInline:      WotdInlineView(entry: entry)
-            default:                    WotdSmallView(entry: entry)
+        Group {
+            if entry.challengeActive, let endDate = entry.challengeEndDate {
+                switch family {
+                case .systemSmall:          ChallengeSmallView(entry: entry, endDate: endDate)
+                case .systemMedium:         ChallengeMediumView(entry: entry, endDate: endDate)
+                case .accessoryRectangular: ChallengeLockScreenView(entry: entry, endDate: endDate)
+                case .accessoryInline:      ChallengeInlineView(entry: entry, endDate: endDate)
+                default:                    ChallengeSmallView(entry: entry, endDate: endDate)
+                }
+            } else {
+                switch family {
+                case .systemSmall:          WotdSmallView(entry: entry)
+                case .systemMedium:         WotdMediumView(entry: entry)
+                case .accessoryRectangular: WotdLockScreenView(entry: entry)
+                case .accessoryInline:      WotdInlineView(entry: entry)
+                default:                    WotdSmallView(entry: entry)
+                }
             }
         }
+        // Deep-link the entire widget surface so a tap launches the app
+        // with a known intent. The web layer parses ?intent= on boot.
+        .widgetURL(entry.challengeActive ? kWidgetChallengeURL : kWidgetWotdURL)
     }
 }
 
