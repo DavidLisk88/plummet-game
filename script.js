@@ -9371,6 +9371,7 @@ class Game {
 
     _beginNewGame(timeLimitSeconds = 0) {
         console.log('[bng] start time=' + timeLimitSeconds);
+        this._loopTraceN = 0;
         this.grid = new Grid(this.gridSize, this.gridSize);
         console.log('[bng] grid OK');
         this.score = 0;
@@ -20031,6 +20032,9 @@ class Game {
 
     // ── Main loop ──
     _loop(timestamp) {
+        if (this._loopTraceN === undefined) this._loopTraceN = 0;
+        const traceThis = this._loopTraceN < 5;
+        if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' state=' + this.state);
         const dt = this.lastTime ? Math.min((timestamp - this.lastTime) / 1000, 0.1) : 0;
         this.lastTime = timestamp;
 
@@ -20148,12 +20152,16 @@ class Game {
 
             // Render
             if (this.grid) {
+                if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' before renderer.draw');
                 this.renderer.draw(this.grid, this.block, dt);
+                if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' before _checkPlayBtnOverlaps');
                 this._checkPlayBtnOverlaps();
+                if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' before updatePhysics');
             }
 
             // ── Matter.js physics particles overlay ──
             updatePhysics(dt);
+            if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' updatePhysics OK');
         } else if (this.state === State.PAUSED) {
             // Still draw but don't update
             if (this.grid) {
@@ -20162,6 +20170,7 @@ class Game {
             }
         }
 
+        if (traceThis) { console.log('[loop] tick #' + this._loopTraceN + ' end'); this._loopTraceN++; }
         if (!this._destroyed) requestAnimationFrame((t) => this._loop(t));
     }
 
