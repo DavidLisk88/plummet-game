@@ -9311,7 +9311,6 @@ class Game {
 
     /** Check if player has perks; if so show selection modal, otherwise start immediately */
     _maybeShowPerkSelect(timeLimitSeconds) {
-        window.__dbg?.('[trace] _maybeShowPerkSelect start');
         this._pendingTimeLimitSeconds = timeLimitSeconds;
         this._chosenPerk = null;
 
@@ -9322,16 +9321,12 @@ class Game {
                 ownedPerks.push({ id, ...item, count: this.profileMgr.getPerkCount(id) });
             }
         }
-        window.__dbg?.('[trace] perks owned=' + ownedPerks.length);
 
         if (ownedPerks.length === 0) {
-            window.__dbg?.('[trace] -> _beginNewGame(direct)');
             this._beginNewGame(timeLimitSeconds);
-            window.__dbg?.('[trace] _beginNewGame returned');
             return;
         }
 
-        window.__dbg?.('[trace] -> _openPerkSelectModal');
         this._openPerkSelectModal(ownedPerks);
     }
 
@@ -9360,7 +9355,6 @@ class Game {
     }
 
     _beginNewGame(timeLimitSeconds = 0) {
-        window.__dbg?.('[trace] _beginNewGame start, time=' + timeLimitSeconds);
         this.grid = new Grid(this.gridSize, this.gridSize);
         this.score = 0;
         this.timeLimitSeconds = timeLimitSeconds;
@@ -9386,9 +9380,7 @@ class Game {
         this.renderer.validatedCells = new Set();
         this._activeHintKey = null;
         this.pendingGravityMoves = [];
-        window.__dbg?.('[trace] _beginNewGame: about to _pickNextLetter');
         this.nextLetter = this._pickNextLetter();
-        window.__dbg?.('[trace] _beginNewGame: _pickNextLetter OK');
         this.wordsFound = [];  // track all words found this round
         this.foundWordsThisGame = new Set();
         this.categoryWordsFound = [];  // track category words found this round
@@ -9540,13 +9532,10 @@ class Game {
         });
 
         // Start or resume music from the player's start-game action.
-        window.__dbg?.('[trace] _beginNewGame: -> _autoplayMusicFromUserAction');
         this._autoplayMusicFromUserAction();
-        window.__dbg?.('[trace] _beginNewGame: music OK');
 
         // Keep screen awake during gameplay
         this._keepAwake(true);
-        window.__dbg?.('[trace] _beginNewGame: keepAwake OK');
 
         // Resize canvas immediately
         requestAnimationFrame(() => {
@@ -9570,11 +9559,8 @@ class Game {
             this._openTutorialCategory(0, 'root');
             this.els.tutorialOverlay.classList.add('active');
         } else {
-            window.__dbg?.('[trace] _beginNewGame: -> _spawnBlock');
             this._spawnBlock();
-            window.__dbg?.('[trace] _beginNewGame: _spawnBlock OK');
         }
-        window.__dbg?.('[trace] _beginNewGame done');
     }
 
     /**
@@ -20015,11 +20001,6 @@ class Game {
 
     // ── Main loop ──
     _loop(timestamp) {
-        if (this._loopTraceCount === undefined) this._loopTraceCount = 0;
-        if (this._loopTraceCount < 3) {
-            window.__dbg?.('[trace] _loop tick #' + this._loopTraceCount + ' state=' + this.state);
-            this._loopTraceCount++;
-        }
         const dt = this.lastTime ? Math.min((timestamp - this.lastTime) / 1000, 0.1) : 0;
         this.lastTime = timestamp;
 
@@ -21494,11 +21475,6 @@ class Game {
 
     async _subscribeProfileRealtime() {
         try {
-            // Diagnostic kill-switch: ?norealtime=1 disables realtime entirely.
-            if (/[?&]norealtime=1\b/.test(location.search)) {
-                window.__dbg?.('[trace] realtime disabled via ?norealtime=1');
-                return;
-            }
             const profile = this.profileMgr.getActive();
             if (!this._authUser || !profile?.cloudId) {
                 this._unsubscribeProfileRealtime();
@@ -21544,7 +21520,6 @@ class Game {
     }
 
     _handleProfileRealtimeUpdate(payload) {
-        window.__dbg?.('[trace] realtime profile update');
         const row = payload?.new;
         if (!row) return;
         const p = this.profileMgr.getActive();
@@ -21574,7 +21549,6 @@ class Game {
     }
 
     _handleGameStatsRealtimeUpdate(payload) {
-        window.__dbg?.('[trace] realtime stats update');
         const row = payload?.new;
         if (!row) return;
         const p = this.profileMgr.getActive();
