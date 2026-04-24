@@ -20153,14 +20153,26 @@ class Game {
             // Render
             if (this.grid) {
                 if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' before renderer.draw');
-                this.renderer.draw(this.grid, this.block, dt);
+                try {
+                    this.renderer.draw(this.grid, this.block, dt);
+                } catch (e) {
+                    console.error('[loop] renderer.draw THREW:', e?.stack || e?.message || e);
+                }
                 if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' before _checkPlayBtnOverlaps');
-                this._checkPlayBtnOverlaps();
+                try {
+                    this._checkPlayBtnOverlaps();
+                } catch (e) {
+                    console.error('[loop] _checkPlayBtnOverlaps THREW:', e?.stack || e?.message || e);
+                }
                 if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' before updatePhysics');
             }
 
             // ── Matter.js physics particles overlay ──
-            updatePhysics(dt);
+            try {
+                updatePhysics(dt);
+            } catch (e) {
+                console.error('[loop] updatePhysics THREW:', e?.stack || e?.message || e);
+            }
             if (traceThis) console.log('[loop] tick #' + this._loopTraceN + ' updatePhysics OK');
         } else if (this.state === State.PAUSED) {
             // Still draw but don't update
