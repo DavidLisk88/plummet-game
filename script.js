@@ -21503,6 +21503,11 @@ class Game {
 
     async _subscribeProfileRealtime() {
         try {
+            // Diagnostic kill-switch: ?norealtime=1 disables realtime entirely.
+            if (/[?&]norealtime=1\b/.test(location.search)) {
+                window.__dbg?.('[trace] realtime disabled via ?norealtime=1');
+                return;
+            }
             const profile = this.profileMgr.getActive();
             if (!this._authUser || !profile?.cloudId) {
                 this._unsubscribeProfileRealtime();
@@ -21548,6 +21553,7 @@ class Game {
     }
 
     _handleProfileRealtimeUpdate(payload) {
+        window.__dbg?.('[trace] realtime profile update');
         const row = payload?.new;
         if (!row) return;
         const p = this.profileMgr.getActive();
@@ -21577,6 +21583,7 @@ class Game {
     }
 
     _handleGameStatsRealtimeUpdate(payload) {
+        window.__dbg?.('[trace] realtime stats update');
         const row = payload?.new;
         if (!row) return;
         const p = this.profileMgr.getActive();
