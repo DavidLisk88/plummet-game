@@ -7018,12 +7018,17 @@ class Game {
         const route = (ev) => {
             const target = ev.target;
             if (!target || !target.closest) return;
+            // Debounce: ignore duplicate routes from pointerdown+click+pointerup
+            // for the same gesture (~600ms window).
+            const now = Date.now();
+            if (this._lastGatewayRouteAt && now - this._lastGatewayRouteAt < 600) return;
             // Time select
             const timeBtn = target.closest('.time-select-btn');
             if (timeBtn && this.els.timeSelectModal?.classList.contains('active')) {
                 if (timeBtn.classList.contains('locked')) return;
                 const minutes = parseInt(timeBtn.dataset.minutes, 10);
                 if (!Number.isFinite(minutes)) return;
+                this._lastGatewayRouteAt = now;
                 ev.stopPropagation();
                 ev.preventDefault();
                 window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type);
@@ -7040,6 +7045,7 @@ class Game {
             }
             const timeCancel = target.closest('#time-select-cancel-btn');
             if (timeCancel && this.els.timeSelectModal?.classList.contains('active')) {
+                this._lastGatewayRouteAt = now;
                 ev.stopPropagation();
                 ev.preventDefault();
                 this._closeTimeSelectModal();
@@ -7048,6 +7054,7 @@ class Game {
             // Perk select skip
             const perkSkip = target.closest('#perk-select-skip-btn');
             if (perkSkip && this.els.perkSelectModal?.classList.contains('active')) {
+                this._lastGatewayRouteAt = now;
                 ev.stopPropagation();
                 ev.preventDefault();
                 this._chosenPerk = null;
@@ -7058,6 +7065,7 @@ class Game {
             // Confirm new game
             const confirmYes = target.closest('#confirm-new-game-btn');
             if (confirmYes && this.els.confirmNewGameModal?.classList.contains('active')) {
+                this._lastGatewayRouteAt = now;
                 ev.stopPropagation();
                 ev.preventDefault();
                 this._proceedWithNewGame();
@@ -7066,6 +7074,7 @@ class Game {
             }
             const confirmNo = target.closest('#confirm-new-game-cancel-btn');
             if (confirmNo && this.els.confirmNewGameModal?.classList.contains('active')) {
+                this._lastGatewayRouteAt = now;
                 ev.stopPropagation();
                 ev.preventDefault();
                 this._closeConfirmNewGameModal();
