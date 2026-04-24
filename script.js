@@ -20617,6 +20617,22 @@ class Game {
             this._firstGameTourTimer = null;
         }
         this._firstGameTourQueued = false;
+
+        // CRITICAL: also stop a tour that has ALREADY started. Its
+        // #guided-tour-dim element has pointer-events:auto at z-index
+        // 10020, covering the whole screen. Without stopping it, every
+        // tap inside our gateway modal gets eaten by the dim layer
+        // (the user sees the modal but buttons don't respond).
+        try {
+            if (this._guidedTour?.active) {
+                this._stopGuidedTour?.(false);
+            }
+            // Defensive: even if the tour is "stopped", make sure the dim
+            // can't swallow clicks while a gateway modal is open.
+            if (this.els?.guidedTourDim) {
+                this.els.guidedTourDim.style.pointerEvents = 'none';
+            }
+        } catch (_) {}
     }
 
     /** F1: true if a modal/popup is on screen that the user must dismiss. */

@@ -1687,16 +1687,20 @@ body.touch-input #mobile-controls {
     animation: overlayFadeIn 0.25s var(--ease-out-3, ease);
 }
 
-/* Gateway modals (start a game): MUST stack above ambient post-game
-   prompts (signup, milestone toasts, etc.) which share the base .overlay
-   z-index of 10. Without this bump, a deferred signup-prompt could
-   render later in the DOM and silently swallow taps on the time/perk
-   buttons. Stays below #level-up-overlay (z-index 200) which the user
-   must explicitly dismiss. */
+/* Gateway modals (start a game): MUST stack above EVERYTHING that can
+   sit on the menu screen — including the global music dropdown
+   (z-index 1000/1001), bonus popups (500/501), profile/letter-choice
+   modals (9999), guided tour (10020-10023), level-up overlay (200),
+   and any deferred signup/ambient overlay. We stay below the loading
+   screen (99998/99999) which legitimately hides everything during
+   asset load. Without this bump, a stale corner element (music dropdown
+   panel etc.) can sit visually behind but still own clicks via
+   stacking-context order, silently swallowing taps on the time/perk
+   buttons. */
 #time-select-modal.active,
 #perk-select-modal.active,
 #confirm-new-game-modal.active {
-    z-index: 50;
+    z-index: 50000;
 }
 
 @keyframes overlayFadeIn {
