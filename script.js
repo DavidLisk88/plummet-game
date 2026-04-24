@@ -7026,8 +7026,16 @@ class Game {
                 if (!Number.isFinite(minutes)) return;
                 ev.stopPropagation();
                 ev.preventDefault();
-                this._closeTimeSelectModal();
-                this._maybeShowPerkSelect(minutes * 60);
+                window.__dbg?.('[trace] time tap ' + minutes + 'm via ' + ev.type);
+                try {
+                    this._closeTimeSelectModal();
+                    window.__dbg?.('[trace] time modal closed');
+                    this._maybeShowPerkSelect(minutes * 60);
+                    window.__dbg?.('[trace] _maybeShowPerkSelect returned');
+                } catch (err) {
+                    window.__dbg?.('[trace ERR] ' + (err?.stack || err?.message || err));
+                    throw err;
+                }
                 return;
             }
             const timeCancel = target.closest('#time-select-cancel-btn');
