@@ -2301,6 +2301,31 @@ body.touch-input #mobile-controls {
     background: #5865F2;
 }
 
+/* Invite Friends card — primary CTA style (gold accent) */
+.link-card-invite {
+    background: linear-gradient(135deg, rgba(226,216,166,0.18), rgba(212,160,96,0.08));
+    border-color: rgba(226,216,166,0.45);
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    color: inherit;
+}
+
+.link-card-invite:hover {
+    border-color: rgba(226,216,166,0.7);
+    background: linear-gradient(135deg, rgba(226,216,166,0.26), rgba(212,160,96,0.14));
+}
+
+.link-card-invite .link-card-icon-wrap {
+    background: linear-gradient(135deg, #e2d8a6, #d4a060);
+    color: #1a1a16;
+}
+
+.link-card-invite .link-card-label {
+    color: #e2d8a6;
+}
+
 /* Music card */
 .link-card-music {
     background: var(--bg-card);

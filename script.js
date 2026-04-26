@@ -1958,9 +1958,9 @@ const BONUS_METADATA = Object.freeze({
     },
     [BONUS_TYPES.FREEZE]: {
         buttonLabel: "Bonus: Freeze",
-        buttonTitle: "Pause block falling for 10 seconds",
+        buttonTitle: "Pause the game timer for 10 seconds",
         modalTitle: "Freeze Bonus",
-        modalText: "Accept to freeze all block movement for 10 seconds. Take your time to plan your next move!",
+        modalText: "Accept to pause the game timer for 10 seconds. Letters keep falling — buy yourself extra time!",
         acceptLabel: "Freeze!",
         previewSymbol: "❄️",
     },
@@ -2072,6 +2072,11 @@ function drawRandomBonusType(bonusBag, lastBonusType = null, recentHistory = [],
     // If freeze is already active, strongly reduce freeze weight
     if (freezeActive) {
         weights[BONUS_TYPES.FREEZE] *= 0.05;
+    }
+
+    // Freeze bonus is disabled in Sandbox mode (no timer to freeze)
+    if (gameContext.gameMode === GAME_MODES.SANDBOX) {
+        weights[BONUS_TYPES.FREEZE] = 0;
     }
 
     // Very early game (score < 2000): favor utility to help players build
@@ -5034,6 +5039,7 @@ class Game {
             wordsFoundBtn:    document.getElementById("words-found-btn"),
             shareScoreBtn:    document.getElementById("share-score-btn"),
             copyLinkBtn:      document.getElementById("copy-link-btn"),
+            inviteFriendsBtn: document.getElementById("invite-friends-btn"),
             wordsFoundBackBtn: document.getElementById("words-found-back-btn"),
             wordsFoundTitle:  document.getElementById("words-found-title"),
             wordsFoundCount:  document.getElementById("words-found-count"),
@@ -6013,6 +6019,7 @@ class Game {
         });
         this.els.shareScoreBtn?.addEventListener("click", () => this._shareScore());
         this.els.copyLinkBtn?.addEventListener("click", () => this._copyScoreLink());
+        this.els.inviteFriendsBtn?.addEventListener("click", () => this._shareInvite());
         this.els.wordsFoundBackBtn.addEventListener("click", () => this._closeWordsFound());
 
         this.els.bonusBtn.addEventListener("click", () => {
@@ -8620,6 +8627,7 @@ class Game {
                 boardFillRatio: totalCells > 0 ? filledCells / totalCells : 0,
                 freezeActive: this.freezeActive,
                 score: this.score,
+                gameMode: this.gameMode,
                 fullBonusHistory: this._fullBonusHistory,
                 bonusUsageCounts: this._bonusUsageCounts,
             };
@@ -10642,42 +10650,138 @@ class Game {
         return d.innerHTML;
     }
 
-    /** Capture game-over screenshot → save to Camera Roll on iOS, download on web */
+    /** UTM-tagged store URL for tracking source of installs */
+    _getStoreUrl(source = 'app_share', medium = 'native') {
+        const base = 'https://apps.apple.com/us/app/plummet-word-fall/id6761784552';
+        const params = new URLSearchParams({
+            ct: source,           // App Store Connect campaign token (visible in Sources)
+            mt: '8',
+            utm_source: source,
+            utm_medium: medium,
+            utm_campaign: 'in_app_share',
+        });
+        return `${base}?${params.toString()}`;
+    }
+
+    /** Open the native share sheet to invite friends to download Plummet */
+    async _shareInvite() {
+        const btn = this.els.inviteFriendsBtn;
+        const url = this._getStoreUrl('invite_friends', 'menu');
+        const profile = this.profileMgr?.getActive?.();
+        const name = profile?.username || 'I';
+        const text = `${name} ${profile?.username ? 'is' : "'m"} obsessed with this word game. 5 modes, daily challenges, no ads. You'll like it.`;
+        const title = 'Plummet — Word Puzzle Game';
+
+        // 1. Try Capacitor native share (iOS / Android share sheet)
+        try {
+            const { Capacitor } = await import('@capacitor/core');
+            if (Capacitor.isNativePlatform()) {
+                const { Share } = await import('@capacitor/share');
+                await Share.share({ title, text, url, dialogTitle: 'Invite friends to Plummet' });
+                this._showSaveToast?.('Thanks for sharing! 🙏');
+                return;
+            }
+        } catch (err) {
+            console.warn('Capacitor share failed, falling back', err);
+        }
+
+        // 2. Try web Share API (modern mobile browsers)
+        if (navigator.share) {
+            try {
+                await navigator.share({ title, text, url });
+                return;
+            } catch (err) {
+                if (err?.name === 'AbortError') return; // user cancelled
+                console.warn('Web share failed, falling back', err);
+            }
+        }
+
+        // 3. Fallback: copy link to clipboard
+        try {
+            await navigator.clipboard.writeText(`${text}\n${url}`);
+            if (btn) {
+                const orig = btn.querySelector('.link-card-arrow')?.textContent;
+                const arrow = btn.querySelector('.link-card-arrow');
+                if (arrow) {
+                    arrow.textContent = '✅';
+                    setTimeout(() => { arrow.textContent = orig || '→'; }, 2000);
+                }
+            }
+            this._showSaveToast?.('Link copied to clipboard!');
+        } catch {
+            prompt('Share this link:', url);
+        }
+    }
+
+    /** Capture game-over screenshot → open native share sheet (1-tap share) */
     async _shareScore() {
         const btn = this.els.shareScoreBtn;
         const origText = btn.textContent;
         btn.textContent = '📸 Capturing…';
         btn.disabled = true;
 
+        const profile = this.profileMgr.getActive();
+        const name = profile?.username || 'Someone';
+        const modeLabel = this._getGameModeLabel();
+        const url = this._getStoreUrl('score_share', 'gameover');
+        const text = `${name} just scored ${this.score.toLocaleString()} in ${modeLabel} on Plummet 🎯 Beat it?`;
+
         try {
             const dataUrl = await this._buildShareCard();
 
-            // iOS: save directly to Camera Roll
+            // 1. Capacitor native share with image file (iOS / Android share sheet)
             try {
                 const { Capacitor } = await import('@capacitor/core');
                 if (Capacitor.isNativePlatform()) {
-                    const { Media } = await import('@capacitor-community/media');
-                    await Media.savePhoto({
-                        path: dataUrl,
-                        albumIdentifier: null,
+                    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+                    const { Share } = await import('@capacitor/share');
+                    const base64 = dataUrl.split(',')[1];
+                    const fileName = `plummet-score-${Date.now()}.png`;
+                    const written = await Filesystem.writeFile({
+                        path: fileName,
+                        data: base64,
+                        directory: Directory.Cache,
                     });
-                    this._showSaveToast('Screenshot saved to Photos!');
+                    await Share.share({
+                        title: 'My Plummet score',
+                        text: `${text}\n${url}`,
+                        url: written.uri,
+                        dialogTitle: 'Share your score',
+                    });
                     btn.textContent = origText;
                     return;
                 }
             } catch (nativeErr) {
-                console.warn('Native photo save failed:', nativeErr);
+                console.warn('Native share failed, trying web share', nativeErr);
             }
 
-            // Web: download the screenshot as PNG
+            // 2. Web Share API with file (Safari/Chrome on mobile)
+            if (navigator.share && navigator.canShare) {
+                try {
+                    const blob = await (await fetch(dataUrl)).blob();
+                    const file = new File([blob], `plummet-score.png`, { type: 'image/png' });
+                    if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({ title: 'My Plummet score', text: `${text}\n${url}`, files: [file] });
+                        btn.textContent = origText;
+                        return;
+                    }
+                    await navigator.share({ title: 'My Plummet score', text: `${text}\n${url}` });
+                    btn.textContent = origText;
+                    return;
+                } catch (err) {
+                    if (err?.name === 'AbortError') { btn.textContent = origText; return; }
+                    console.warn('Web share failed, falling back to download', err);
+                }
+            }
+
+            // 3. Fallback: download PNG (desktop)
             const blob = await (await fetch(dataUrl)).blob();
-            const url = URL.createObjectURL(blob);
+            const dlUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
+            a.href = dlUrl;
             a.download = `plummet-score-${Date.now()}.png`;
             a.click();
-            URL.revokeObjectURL(url);
-
+            URL.revokeObjectURL(dlUrl);
             this._showSaveToast('Screenshot saved!');
             btn.textContent = origText;
         } catch (err) {
@@ -10688,19 +10792,42 @@ class Game {
         }
     }
 
-    /** Copy the App Store link + score text to clipboard */
+    /** Open native share sheet for the score URL+text (no screenshot) */
     async _copyScoreLink() {
         const profile = this.profileMgr.getActive();
         const name = profile?.username || 'Someone';
         const modeLabel = this._getGameModeLabel();
-        const text = `${name} scored ${this.score.toLocaleString()} in ${modeLabel} on Plummet: Word Fall! Can you beat it? 🎯\nhttps://apps.apple.com/app/plummet-word-fall/id6670594498`;
+        const url = this._getStoreUrl('score_link', 'gameover');
+        const text = `${name} scored ${this.score.toLocaleString()} in ${modeLabel} on Plummet: Word Fall! Can you beat it? 🎯`;
         const btn = this.els.copyLinkBtn;
+
+        // 1. Native share sheet
         try {
-            await navigator.clipboard.writeText(text);
+            const { Capacitor } = await import('@capacitor/core');
+            if (Capacitor.isNativePlatform()) {
+                const { Share } = await import('@capacitor/share');
+                await Share.share({ title: 'Plummet', text, url, dialogTitle: 'Share your score' });
+                return;
+            }
+        } catch (err) { console.warn('native share fail', err); }
+
+        // 2. Web share
+        if (navigator.share) {
+            try {
+                await navigator.share({ title: 'Plummet', text, url });
+                return;
+            } catch (err) {
+                if (err?.name === 'AbortError') return;
+            }
+        }
+
+        // 3. Clipboard fallback
+        try {
+            await navigator.clipboard.writeText(`${text}\n${url}`);
             btn.textContent = '✅';
             setTimeout(() => { btn.textContent = '🔗'; }, 2000);
         } catch {
-            prompt('Copy your score:', text);
+            prompt('Copy your score:', `${text}\n${url}`);
         }
     }
 
@@ -20092,6 +20219,18 @@ class Game {
                 }
             }
 
+            // Freeze bonus countdown — runs independently of falling/spawning.
+            // Only the game-clock pause above is affected by freeze; letters keep falling.
+            if (this.freezeActive) {
+                this.freezeTimeRemaining -= dt;
+                this.els.freezeTimer.textContent = Math.ceil(Math.max(0, this.freezeTimeRemaining));
+                if (this.freezeTimeRemaining <= 0) {
+                    this.freezeActive = false;
+                    this.freezeTimeRemaining = 0;
+                    this.els.freezeIndicator.classList.add("hidden");
+                }
+            }
+
             if (this.state !== State.PLAYING) {
                 this.renderer.draw(this.grid, this.block, 0);
                 requestAnimationFrame((t) => this._loop(t));
@@ -20104,15 +20243,6 @@ class Game {
                 this._updateShuffleAnim(dt);
             } else if (this._wordPopupActive) {
                 // Word popup is showing — freeze, don't fall or spawn
-            } else if (this.freezeActive) {
-                // Freeze bonus: count down timer, don't advance block falling
-                this.freezeTimeRemaining -= dt;
-                this.els.freezeTimer.textContent = Math.ceil(Math.max(0, this.freezeTimeRemaining));
-                if (this.freezeTimeRemaining <= 0) {
-                    this.freezeActive = false;
-                    this.freezeTimeRemaining = 0;
-                    this.els.freezeIndicator.classList.add("hidden");
-                }
             } else if (this.rowDragActive) {
                 // Row drag mode: freeze block falling while player selects a row
             } else if (this.block) {
@@ -23117,7 +23247,8 @@ class Game {
                     const profile = this.profileMgr.getActive();
                     const name = profile?.username || 'Someone';
                     const modeLabel = this._getGameModeLabel();
-                    const text = `${name} scored ${this.score.toLocaleString()} in ${modeLabel} on Plummet: Word Fall! Can you beat it? 🎯\nhttps://apps.apple.com/app/plummet-word-fall/id6670594498`;
+                    const url = this._getStoreUrl('ws_share', 'gameover_overlay');
+                    const text = `${name} scored ${this.score.toLocaleString()} in ${modeLabel} on Plummet: Word Fall! Can you beat it? 🎯\n${url}`;
                     await navigator.clipboard.writeText(text);
                     copyBtn.textContent = '✅';
                     setTimeout(() => { copyBtn.textContent = '🔗'; }, 2000);
