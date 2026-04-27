@@ -103,3 +103,56 @@ export async function clearChallengeState() {
         console.warn('[AppGroup] clearChallengeState failed:', e);
     }
 }
+
+/**
+ * Push the full WOTD pool to the iOS App Group container so the widget can use
+ * the latest word list without requiring a new App Store build. Safe to call
+ * on every app launch — the widget only re-reads on its next timeline refresh.
+ *
+ * @param {Array<{word:string,pos:string,definition:string}>} entries
+ * @param {string} [version] Optional version tag (e.g. "v2", build hash) for diagnostics.
+ * @returns {Promise<{count:number,version:string,bytes:number}|null>}
+ */
+export async function setPool(entries, version = '') {
+    await _init();
+    if (!_plugin) return null;
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    try {
+        return await _plugin.setPool({ entries, version });
+    } catch (e) {
+        console.warn('[AppGroup] setPool failed:', e);
+        return null;
+    }
+}
+
+/**
+ * Get metadata about the pool currently used by the widget.
+ * @returns {Promise<{count:number,version:string,source:'appgroup'|'bundle'|'none'}|null>}
+ */
+export async function getPoolInfo() {
+    await _init();
+    if (!_plugin) return null;
+    try {
+        return await _plugin.getPoolInfo();
+    } catch (e) {
+        console.warn('[AppGroup] getPoolInfo failed:', e);
+        return null;
+    }
+}
+
+/**
+ * Convenience: fetch the bundled (OTA-updatable) wotd-pool.json and push it to
+ * the App Group. Call once on app launch on iOS. Cheap & idempotent.
+ */
+export async function syncPoolFromBundle() {
+    try {
+        const res = await fetch('wotd-pool.json', { cache: 'no-store' });
+        if (!res.ok) return null;
+        const entries = await res.json();
+        const version = res.headers.get('etag') || res.headers.get('last-modified') || '';
+        return await setPool(entries, version);
+    } catch (e) {
+        console.warn('[AppGroup] syncPoolFromBundle failed:', e);
+        return null;
+    }
+}

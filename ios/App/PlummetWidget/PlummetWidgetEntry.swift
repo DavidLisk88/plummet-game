@@ -153,18 +153,41 @@ struct WotdPoolEntry: Decodable {
 final class WotdPool {
     static let shared = WotdPool()
 
+    /// Filename used for the OTA-updatable pool inside the App Group container.
+    static let appGroupPoolFilename = "wotd-pool.json"
+
     private let entries: [WotdPoolEntry]
 
     private init() {
-        guard let url = Bundle.main.url(forResource: "wotd-pool", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode([WotdPoolEntry].self, from: data) else {
+        // 1) Prefer the App Group copy (OTA-updatable by the main app).
+        // 2) Fall back to the bundled copy that shipped with this build.
+        let data: Data? = Self.loadAppGroupPool() ?? Self.loadBundledPool()
+
+        guard let raw = data,
+              let decoded = try? JSONDecoder().decode([WotdPoolEntry].self, from: raw) else {
             self.entries = []
             return
         }
         // Defensive re-sort to guarantee identical ordering with JS regardless
-        // of how the bundle was packaged.
+        // of how the bundle/container was packaged.
         self.entries = decoded.sorted { $0.word < $1.word }
+    }
+
+    private static func loadAppGroupPool() -> Data? {
+        guard let containerURL = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: kAppGroupID) else {
+            return nil
+        }
+        let fileURL = containerURL.appendingPathComponent(appGroupPoolFilename)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        return try? Data(contentsOf: fileURL)
+    }
+
+    private static func loadBundledPool() -> Data? {
+        guard let url = Bundle.main.url(forResource: "wotd-pool", withExtension: "json") else {
+            return nil
+        }
+        return try? Data(contentsOf: url)
     }
 
     /// Compute the WOTD entry for the given date using the local-date hash

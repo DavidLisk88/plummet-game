@@ -21,6 +21,8 @@ public class PlummetAppGroupPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "reloadWidget",       returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setChallengeState",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearChallengeState",returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPool",            returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPoolInfo",        returnType: CAPPluginReturnPromise),
     ]
 
     private let appGroupID = "group.com.plummetgame.app"
@@ -148,5 +150,74 @@ public class PlummetAppGroupPlugin: CAPPlugin, CAPBridgedPlugin {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         return fmt.string(from: Date())
+    }
+
+    // -----------------------------------------------------------------------
+    // MARK: - setPool / getPoolInfo (OTA-updatable WOTD pool)
+    // -----------------------------------------------------------------------
+
+    private static let poolFilename = "wotd-pool.json"
+    private static let poolVersionKey = "wotd_pool_version"
+    private static let poolCountKey   = "wotd_pool_count"
+
+    /// Write the full WOTD pool (array of {word,pos,definition}) to the App
+    /// Group container so the widget can pick it up on its next timeline reload.
+    /// JS call: PlummetAppGroup.setPool({ entries: [...], version: "v2" })
+    @objc func setPool(_ call: CAPPluginCall) {
+        guard let containerURL = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) else {
+            call.reject("App Group container '\(appGroupID)' not available")
+            return
+        }
+        guard let entries = call.getArray("entries") else {
+            call.reject("Missing 'entries' array")
+            return
+        }
+        let version = call.getString("version") ?? ""
+
+        // Re-serialize compactly for byte-stable storage.
+        guard let data = try? JSONSerialization.data(withJSONObject: entries, options: []) else {
+            call.reject("Failed to serialize pool entries")
+            return
+        }
+
+        let fileURL = containerURL.appendingPathComponent(Self.poolFilename)
+        do {
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            call.reject("Failed to write pool: \(error.localizedDescription)")
+            return
+        }
+
+        sharedDefaults?.set(version, forKey: Self.poolVersionKey)
+        sharedDefaults?.set(entries.count, forKey: Self.poolCountKey)
+        sharedDefaults?.synchronize()
+
+        if #available(iOS 14.0, *) {
+            WidgetCenter.shared.reloadTimelines(ofKind: "PlummetWordOfDay")
+        }
+
+        call.resolve([
+            "count":   entries.count,
+            "version": version,
+            "bytes":   data.count
+        ])
+    }
+
+    /// Returns metadata about the currently-installed pool (App Group copy).
+    /// JS call: PlummetAppGroup.getPoolInfo() → { count, version, source }
+    @objc func getPoolInfo(_ call: CAPPluginCall) {
+        guard let containerURL = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroupID) else {
+            call.resolve(["count": 0, "version": "", "source": "none"])
+            return
+        }
+        let fileURL = containerURL.appendingPathComponent(Self.poolFilename)
+        let exists = FileManager.default.fileExists(atPath: fileURL.path)
+        call.resolve([
+            "count":   sharedDefaults?.integer(forKey: Self.poolCountKey) ?? 0,
+            "version": sharedDefaults?.string(forKey: Self.poolVersionKey) ?? "",
+            "source":  exists ? "appgroup" : "bundle"
+        ])
     }
 }

@@ -280,7 +280,12 @@ export async function pushDailyWordToWidget(wordsData) {
     try {
         const today = getLocalDayKey();
         const def = wordEntry.definitions?.[0];
-        const { setWordOfDay: setWidgetWord, getWordOfDay: getWidgetWord, reloadWidget } = await import('./app-group.js');
+        const { setWordOfDay: setWidgetWord, getWordOfDay: getWidgetWord, reloadWidget, syncPoolFromBundle } = await import('./app-group.js');
+
+        // Push the latest WOTD pool to the App Group so the widget can use
+        // OTA-delivered word lists without an App Store update. Cheap, idempotent.
+        // Fire-and-forget — must not block widget word push.
+        try { syncPoolFromBundle(); } catch {}
 
         // Skip if the widget already holds today's word (avoids unnecessary
         // WidgetKit timeline reloads which can drain budget on iOS).
