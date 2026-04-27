@@ -20531,8 +20531,8 @@ class Game {
         // Logout
         this.els.authLogoutBtn?.addEventListener("click", async () => {
             try {
-                const { unregisterPushToken } = await import('./src/lib/push-notifications.js');
-                await unregisterPushToken();
+                const { logoutOneSignalUser } = await import('./src/lib/onesignal.js');
+                await logoutOneSignalUser();
             } catch (e) { /* ignore */ }
             try {
                 const { signOut } = await import('./src/lib/supabase.js');
@@ -21176,11 +21176,16 @@ class Game {
         }
 
         // Register for push notifications after auth (fire-and-forget, don't block auth).
-        // Keep this outside cloud sync try/catch so token registration still happens when
-        // profile fetch has transient errors.
-        import('./src/lib/push-notifications.js')
-            .then(({ registerPushNotifications }) => registerPushNotifications())
-            .catch(e => console.warn('[push] registration skipped:', e));
+        // Uses OneSignal: handles APNs/FCM registration + binds device to the
+        // Supabase user id (external_id) so we can target by user.
+        import('./src/lib/onesignal.js')
+            .then(async ({ initOneSignal, loginOneSignalUser }) => {
+                await initOneSignal();
+                if (!this._isAnonymous) {
+                    await loginOneSignalUser(user.id);
+                }
+            })
+            .catch(e => console.warn('[onesignal] registration skipped:', e));
     }
 
     _syncCloudProfilesToLocal(cloudProfiles) {
