@@ -346,6 +346,3 @@ struct ChallengeInlineView: View {
         .widgetAccentable()
     }
 }
-
-
-// ---------------------------------------------------------------------------
